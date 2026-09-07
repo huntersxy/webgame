@@ -46,16 +46,10 @@ function drawWood(ctx: CanvasRenderingContext2D): void {
   ctx.fillStyle = g;
   roundRect(ctx, 0, 0, SIZE, SIZE, 18);
   ctx.fill();
-  ctx.save();
-  ctx.globalAlpha = 0.08;
-  for (let i = 0; i < 40; i++) {
-    ctx.strokeStyle = '#7a4d18';
-    ctx.beginPath();
-    ctx.moveTo(Math.random() * SIZE, 0);
-    ctx.lineTo(Math.random() * SIZE, SIZE);
-    ctx.stroke();
-  }
-  ctx.restore();
+  // The previous random "wood grain" lines (40 semi-transparent dark diagonal
+  // strokes scattered across the board) are intentionally removed: they read
+  // as clashing black intersecting line fragments. The plain gradient keeps a
+  // clean, flat wooden look.
 }
 
 export function renderGomoku(canvas: HTMLCanvasElement, state: GomokuRenderState): void {
