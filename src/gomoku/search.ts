@@ -7,6 +7,8 @@ import { BOARD_SIZE, DIRS, checkWin, generateCandidates, quickScore, findImmedia
 import { evaluateBoard } from './eval';
 import { Zobrist } from '../core/zobrist';
 import { TranspositionTable } from '../core/transposition';
+import { vcfProbe, evaluatePoint } from './strong';
+import { probeOpening } from './book';
 
 export const LEVEL_CONFIG: Record<Difficulty, { name: string; depth: number; limit: number }> = {
   1: { name: '简单', depth: 1, limit: 10 },
@@ -179,6 +181,32 @@ export function findBestMove(
       scores: [{ ...imm, v: 9_999_999 }],
       instant: true,
     };
+  }
+
+  // Demon & hard: opening book (black-winning shapes → strongest reply)
+  if (difficulty >= 3) {
+    const book = probeOpening(board, player, historyLength);
+    if (book) {
+      return { move: book, depth: 0, nodes: 1, ms: 0, eval: 0, scores: [{ ...book, v: 0 }], opening: true, book: true };
+    }
+  }
+
+  // Demon & hard: VCF forced-win probe (see far-away kill lines the fixed
+  // alpha-beta depth misses). This is what makes demon "sharp" at striking.
+  // Skipped in the opening (few pieces → no forced lines) to save time.
+  if (difficulty >= 3 && historyLength >= 6) {
+    const kill = vcfProbe(board, player, difficulty === 4 ? 16 : 12);
+    if (kill) {
+      return {
+        move: kill,
+        depth,
+        nodes: 0,
+        ms: 0,
+        eval: 9_999_998,
+        scores: [{ ...kill, v: 9_999_998 }],
+        instant: true,
+      };
+    }
   }
 
   // Easy mode: mostly take best, sometimes random for entertainment

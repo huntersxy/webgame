@@ -52,6 +52,7 @@ export interface SearchResult<M> {
   instant?: boolean;
   boosted?: boolean;
   opening?: boolean;
+  book?: boolean;
   qd?: number;
 }
 
