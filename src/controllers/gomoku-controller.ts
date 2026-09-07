@@ -13,6 +13,7 @@ import { Stats } from '../ui/stats';
 import { renderGomoku, pxToCellGomoku, gomokuScorePercent, type GomokuRenderState } from '../ui/gomoku-renderer';
 import { appendLog, setStats, toggleProgress, fmtEval } from '../ui/format';
 import { applyDemonTheme } from '../ui/demon';
+import { checkLesson, detectWinningOpening, recordLoss, lessonCount } from '../gomoku/learn';
 
 interface HistoryEntry { x: number; y: number; c: GomokuPlayer; }
 
@@ -42,6 +43,7 @@ export class GomokuController {
   private _haltAivai = false;
   private _animFrame: number | null = null;
   private _down: { x: number; y: number } | null = null;
+  private _openingWarned = false;
 
   constructor(canvas: HTMLCanvasElement, ai: AIBridge, audio: AudioEngine) {
     this.canvas = canvas;
@@ -98,6 +100,7 @@ export class GomokuController {
     this.godMove = null;
     this.godThinking = false;
     this._haltAivai = false;
+    this._openingWarned = false;
     this.hideResult();
     this.updatePanel();
     this.redraw();
@@ -119,6 +122,7 @@ export class GomokuController {
     this.hintPos = null;
     this.godMove = null;
     this.audio.move();
+    this.checkWinningOpening();
     const w = checkWin(this.board, x, y);
     if (w) { this.over = true; this.winLine = w; this.onGameEnd(this.turn); }
     else if (isBoardFull(this.board)) { this.over = true; this.onGameEnd(0); }
@@ -141,8 +145,18 @@ export class GomokuController {
     const delay = this.level === 4 ? 60 : (this.level === 3 ? 40 : 20);
     this._aiTimer = setTimeout(async () => {
       const aiPlayer = this.turn;
+      const lesson = this.level === 4 ? checkLesson(cloneBoard(this.board)) : null;
       const res = await this.ai.searchGomoku(cloneBoard(this.board), aiPlayer, this.level, this.mode, this.history.length);
-      const m = res.move;
+      let m = res.move;
+      // Demon memory: if this exact position was lost before and the search
+      // wants to repeat the losing move, pick the next-best scored candidate.
+      if (lesson && m && m.x === lesson.x && m.y === lesson.y) {
+        const alt = (res.scores || []).find((s) => s.x !== lesson.x || s.y !== lesson.y);
+        if (alt) {
+          appendLog(document.getElementById('g-think-log'), `📖 <b>恶魔记忆</b>：此局面前次走 (${lesson.x},${lesson.y}) 落败（第${lesson.count}次教训）→ 改走 <b>(${alt.x},${alt.y})</b>`);
+          m = alt;
+        }
+      }
       this.thinkCandidates = (res.scores || []).map((s, i) => ({ ...s, rank: i + 1 }));
       this.thinking = false;
       this.showThinking(false);
@@ -285,9 +299,33 @@ export class GomokuController {
     if (this._godTimer) { clearInterval(this._godTimer); this._godTimer = null; }
     if (winner === 0) { if (banner) banner.textContent = '🤝 和棋！棋盘已满，旗鼓相当。'; this.audio.win(); Stats.add(false); }
     else if (this.mode === 'aivai') { if (banner) banner.textContent = `🤖 互搏结束！${winner === 1 ? '黑方AI' : '白方AI'} 五连获胜！`; this.audio.win(); }
-    else if (this.mode === 'ai' && winner === this.human) { if (banner) banner.textContent = '🎉 恭喜！你击败了 AI！'; this.audio.win(); Stats.add(true); }
+    else if (this.mode === 'ai' && winner === this.human) {
+      // ── Demon lost to the human: record, review & warn ──
+      const opening = detectWinningOpening(this.history, this.human);
+      const { losses, lessons } = recordLoss(this.history, this.human, this.level, opening?.name ?? null);
+      const log = document.getElementById('g-think-log');
+      if (opening) {
+        if (banner) banner.textContent = `⚠️ 你用了「${opening.name}」黑棋必胜开局！恶魔已记录这次惨败并开始学习。`;
+        appendLog(log, `📉 <b>恶魔败北并复盘</b>：检测到人类使用 <b>「${opening.name}」${opening.exact ? '必胜定式' : '必胜起手式'}</b>。已存入败局档案 #${losses}，从 ${lessons} 条教训中学习——下次会避开相同应对。`);
+      } else {
+        if (banner) banner.textContent = '🎉 恭喜！你击败了 AI！';
+        appendLog(log, `📉 <b>恶魔败北并复盘</b>：已记录败局 #${losses}（${this.history.length} 手），习得教训共 ${lessons} 条，下次遇到相似局面将避开败手。`);
+      }
+      this.audio.lose(); Stats.add(true);
+    }
     else if (this.mode === 'ai') { if (banner) banner.textContent = '🤖 AI 获胜，再接再厉！点「🔄 新开一局」再来。'; this.audio.lose(); Stats.add(false); }
     else { if (banner) banner.textContent = `🏆 ${winner === 1 ? '黑方' : '白方'} 五连获胜！`; this.audio.win(); Stats.add(true); }
+  }
+
+  /** Warn once per game when the human (playing black) opens with a known
+   *  black-winning opening — even if the demon ends up winning anyway. */
+  private checkWinningOpening(): void {
+    if (this._openingWarned || this.mode !== 'ai') return;
+    const op = detectWinningOpening(this.history, this.human);
+    if (!op) return;
+    this._openingWarned = true;
+    appendLog(document.getElementById('g-think-log'), `⚠️ <b>人类正在使用「${op.name}」${op.exact ? '必胜定式' : '必胜起手式'}</b>（黑棋先手必胜）！恶魔已进入戒备与学习模式。`);
+    setStats(document.getElementById('g-think-stats'), `⚠️ 检测到黑棋必胜开局「${op.name}」 — 恶魔加强戒备`);
   }
 
   // ── UI helpers ──
