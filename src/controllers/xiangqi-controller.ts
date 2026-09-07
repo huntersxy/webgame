@@ -1,0 +1,411 @@
+/* ────────────────────────────────────────────────────────────
+ *  controllers/xiangqi-controller.ts — Xiangqi game controller
+ * ──────────────────────────────────────────────────────────── */
+
+import type { XqBoard, XqSide, XqMove, Difficulty, GameMode, Pt, SearchResult } from '../types';
+import { createInitialBoard, findKing, makeMove, undoMoveOnBoard, legalMoves, inCheck, colorOf, typeOf, PIECE_NAME, isRed } from '../xiangqi/rules';
+import { LEVEL_CONFIG, MATE, resetXqWarmDepth } from '../xiangqi/search';
+import { AIBridge } from '../ai/ai-bridge';
+import { AudioEngine } from '../ui/audio';
+import { Stats } from '../ui/stats';
+import { renderXiangqi, pxToCellXq, type XqRenderState } from '../ui/xiangqi-renderer';
+import { appendLog, setStats, toggleProgress, fmtEval } from '../ui/format';
+import { applyDemonTheme } from '../ui/demon';
+
+interface XqHistoryEntry extends XqMove {
+  cap: import('../types').XqPiece;
+  prevCheck: boolean;
+}
+
+function moveStr(m: XqMove | null): string {
+  if (!m) return '—';
+  const pn = PIECE_NAME[typeOf(m.piece || 'p') ?? 'p']?.[0] ?? '?';
+  const cap = m.cap ? `吃${PIECE_NAME[typeOf(m.cap) ?? 'p']?.[0] ?? '?'}` : '→';
+  return `${pn}(${m.fx},${m.fy})${cap}(${m.tx},${m.ty})`;
+}
+
+export class XiangqiController {
+  private canvas: HTMLCanvasElement;
+  private ai: AIBridge;
+  private audio: AudioEngine;
+
+  private board: XqBoard = createInitialBoard();
+  private turn: XqSide = 'r';
+  private sel: Pt | null = null;
+  private moves: XqMove[] = [];
+  private hist: XqHistoryEntry[] = [];
+  private log: string[] = [];
+  private over = false;
+  private winner: XqSide | 'draw' | null = null;
+  private last: { fx: number; fy: number; tx: number; ty: number } | null = null;
+  private check = false;
+  private mode: GameMode = 'ai';
+  private human: XqSide = 'r';
+  private level: Difficulty = 2;
+  private flip = false;
+  private thinking = false;
+  private viz = true;
+  private thinkMoves: Array<XqMove & { v: number; rank?: number }> = [];
+  private god = false;
+  private godMove: XqMove | null = null;
+  private godThinking = false;
+  private _aiTimer: ReturnType<typeof setTimeout> | null = null;
+  private _godTimer: ReturnType<typeof setInterval> | null = null;
+  private _haltAivai = false;
+  private _animFrame: number | null = null;
+  private _down: { x: number; y: number } | null = null;
+
+  constructor(canvas: HTMLCanvasElement, ai: AIBridge, audio: AudioEngine) {
+    this.canvas = canvas;
+    this.ai = ai;
+    this.audio = audio;
+    this.wireEvents();
+    this.newGame();
+    this.startAnimLoop();
+  }
+
+  private get state(): XqRenderState {
+    return {
+      board: this.board,
+      turn: this.turn,
+      sel: this.sel,
+      moves: this.moves,
+      last: this.last,
+      check: this.check,
+      flip: this.flip,
+      over: this.over,
+      viz: this.viz,
+      thinkMoves: this.thinkMoves,
+      god: this.god,
+      godMove: this.godMove,
+    };
+  }
+
+  private startAnimLoop(): void {
+    const loop = () => {
+      if (this.god || (this.viz && this.thinkMoves.length > 0 && !this.over)) {
+        this.redraw();
+      }
+      this._animFrame = requestAnimationFrame(loop);
+    };
+    this._animFrame = requestAnimationFrame(loop);
+  }
+
+  redraw(): void { renderXiangqi(this.canvas, this.state); }
+
+  newGame(): void {
+    resetXqWarmDepth(); // new game → drop any warm-start adaptive depth
+    if (this._aiTimer) { clearTimeout(this._aiTimer); this._aiTimer = null; }
+    if (this._godTimer) { clearInterval(this._godTimer); this._godTimer = null; }
+    this.board = createInitialBoard();
+    this.turn = 'r';
+    this.sel = null;
+    this.moves = [];
+    this.hist = [];
+    this.over = false;
+    this.winner = null;
+    this.last = null;
+    this.check = false;
+    this.log = [];
+    this.thinkMoves = [];
+    this.godMove = null;
+    this.godThinking = false;
+    this._haltAivai = false;
+    this.flip = this.human === 'b';
+    this.hideResult();
+    this.renderLog();
+    this.updatePanel();
+    this.redraw();
+    const cfg = LEVEL_CONFIG[this.level];
+    const modeName = this.mode === 'aivai' ? '🤖AI互搏观战' : (this.mode === 'pvp' ? '双人对战' : '人机对战');
+    setStats(document.getElementById('x-think-stats'), `新对局 · ${modeName} · 难度 <b>${cfg.name}</b> · depth${cfg.depth}+Q${cfg.qd} · 等待行棋…`);
+    if (this.god) this.startGodTimer();
+    if (this.mode === 'ai' && this.turn !== this.human) this.aiMove();
+    else if (this.mode === 'aivai') this.aiMove();
+    else this.refreshGod();
+  }
+
+  private applyHuman(fx: number, fy: number, tx: number, ty: number): void {
+    if (this.over || this.thinking) return;
+    if (this.mode === 'aivai') return;
+    const p = this.board[fy][fx];
+    if (!p || colorOf(p) !== this.turn) return;
+    const ms = legalMoves(this.board, this.turn).filter((m) => m.fx === fx && m.fy === fy);
+    const m = ms.find((mv) => mv.tx === tx && mv.ty === ty);
+    if (!m) { this.audio.bad(); return; }
+    this.pushMove(m);
+    this.afterMove(m);
+  }
+
+  private pushMove(m: XqMove): void {
+    const cap = this.board[m.ty][m.tx] || null;
+    this.hist.push({ ...m, cap, prevCheck: this.check });
+    this.board[m.ty][m.tx] = this.board[m.fy][m.fx];
+    this.board[m.fy][m.fx] = null;
+    this.last = { fx: m.fx, fy: m.fy, tx: m.tx, ty: m.ty };
+    const pn = PIECE_NAME[typeOf(m.piece)!][colorOf(m.piece) === 'r' ? 1 : 0];
+    const capStr = m.cap ? '吃' + PIECE_NAME[typeOf(m.cap)!][colorOf(m.cap) === 'r' ? 1 : 0] : '进';
+    this.log.push(`${this.hist.length}. ${colorOf(m.piece) === 'r' ? '红' : '黑'} ${pn} ${capStr} (${m.fx},${m.fy})→(${m.tx},${m.ty})`);
+  }
+
+  private afterMove(m: XqMove): void {
+    if (m.cap) this.audio.capture(); else this.audio.move();
+    this.turn = this.turn === 'r' ? 'b' : 'r';
+    this.sel = null;
+    this.moves = [];
+    this.godMove = null;
+    this.check = inCheck(this.board, this.turn);
+    if (this.check) this.audio.check();
+    const opp = legalMoves(this.board, this.turn);
+    if (opp.length === 0) { this.over = true; this.winner = this.turn === 'r' ? 'b' : 'r'; this.onEnd(); }
+    else if (this.hist.length >= 160) { this.over = true; this.winner = 'draw'; this.onEnd(); }
+    this.renderLog();
+    this.updatePanel();
+    this.redraw();
+    if (this.over) return;
+    if (this.mode === 'aivai' && !this._haltAivai) { this._aiTimer = setTimeout(() => this.aiMove(), 10); return; }
+    if (this.mode === 'ai' && this.turn !== this.human) this.aiMove();
+    else this.refreshGod();
+  }
+
+  private async aiMove(): Promise<void> {
+    this.thinking = true;
+    this.showThink(true);
+    toggleProgress(document.getElementById('x-think-progress'), true);
+    const cfg = LEVEL_CONFIG[this.level];
+    const who = this.turn === 'r' ? '红' : '黑';
+    this.setGlobalStatus(`象棋 AI 深算中…(${cfg.name} depth${cfg.depth})`);
+    this.redraw();
+    setStats(document.getElementById('x-think-stats'), `⏳ <b>${who}·${cfg.name}</b> 运算中… depth${cfg.depth}+Q${cfg.qd} · 正在展开 ${this.level === 4 ? '全宽度+杀棋延伸' : 'Alpha-Beta'}…`);
+    const delay = this.level === 4 ? 60 : 20;
+    this._aiTimer = setTimeout(async () => {
+      const aiSide = this.turn;
+      const res = await this.ai.searchXq(this.board.map((r) => [...r]), aiSide, this.level, this.mode, this.hist.length);
+      const m = res.move;
+      this.thinkMoves = (res.scores || []).map((s, i) => ({ ...s, rank: i + 1 }));
+      this.thinking = false;
+      this.showThink(false);
+      toggleProgress(document.getElementById('x-think-progress'), false);
+      this.setGlobalStatus('AI 就绪');
+      if (!m) { this.over = true; this.winner = this.turn === 'r' ? 'b' : 'r'; this.onEnd(); this.updatePanel(); this.redraw(); return; }
+
+      const ev = res.eval >= MATE - 1000 ? '绝杀' : res.eval <= -MATE + 1000 ? '被杀' : (res.eval > 0 ? `+${res.eval}` : `${res.eval}`);
+      const pvStr = (res.pv || []).slice(0, 4).map(moveStr).join(' → ') || moveStr(m);
+      const topStr = (res.scores || []).slice(0, 5).map((s, i) => `#${i + 1}${moveStr(s)}:${s.v >= MATE - 1000 ? '杀' : Math.round(s.v)}`).join('<br>');
+      const boost = res.boosted ? ` <span style="color:#ff6b6b">·劣势加深→depth${res.depth}</span>` : '';
+      setStats(document.getElementById('x-think-stats'), `✅ <b>${who}·${cfg.name}</b> depth${res.depth}+Q${res.qd ?? cfg.qd} · 节点 <b>${res.nodes.toLocaleString()}</b> · ${res.ms}ms · 评估 <b>${ev}</b>${boost}<br>主变：${pvStr}`);
+      appendLog(document.getElementById('x-think-log'), `🧠 depth<b>${res.depth}+Q${res.qd ?? cfg.qd}</b> · 节点${res.nodes.toLocaleString()} · ${res.ms}ms · 评估${ev} · 选<b>${moveStr(m)}</b>${res.boosted ? ' · <span style="color:#ff6b6b">劣势加深</span>' : ''}<br><span class="cand">主变 ${pvStr}</span><br><span class="cand">${topStr}</span>`);
+
+      this.pushMove(m);
+      this.afterMove(m);
+    }, delay);
+  }
+
+  stopAivai(): void {
+    this._haltAivai = true;
+    if (this._aiTimer) { clearTimeout(this._aiTimer); this._aiTimer = null; }
+    if (!this.over) appendLog(document.getElementById('x-think-log'), '⏹ <b>已停止AI互搏</b>，可悔棋/新开一局');
+    this.updatePanel();
+    this.setGlobalStatus('AI 就绪');
+  }
+
+  private stopAivaiSilent(): void {
+    this._haltAivai = true;
+    if (this._aiTimer) { clearTimeout(this._aiTimer); this._aiTimer = null; }
+  }
+
+  undo(): void {
+    if (this.thinking || !this.hist.length) return;
+    this.thinkMoves = [];
+    this.godMove = null;
+    if (this.mode === 'aivai') this.stopAivaiSilent();
+    const n = this.mode === 'ai' ? (this.turn !== this.human ? 1 : 2) : 1;
+    for (let i = 0; i < n && this.hist.length; i++) {
+      const h = this.hist.pop()!;
+      this.board[h.fy][h.fx] = h.piece || this.board[h.ty][h.tx];
+      this.board[h.ty][h.tx] = h.cap;
+      this.log.pop();
+    }
+    const l = this.hist[this.hist.length - 1];
+    this.last = l ? { fx: l.fx, fy: l.fy, tx: l.tx, ty: l.ty } : null;
+    this.turn = this.hist.length % 2 === 0 ? 'r' : 'b';
+    this.sel = null;
+    this.moves = [];
+    this.over = false;
+    this.winner = null;
+    this.check = inCheck(this.board, this.turn);
+    this.hideResult();
+    this.renderLog();
+    this.updatePanel();
+    this.redraw();
+    this.audio.undo();
+    if (this.mode === 'ai' && !this.over && this.turn !== this.human) this.aiMove();
+    else this.refreshGod();
+  }
+
+  async hint(): Promise<void> {
+    if (this.over || this.thinking || this.godThinking) return;
+    setStats(document.getElementById('x-think-stats'), '👉 恶魔正在附体算招… depth4+Q3全开，请稍候');
+    setTimeout(async () => {
+      const res = await this.ai.hintXq(this.board.map((r) => [...r]), this.turn, this.mode, this.hist.length);
+      const m = res.move;
+      if (m) {
+        this.thinkMoves = (res.scores || []).map((s, i) => ({ ...s, rank: i + 1 }));
+        const ev = res.eval >= MATE - 1000 ? '绝杀' : res.eval;
+        appendLog(document.getElementById('x-think-log'), `💡 <b>恶魔支招</b> depth${res.depth}+Q${res.qd} · 推荐<b>${moveStr(m)}</b> · 评估${ev} · 节点${res.nodes.toLocaleString()}`);
+        setStats(document.getElementById('x-think-stats'), `💡 恶魔支招 depth${res.depth} · 推荐 ${moveStr(m)} · 节点${res.nodes.toLocaleString()} · ${res.ms}ms`);
+        this.sel = { x: m.fx, y: m.fy };
+        this.moves = legalMoves(this.board, this.turn).filter((z) => z.fx === m.fx && z.fy === m.fy);
+        this.redraw();
+        this.audio.hint();
+      }
+    }, 30);
+  }
+
+  toggleGod(): void {
+    this.god = !this.god;
+    const btn = document.getElementById('x-god');
+    if (btn) { btn.classList.toggle('on', this.god); btn.textContent = this.god ? '🛌 送神离开' : '🙏 请神上身'; }
+    if (this.god) {
+      appendLog(document.getElementById('x-think-log'), '🙏 <b>恶魔附体！请神上身成功</b>，每手都将用 depth4 给你指 👇 最佳走法');
+      this.startGodTimer();
+      this.refreshGod();
+    } else {
+      this.godMove = null;
+      this.godThinking = false;
+      if (this._godTimer) { clearInterval(this._godTimer); this._godTimer = null; }
+      appendLog(document.getElementById('x-think-log'), '🛌 已送神，神指消失');
+      this.redraw();
+    }
+  }
+
+  private startGodTimer(): void {
+    if (this._godTimer) return;
+    this._godTimer = setInterval(() => { if (this.god && this.godMove && !this.over) this.redraw(); }, 600);
+  }
+
+  private refreshGod(): void {
+    if (!this.god || this.over || this.thinking || this.godThinking) return;
+    if (this.mode === 'aivai' && !this._haltAivai) return;
+    this.godThinking = true;
+    this.updatePanel();
+    setTimeout(async () => {
+      try {
+        const res = await this.ai.hintXq(this.board.map((r) => [...r]), this.turn, this.mode, this.hist.length);
+        this.godMove = res.move;
+        if (res.scores) this.thinkMoves = res.scores.map((s, i) => ({ ...s, rank: i + 1 }));
+        this.redraw();
+      } finally { this.godThinking = false; this.updatePanel(); }
+    }, 40);
+  }
+
+  private onEnd(): void {
+    const el = document.getElementById('xiangqi-result');
+    el?.classList.remove('hidden');
+    if (this._godTimer) { clearInterval(this._godTimer); this._godTimer = null; }
+    const w = this.winner;
+    let t = '';
+    if (w === 'draw') { t = '🤝 和棋！双方激战 80 回合未分胜负。'; }
+    else if (this.mode === 'aivai') { t = `🤖 互搏结束！${w === 'r' ? '红方AI' : '黑方AI'} 将军绝杀获胜！`; this.audio.win(); }
+    else if (this.mode === 'ai' && w === this.human) { t = `🎉 绝杀！你执${w === 'r' ? '红' : '黑'}战胜了 AI！`; this.audio.win(); Stats.add(true); }
+    else if (this.mode === 'ai') { t = `🤖 AI（${w === 'r' ? '红' : '黑'}）获胜，将军绝杀！`; this.audio.lose(); Stats.add(false); }
+    else { t = `🏆 ${w === 'r' ? '红方' : '黑方'} 获胜！`; this.audio.win(); Stats.add(true); }
+    if (el) el.textContent = t;
+  }
+
+  private updatePanel(): void {
+    const t = document.getElementById('xiangqi-turn');
+    if (t) t.textContent = this.over ? '对局结束' : `轮到 ${this.turn === 'r' ? '红方' : '黑方'} 走棋${this.check ? ' · 将军！' : ''}${this.mode === 'aivai' ? ' · AI互搏中' : ''}${this.god ? ' · 神附体👇' : ''}`;
+    const stepsEl = document.getElementById('x-steps');
+    if (stepsEl) stepsEl.textContent = String(Math.floor(this.hist.length / 2) + 1);
+    const modeTag = this.mode === 'aivai' ? '🤖互搏' : (this.thinking ? 'AI 思考中…' : (this.godThinking ? '👇神算中…' : '行棋中'));
+    const statusEl = document.getElementById('x-status');
+    if (statusEl) statusEl.textContent = this.over ? ('胜者：' + (this.winner === 'draw' ? '和棋' : (this.winner === 'r' ? '红' : '黑'))) : ((this.turn === 'r' ? '红' : '黑') + `方${modeTag}` + (this.check ? '（将军）' : ''));
+    const cr: string[] = [], cb: string[] = [];
+    this.hist.forEach((h) => { if (h.cap) { (colorOf(h.cap) === 'r' ? cb : cr).push(PIECE_NAME[typeOf(h.cap)!][colorOf(h.cap) === 'r' ? 1 : 0]); } });
+    const capR = document.getElementById('x-cap-r');
+    if (capR) capR.textContent = cr.join(' ') || '—';
+    const capB = document.getElementById('x-cap-b');
+    if (capB) capB.textContent = cb.join(' ') || '—';
+  }
+
+  private renderLog(): void {
+    const el = document.getElementById('x-log');
+    if (!el) return;
+    el.innerHTML = this.log.length ? this.log.slice(-30).map((s) => `<div>${s}</div>`).join('') : '<div class="empty">暂无棋谱，点击棋子开始</div>';
+    el.scrollTop = el.scrollHeight;
+  }
+
+  private showThink(on: boolean): void { document.getElementById('xiangqi-thinking')?.classList.toggle('hidden', !on); }
+  private hideResult(): void { document.getElementById('xiangqi-result')?.classList.add('hidden'); }
+  private setGlobalStatus(t: string): void { (window as any).setGlobalStatus?.(t); }
+
+  private wireEvents(): void {
+    // Pointer events for mobile-first input: unifies mouse & touch, guards
+    // against accidental moves while scrolling, and removes tap delay.
+    this.canvas.addEventListener('pointerdown', (e) => {
+      this._down = { x: e.clientX, y: e.clientY };
+    });
+    this.canvas.addEventListener('pointerup', (e) => {
+      const isTap = this._down && Math.hypot(e.clientX - this._down.x, e.clientY - this._down.y) < 12;
+      this._down = null;
+      if (!isTap) return;
+      if (this.thinking || this.over) return;
+      if (this.mode === 'aivai') return;
+      if (this.mode === 'ai' && this.turn !== this.human) return;
+      const c = pxToCellXq(this.canvas, e, this.flip);
+      if (!c) return;
+      const { x, y } = c;
+      const p = this.board[y][x];
+      if (this.sel) {
+        const m = this.moves.find((mv) => mv.tx === x && mv.ty === y);
+        if (m) { this.applyHuman(m.fx, m.fy, m.tx, m.ty); return; }
+      }
+      if (p && colorOf(p) === this.turn) {
+        this.sel = { x, y };
+        this.moves = legalMoves(this.board, this.turn).filter((m) => m.fx === x && m.fy === y);
+        this.audio.select();
+      } else { this.sel = null; this.moves = []; }
+      this.redraw();
+    });
+    this.canvas.addEventListener('pointercancel', () => { this._down = null; });
+
+    this.seg('x-mode', (v) => { this.mode = v as GameMode; if (v === 'aivai') appendLog(document.getElementById('x-think-log'), '🤖 <b>AI互搏观战开始</b>，红黑双方都用当前难度恶战到底'); this.newGame(); });
+    this.seg('x-color', (v) => { this.human = v as XqSide; this.newGame(); });
+    this.seg('x-level', (v) => {
+      this.level = +v as Difficulty;
+      applyDemonTheme('x', this.level, this.audio);
+      const cfg = LEVEL_CONFIG[this.level];
+      setStats(document.getElementById('x-think-stats'), `难度切换 → <b>${cfg.name}</b> · depth${cfg.depth}+Q${cfg.qd}`);
+      appendLog(document.getElementById('x-think-log'), `⚙️ 难度切换 → <b>${cfg.name}</b> depth${cfg.depth}+Q${cfg.qd}${this.level === 4 ? ' · <span style="color:#ff6b6b">恶魔全开，不求你能赢</span>' : ''}`);
+      this.updatePanel();
+    });
+
+    const xv = document.getElementById('x-viz') as HTMLInputElement | null;
+    xv?.addEventListener('change', (e) => { this.viz = (e.target as HTMLInputElement).checked; this.redraw(); });
+
+    document.getElementById('x-new')?.addEventListener('click', () => this.newGame());
+    document.getElementById('x-undo')?.addEventListener('click', () => this.undo());
+    document.getElementById('x-hint')?.addEventListener('click', () => this.hint());
+    document.getElementById('x-god')?.addEventListener('click', () => this.toggleGod());
+    document.getElementById('x-stop')?.addEventListener('click', () => this.stopAivai());
+    document.getElementById('x-flip')?.addEventListener('click', () => { this.flip = !this.flip; this.redraw(); });
+    document.getElementById('x-sound')?.addEventListener('click', (e) => {
+      this.audio.enabled = !this.audio.enabled;
+      const btn = e.target as HTMLButtonElement;
+      btn.textContent = this.audio.enabled ? '🔊 音效开' : '🔇 音效关';
+      btn.classList.toggle('on', this.audio.enabled);
+      // Keep demon BGM in sync with the sound toggle.
+      if (this.level === 4) { if (this.audio.enabled) this.audio.startBGM(); else this.audio.stopBGM(); }
+    });
+  }
+
+  private seg(id: string, fn: (v: string) => void): void {
+    const el = document.getElementById(id);
+    el?.querySelectorAll('button').forEach((b) => b.addEventListener('click', () => {
+      el.querySelectorAll('button').forEach((x) => x.classList.remove('on'));
+      b.classList.add('on');
+      fn(b.dataset.v!);
+    }));
+  }
+}

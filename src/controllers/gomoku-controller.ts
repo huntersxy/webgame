@@ -1,0 +1,379 @@
+/* ────────────────────────────────────────────────────────────
+ *  controllers/gomoku-controller.ts — Gomoku game controller
+ *  Coordinates board state, AI bridge, rendering, and UI panel.
+ * ──────────────────────────────────────────────────────────── */
+
+import type { GomokuBoard, GomokuPlayer, Difficulty, GameMode, Pt, GomokuMove, SearchResult } from '../types';
+import { createBoard, cloneBoard, checkWin, isBoardFull, other, inBounds } from '../gomoku/rules';
+import { evaluateBoard } from '../gomoku/eval';
+import { LEVEL_CONFIG, resetGomokuWarmDepth } from '../gomoku/search';
+import { AIBridge } from '../ai/ai-bridge';
+import { AudioEngine } from '../ui/audio';
+import { Stats } from '../ui/stats';
+import { renderGomoku, pxToCellGomoku, gomokuScorePercent, type GomokuRenderState } from '../ui/gomoku-renderer';
+import { appendLog, setStats, toggleProgress, fmtEval } from '../ui/format';
+import { applyDemonTheme } from '../ui/demon';
+
+interface HistoryEntry { x: number; y: number; c: GomokuPlayer; }
+
+export class GomokuController {
+  private canvas: HTMLCanvasElement;
+  private ai: AIBridge;
+  private audio: AudioEngine;
+
+  private board: GomokuBoard = createBoard();
+  private history: HistoryEntry[] = [];
+  private turn: GomokuPlayer = 1;
+  private over = false;
+  private winLine: Pt[] | null = null;
+  private mode: GameMode = 'ai';
+  private human: GomokuPlayer = 1;
+  private level: Difficulty = 2;
+  private hover: Pt | null = null;
+  private hintPos: Pt | null = null;
+  private thinking = false;
+  private viz = true;
+  private thinkCandidates: Array<GomokuMove & { v: number; rank?: number }> = [];
+  private god = false;
+  private godMove: GomokuMove | null = null;
+  private godThinking = false;
+  private _aiTimer: ReturnType<typeof setTimeout> | null = null;
+  private _godTimer: ReturnType<typeof setInterval> | null = null;
+  private _haltAivai = false;
+  private _animFrame: number | null = null;
+  private _down: { x: number; y: number } | null = null;
+
+  constructor(canvas: HTMLCanvasElement, ai: AIBridge, audio: AudioEngine) {
+    this.canvas = canvas;
+    this.ai = ai;
+    this.audio = audio;
+    this.wireEvents();
+    this.newGame();
+    this.startAnimLoop();
+  }
+
+  private get state(): GomokuRenderState {
+    return {
+      board: this.board,
+      history: this.history,
+      turn: this.turn,
+      over: this.over,
+      winLine: this.winLine,
+      hover: this.hover,
+      hint: this.hintPos,
+      viz: this.viz,
+      thinkCandidates: this.thinkCandidates,
+      god: this.god,
+      godMove: this.godMove,
+      godThinking: this.godThinking,
+      human: this.human,
+    };
+  }
+
+  private startAnimLoop(): void {
+    const loop = () => {
+      // Only redraw if there's animated content (god mode, candidates, hint)
+      if (this.god || this.hintPos || (this.viz && this.thinkCandidates.length > 0 && !this.over)) {
+        this.redraw();
+      }
+      this._animFrame = requestAnimationFrame(loop);
+    };
+    this._animFrame = requestAnimationFrame(loop);
+  }
+
+  redraw(): void { renderGomoku(this.canvas, this.state); }
+
+  newGame(): void {
+    resetGomokuWarmDepth(); // new game → drop any warm-start adaptive depth
+    if (this._aiTimer) { clearTimeout(this._aiTimer); this._aiTimer = null; }
+    if (this._godTimer) { clearInterval(this._godTimer); this._godTimer = null; }
+    this.board = createBoard();
+    this.history = [];
+    this.turn = 1;
+    this.over = false;
+    this.winLine = null;
+    this.hintPos = null;
+    this.thinking = false;
+    this.thinkCandidates = [];
+    this.godMove = null;
+    this.godThinking = false;
+    this._haltAivai = false;
+    this.hideResult();
+    this.updatePanel();
+    this.redraw();
+    const cfg = LEVEL_CONFIG[this.level];
+    const modeName = this.mode === 'aivai' ? '🤖AI互搏观战' : (this.mode === 'pvp' ? '双人对战' : '人机对战');
+    setStats(document.getElementById('g-think-stats'), `新对局 · ${modeName} · 难度 <b>${cfg.name}</b> · depth${cfg.depth} / 宽度${cfg.limit} · 等待行棋…`);
+    if (this.god) this.startGodTimer();
+    if (this.mode === 'ai' && this.human === 2) this.aiMove();
+    else if (this.mode === 'aivai') this.aiMove();
+    else this.refreshGod();
+  }
+
+  private place(x: number, y: number): boolean {
+    if (this.over || this.thinking) return false;
+    if (this.mode === 'aivai') return false;
+    if (!inBounds(x, y) || this.board[y][x] !== 0) return false;
+    this.board[y][x] = this.turn;
+    this.history.push({ x, y, c: this.turn });
+    this.hintPos = null;
+    this.godMove = null;
+    this.audio.move();
+    const w = checkWin(this.board, x, y);
+    if (w) { this.over = true; this.winLine = w; this.onGameEnd(this.turn); }
+    else if (isBoardFull(this.board)) { this.over = true; this.onGameEnd(0); }
+    else { this.turn = other(this.turn); }
+    this.updatePanel();
+    this.redraw();
+    if (!this.over && this.mode === 'ai' && this.turn !== this.human) this.aiMove();
+    else this.refreshGod();
+    return true;
+  }
+
+  private async aiMove(): Promise<void> {
+    this.thinking = true;
+    this.showThinking(true);
+    toggleProgress(document.getElementById('g-think-progress'), true);
+    const cfg = LEVEL_CONFIG[this.level];
+    this.setGlobalStatus(`AI 思考中…(${cfg.name} depth${cfg.depth})`);
+    this.redraw();
+    setStats(document.getElementById('g-think-stats'), `⏳ <b>${cfg.name}</b> 运算中… depth${cfg.depth} / 宽度${cfg.limit} · 正在展开候选…`);
+    const delay = this.level === 4 ? 60 : (this.level === 3 ? 40 : 20);
+    this._aiTimer = setTimeout(async () => {
+      const aiPlayer = this.turn;
+      const res = await this.ai.searchGomoku(cloneBoard(this.board), aiPlayer, this.level, this.mode, this.history.length);
+      const m = res.move;
+      this.thinkCandidates = (res.scores || []).map((s, i) => ({ ...s, rank: i + 1 }));
+      this.thinking = false;
+      this.showThinking(false);
+      toggleProgress(document.getElementById('g-think-progress'), false);
+
+      const who = aiPlayer === 1 ? '黑' : '白';
+      if (res.instant) {
+        setStats(document.getElementById('g-think-stats'), `⚡ <b>${who}·${cfg.name}</b> 秒断胜负手 (${m?.x},${m?.y}) · 直接成五/堵五`);
+        appendLog(document.getElementById('g-think-log'), `⚡ <b>即时胜负手</b> [${who}] → (${m?.x},${m?.y}) · depth${res.depth}免搜索`);
+      } else {
+        const top = (res.scores || []).slice(0, 5).map((s, i) => `#${i + 1}(${s.x},${s.y}):${s.v > 99999 ? '胜' : s.v}`).join(' ');
+        const ev = fmtEval(res.eval, 100000);
+        const boost = res.boosted ? ` <span style="color:#ff6b6b">·劣势加深→depth${res.depth}</span>` : '';
+        setStats(document.getElementById('g-think-stats'), `✅ <b>${who}·${cfg.name}</b> depth${res.depth} 宽${cfg.limit} · 节点 <b>${res.nodes.toLocaleString()}</b> · ${res.ms}ms · 评估 <b>${ev}</b> · 选 (${m?.x},${m?.y})${boost}`);
+        appendLog(document.getElementById('g-think-log'), `🧠 depth<b>${res.depth}</b> 宽${cfg.limit} · 节点${res.nodes.toLocaleString()} · ${res.ms}ms · 评估${ev} · 选<b>(${m?.x},${m?.y})</b>${res.boosted ? ' · <span style="color:#ff6b6b">劣势加深</span>' : ''}<br><span class="cand">${top}</span>`);
+      }
+
+      if (m) {
+        this.board[m.y][m.x] = aiPlayer;
+        this.history.push({ x: m.x, y: m.y, c: aiPlayer });
+        this.hintPos = null;
+        this.godMove = null;
+        this.audio.move();
+        const w = checkWin(this.board, m.x, m.y);
+        if (w) { this.over = true; this.winLine = w; this.onGameEnd(aiPlayer); }
+        else if (isBoardFull(this.board)) { this.over = true; this.onGameEnd(0); }
+        else { this.turn = other(aiPlayer); }
+      }
+      this.updatePanel();
+      this.redraw();
+      this.setGlobalStatus('AI 就绪');
+      if (!this.over && this.mode === 'aivai' && !this._haltAivai) {
+        this._aiTimer = setTimeout(() => this.aiMove(), 10);
+      } else {
+        this.refreshGod();
+      }
+    }, delay);
+  }
+
+  stopAivai(): void {
+    this._haltAivai = true;
+    if (this._aiTimer) { clearTimeout(this._aiTimer); this._aiTimer = null; }
+    if (!this.over) appendLog(document.getElementById('g-think-log'), '⏹ <b>已停止AI互搏</b>，可悔棋/新开一局');
+    this.updatePanel();
+    this.setGlobalStatus('AI 就绪');
+  }
+
+  private stopAivaiSilent(): void {
+    this._haltAivai = true;
+    if (this._aiTimer) { clearTimeout(this._aiTimer); this._aiTimer = null; }
+  }
+
+  undo(): void {
+    if (this.thinking) return;
+    if (!this.history.length) return;
+    if (this.mode === 'ai') {
+      const target = this.human;
+      do {
+        const h = this.history.pop();
+        if (!h) break;
+        this.board[h.y][h.x] = 0;
+        this.turn = this.history.length % 2 === 0 ? 1 : 2;
+        if (this.history.length === 0) { this.turn = 1; break; }
+      } while (this.turn !== target && this.history.length > 0);
+    } else {
+      const h = this.history.pop()!;
+      this.board[h.y][h.x] = 0;
+      this.turn = h.c;
+    }
+    this.over = false;
+    this.winLine = null;
+    this.thinkCandidates = [];
+    this.godMove = null;
+    this.hintPos = null;
+    this.hideResult();
+    this.updatePanel();
+    this.redraw();
+    this.audio.undo();
+    if (this.mode === 'aivai') { this.stopAivaiSilent(); this.refreshGod(); return; }
+    if (this.mode === 'ai' && !this.over && this.turn !== this.human) this.aiMove();
+    else this.refreshGod();
+  }
+
+  async showHint(): Promise<void> {
+    if (this.over || this.thinking || this.godThinking) return;
+    setStats(document.getElementById('g-think-stats'), '👉 恶魔正在附体算招… depth4全开，请稍候');
+    setTimeout(async () => {
+      const res = await this.ai.hintGomoku(cloneBoard(this.board), this.turn, this.mode, this.history.length);
+      const m = res.move;
+      if (m) {
+        this.thinkCandidates = (res.scores || []).map((s, i) => ({ ...s, rank: i + 1 }));
+        appendLog(document.getElementById('g-think-log'), `💡 <b>恶魔支招</b> depth${res.depth}宽${res.eval} · 推荐<b>(${m.x},${m.y})</b> · 评估${res.eval} · 节点${res.nodes.toLocaleString()}`);
+        setStats(document.getElementById('g-think-stats'), `💡 恶魔支招 depth${res.depth} · 推荐 (${m.x},${m.y}) · 节点${res.nodes.toLocaleString()} · ${res.ms}ms`);
+        this.hintPos = { x: m.x, y: m.y };
+        this.redraw();
+        this.audio.hint();
+        setTimeout(() => { this.hintPos = null; this.redraw(); }, 4000);
+      }
+    }, 30);
+  }
+
+  toggleGod(): void {
+    this.god = !this.god;
+    const btn = document.getElementById('g-god');
+    if (btn) { btn.classList.toggle('on', this.god); btn.textContent = this.god ? '🛌 送神离开' : '🙏 请神上身'; }
+    if (this.god) {
+      appendLog(document.getElementById('g-think-log'), '🙏 <b>恶魔附体！请神上身成功</b>，每手都将用 depth4 给你指 👇 最佳点');
+      this.startGodTimer();
+      this.refreshGod();
+    } else {
+      this.godMove = null;
+      this.godThinking = false;
+      if (this._godTimer) { clearInterval(this._godTimer); this._godTimer = null; }
+      appendLog(document.getElementById('g-think-log'), '🛌 已送神，神指消失');
+      this.redraw();
+    }
+  }
+
+  private startGodTimer(): void {
+    if (this._godTimer) return;
+    this._godTimer = setInterval(() => { if (this.god && this.godMove && !this.over) this.redraw(); }, 550);
+  }
+
+  private refreshGod(): void {
+    if (!this.god || this.over || this.thinking || this.godThinking) return;
+    if (this.mode === 'aivai' && !this._haltAivai) return;
+    this.godThinking = true;
+    setTimeout(async () => {
+      try {
+        const res = await this.ai.hintGomoku(cloneBoard(this.board), this.turn, this.mode, this.history.length);
+        this.godMove = res.move;
+        this.redraw();
+      } finally { this.godThinking = false; }
+    }, 40);
+  }
+
+  private onGameEnd(winner: GomokuPlayer | 0): void {
+    const banner = document.getElementById('gomoku-result');
+    banner?.classList.remove('hidden');
+    if (this._godTimer) { clearInterval(this._godTimer); this._godTimer = null; }
+    if (winner === 0) { if (banner) banner.textContent = '🤝 和棋！棋盘已满，旗鼓相当。'; this.audio.win(); Stats.add(false); }
+    else if (this.mode === 'aivai') { if (banner) banner.textContent = `🤖 互搏结束！${winner === 1 ? '黑方AI' : '白方AI'} 五连获胜！`; this.audio.win(); }
+    else if (this.mode === 'ai' && winner === this.human) { if (banner) banner.textContent = '🎉 恭喜！你击败了 AI！'; this.audio.win(); Stats.add(true); }
+    else if (this.mode === 'ai') { if (banner) banner.textContent = '🤖 AI 获胜，再接再厉！点「🔄 新开一局」再来。'; this.audio.lose(); Stats.add(false); }
+    else { if (banner) banner.textContent = `🏆 ${winner === 1 ? '黑方' : '白方'} 五连获胜！`; this.audio.win(); Stats.add(true); }
+  }
+
+  // ── UI helpers ──
+  private updatePanel(): void {
+    const modeTag = this.mode === 'aivai' ? '🤖互搏' : (this.thinking ? 'AI 思考中…' : (this.godThinking ? '👇神算中…' : '对弈中'));
+    const turnEl = document.getElementById('gomoku-turn');
+    if (turnEl) turnEl.textContent = this.over ? '对局结束' : `轮到 ${this.turn === 1 ? '黑方' : '白方'} 落子${this.mode === 'aivai' ? ' · AI互搏中' : ''}${this.god ? ' · 神附体👇' : ''}`;
+    const stepsEl = document.getElementById('g-steps');
+    if (stepsEl) stepsEl.textContent = String(this.history.length);
+    const statusEl = document.getElementById('g-status');
+    if (statusEl) statusEl.textContent = this.over ? '已结束' : modeTag;
+    const pct = gomokuScorePercent(this.board, this.human);
+    const barEl = document.getElementById('g-score-bar');
+    if (barEl) barEl.style.width = pct + '%';
+    const v = evaluateBoard(this.board, this.human);
+    const scoreText = document.getElementById('g-score-text');
+    if (scoreText) scoreText.textContent = v > 1500 ? '我方大优' : v > 400 ? '我方稍优' : v < -1500 ? 'AI 大优' : v < -400 ? 'AI 稍优' : '均势';
+  }
+
+  private showThinking(on: boolean): void { document.getElementById('gomoku-thinking')?.classList.toggle('hidden', !on); }
+  private hideResult(): void { document.getElementById('gomoku-result')?.classList.add('hidden'); }
+  private setGlobalStatus(t: string): void { (window as any).setGlobalStatus?.(t); }
+
+  // ── Event wiring ──
+  private wireEvents(): void {
+    // Pointer events handle both mouse & touch uniformly (mobile-first).
+    // hover is only applied on fine pointers; touch clears it to avoid stuck highlights.
+    this.canvas.addEventListener('pointerdown', (e) => {
+      this._down = { x: e.clientX, y: e.clientY };
+    });
+    this.canvas.addEventListener('pointermove', (e) => {
+      if (e.pointerType !== 'mouse') return;
+      const c = pxToCellGomoku(this.canvas, e);
+      if (JSON.stringify(c) !== JSON.stringify(this.hover)) { this.hover = c; this.redraw(); }
+    });
+    this.canvas.addEventListener('pointerleave', () => { this.hover = null; this.redraw(); });
+    this.canvas.addEventListener('pointerup', (e) => {
+      // Only treat as a move if it's a clean tap (little drag) — avoids
+      // accidental placement while the user scrolls/pans on mobile.
+      const isTap = this._down && Math.hypot(e.clientX - this._down.x, e.clientY - this._down.y) < 12;
+      this._down = null;
+      const c = pxToCellGomoku(this.canvas, e);
+      this.hover = null;
+      if (!isTap || !c) { this.redraw(); return; }
+      if (this.mode === 'aivai') return;
+      if (this.mode === 'ai' && this.turn !== this.human) return;
+      this.place(c.x, c.y);
+    });
+    this.canvas.addEventListener('pointercancel', () => { this._down = null; this.hover = null; this.redraw(); });
+
+    // Segmented controls
+    this.segWire('g-mode', (v) => { this.mode = v as GameMode; if (v === 'aivai') appendLog(document.getElementById('g-think-log'), '🤖 <b>AI互搏观战开始</b>，双方都用当前难度恶战到底'); this.newGame(); });
+    this.segWire('g-color', (v) => { this.human = +v as GomokuPlayer; this.newGame(); });
+    this.segWire('g-level', (v) => {
+      this.level = +v as Difficulty;
+      applyDemonTheme('g', this.level, this.audio);
+      const cfg = LEVEL_CONFIG[this.level];
+      setStats(document.getElementById('g-think-stats'), `难度切换 → <b>${cfg.name}</b> · depth${cfg.depth} / 宽度${cfg.limit}`);
+      appendLog(document.getElementById('g-think-log'), `⚙️ 难度切换 → <b>${cfg.name}</b> depth${cfg.depth} 宽${cfg.limit}${this.level === 4 ? ' · <span style="color:#ff6b6b">恶魔全开，不留情面</span>' : ''}`);
+      this.updatePanel();
+    });
+
+    const gv = document.getElementById('g-viz') as HTMLInputElement | null;
+    gv?.addEventListener('change', (e) => { this.viz = (e.target as HTMLInputElement).checked; this.redraw(); });
+
+    document.getElementById('g-new')?.addEventListener('click', () => this.newGame());
+    document.getElementById('g-undo')?.addEventListener('click', () => this.undo());
+    document.getElementById('g-hint')?.addEventListener('click', () => this.showHint());
+    document.getElementById('g-god')?.addEventListener('click', () => this.toggleGod());
+    document.getElementById('g-stop')?.addEventListener('click', () => this.stopAivai());
+    document.getElementById('g-sound')?.addEventListener('click', (e) => {
+      this.audio.enabled = !this.audio.enabled;
+      const btn = e.target as HTMLButtonElement;
+      btn.textContent = this.audio.enabled ? '🔊 音效开' : '🔇 音效关';
+      btn.classList.toggle('on', this.audio.enabled);
+      // Keep demon BGM in sync with the sound toggle.
+      if (this.level === 4) { if (this.audio.enabled) this.audio.startBGM(); else this.audio.stopBGM(); }
+    });
+  }
+
+  private segWire(id: string, fn: (v: string) => void): void {
+    const el = document.getElementById(id);
+    el?.querySelectorAll('button').forEach((b) => b.addEventListener('click', () => {
+      el.querySelectorAll('button').forEach((x) => x.classList.remove('on'));
+      b.classList.add('on');
+      fn(b.dataset.v!);
+    }));
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "name": "chess-ai",
+  "version": "2.0.0",
+  "description": "智棋双绝 · 五子棋 & 象棋 AI — TypeScript + Vite + Web Workers",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0",
+    "vite": "^6.0.0"
+  }
+}
