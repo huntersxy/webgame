@@ -116,6 +116,7 @@
             <p>“一局定胜负？你准备好了吗。”</p>
           </div>
         </div>
+        <button id="g-demon-memory" class="btn ghost demon-memory-btn">📋 恶魔败局档案</button>
         <div class="btn-grid">
           <button id="g-new" class="btn primary">🔄 新开一局</button>
           <button id="g-undo" class="btn ghost">↩ 悔棋</button>
@@ -246,6 +247,19 @@
     </div>
   </section>
 </main>
+
+<!-- Gomoku：恶魔败局档案弹层 -->
+<div class="modal-backdrop hidden" id="demon-memory-modal">
+  <div class="modal-card">
+    <div class="modal-head">
+      <h3>📋 恶魔败局档案</h3>
+      <button class="modal-x" id="demon-memory-close">✕</button>
+    </div>
+    <p class="modal-sub">恶魔每次输给人类都会把败局存档，并从中学到教训。<b>下次遇到完全相同的局面时，它不会重蹈覆辙。</b></p>
+    <div class="memory-stats" id="demon-memory-stats"></div>
+    <div class="memory-list" id="demon-memory-list"></div>
+  </div>
+</div>
 
 <footer>智棋双绝 · TypeScript + Vite + Web Workers · 祝棋运昌隆 ♞</footer>
 <script type="module" src="/src/main.ts"></script>

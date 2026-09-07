@@ -13,7 +13,7 @@ import { Stats } from '../ui/stats';
 import { renderGomoku, pxToCellGomoku, gomokuScorePercent, type GomokuRenderState } from '../ui/gomoku-renderer';
 import { appendLog, setStats, toggleProgress, fmtEval } from '../ui/format';
 import { applyDemonTheme } from '../ui/demon';
-import { checkLesson, detectWinningOpening, recordLoss, lessonCount } from '../gomoku/learn';
+import { checkLesson, detectWinningOpening, recordLoss, lessonCount, getLosses } from '../gomoku/learn';
 
 interface HistoryEntry { x: number; y: number; c: GomokuPlayer; }
 
@@ -395,6 +395,7 @@ export class GomokuController {
     document.getElementById('g-undo')?.addEventListener('click', () => this.undo());
     document.getElementById('g-hint')?.addEventListener('click', () => this.showHint());
     document.getElementById('g-god')?.addEventListener('click', () => this.toggleGod());
+    document.getElementById('g-demon-memory')?.addEventListener('click', () => this.openDemonMemory());
     document.getElementById('g-stop')?.addEventListener('click', () => this.stopAivai());
     document.getElementById('g-sound')?.addEventListener('click', (e) => {
       this.audio.enabled = !this.audio.enabled;
@@ -404,6 +405,44 @@ export class GomokuController {
       // Keep demon BGM in sync with the sound toggle.
       if (this.level === 4) { if (this.audio.enabled) this.audio.startBGM(); else this.audio.stopBGM(); }
     });
+  }
+
+  /** Open the demon defeat-archive panel (五子棋). */
+  private openDemonMemory(): void {
+    const modal = document.getElementById('demon-memory-modal');
+    const stats = document.getElementById('demon-memory-stats');
+    const list = document.getElementById('demon-memory-list');
+    if (!modal || !stats || !list) return;
+
+    const losses = getLosses();
+    const lessons = lessonCount();
+    stats.innerHTML = lessons > 0
+      ? `<span class="pill">📖 已学教训 <b>${lessons}</b> 条</span><span class="pill">📉 败局 <b>${losses.length}</b> 局</span>`
+      : `<span class="pill">📉 败局 <b>${losses.length}</b> 局 · 尚无教训（先输一局让恶魔复盘）</span>`;
+
+    if (losses.length === 0) {
+      list.innerHTML = `<div class="memory-empty">🤖 恶魔从未输过……直到你亲手终结它的不败神话。<br><small>赢一局「😈恶魔」难度，这里就会出现档案。</small></div>`;
+    } else {
+      const rows = losses.map((l, i) => {
+        const when = new Date(l.ts).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+        const opp = l.human === 1 ? '黑(你)' : '白(你)';
+        const opening = l.opening ? `<span class="tag-warn">⚠️ ${l.opening}</span>` : '';
+        const finalMove = l.moves[l.moves.length - 1];
+        const last = `末手 (${finalMove?.x},${finalMove?.y})`;
+        return `<div class="memory-row">
+          <div class="m-left"><b>#${losses.length - i}</b></div>
+          <div class="m-body">
+            <div>${when} · 执${opp} · ${l.moves.length} 手 ${opening}</div>
+            <small>${last} · level${l.level}</small>
+          </div>
+        </div>`;
+      }).join('');
+      list.innerHTML = rows;
+    }
+
+    modal.classList.remove('hidden');
+    document.getElementById('demon-memory-close')?.addEventListener('click', () => modal.classList.add('hidden'));
+    modal.addEventListener('click', (e) => { if (e.target === modal) modal.classList.add('hidden'); });
   }
 
   private segWire(id: string, fn: (v: string) => void): void {
