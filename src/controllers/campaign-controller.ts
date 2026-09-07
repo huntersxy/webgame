@@ -24,6 +24,7 @@ export class CampaignController {
   private level = 0;
   private aiTimer: ReturnType<typeof setTimeout> | null = null;
   private _down: { x: number; y: number } | null = null;
+  private hover: Pt | null = null;
 
   constructor(canvas: HTMLCanvasElement, audio: AudioEngine) {
     this.canvas = canvas;
@@ -43,7 +44,7 @@ export class CampaignController {
       turn: this.turn,
       over: this.over,
       winLine: this.winLine,
-      hover: null,
+      hover: this.hover,
       hint: null,
       viz: false,
       thinkCandidates: [],
@@ -66,6 +67,7 @@ export class CampaignController {
     this.turn = 1;
     this.over = false;
     this.winLine = null;
+    this.hover = null;
     this.thinking = false;
     this.hideBanner();
     setStats(document.getElementById('camp-stats'), `⚔️ 对阵 <b>${lv.emoji} ${lv.name}</b> · 你执黑先手 · depth${lv.depth}`);
@@ -220,6 +222,13 @@ export class CampaignController {
   }
 
   private wireEvents(): void {
+    // Hover ghost — matches the regular Gomoku game (mouse only).
+    this.canvas.addEventListener('pointermove', (e) => {
+      if (e.pointerType !== 'mouse') return;
+      const c = pxToCellGomoku(this.canvas, e);
+      if (JSON.stringify(c) !== JSON.stringify(this.hover)) { this.hover = c; this.redraw(); }
+    });
+    this.canvas.addEventListener('pointerleave', () => { this.hover = null; this.redraw(); });
     this.canvas.addEventListener('pointerdown', (e) => { this._down = { x: e.clientX, y: e.clientY }; });
     this.canvas.addEventListener('pointerup', (e) => {
       const isTap = this._down && Math.hypot(e.clientX - this._down.x, e.clientY - this._down.y) < 12;
