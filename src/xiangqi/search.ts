@@ -41,6 +41,10 @@ export interface XqSearchContext {
   mode: GameMode;
   curQD: number;
   boost: boolean;
+  /** Soft deadline (performance.now() ms). Search stops deepening past it. */
+  deadline?: number;
+  /** Set when a node bailed out of the remaining search due to the deadline. */
+  hitDeadline?: boolean;
 }
 
 function boardHash(board: XqBoard, turn: XqSide): number {
@@ -91,6 +95,10 @@ function quiesce(board: XqBoard, alpha: number, beta: number, turn: XqSide, qd: 
   ctx.nodes++;
   const nodeCap = ctx.level === 4 ? (ctx.mode === 'aivai' ? 2_000_000 : 900_000) : 120_000;
   if (ctx.nodes > nodeCap) return (turn === 'r' ? 1 : -1) * evaluate(board);
+  if (ctx.deadline && typeof performance !== 'undefined' && performance.now() > ctx.deadline) {
+    ctx.hitDeadline = true;
+    return (turn === 'r' ? 1 : -1) * evaluate(board);
+  }
 
   const stand = (turn === 'r' ? 1 : -1) * evaluate(board);
   if (qd <= 0) return stand;
@@ -151,6 +159,10 @@ function alphaBeta(
   const demon = ctx.level === 4;
   const nodeCap = demon && ctx.boost ? 2_500_000 : demon && ctx.mode === 'aivai' ? 1_500_000 : demon ? 900_000 : 120_000;
   if (ctx.nodes > nodeCap) return (turn === 'r' ? 1 : -1) * evaluate(board);
+  if (ctx.deadline && typeof performance !== 'undefined' && performance.now() > ctx.deadline) {
+    ctx.hitDeadline = true;
+    return (turn === 'r' ? 1 : -1) * evaluate(board);
+  }
 
   const inChk = inCheck(board, turn);
 
@@ -199,7 +211,7 @@ function alphaBeta(
     const childPV: XqMove[] = [];
     let v: number;
     const oppKing = findKing(board, next);
-    const childHash = applyHash(hash, { ...m, cap });
+    const childHash = applyHash(hash, m);
     if (!oppKing) v = MATE;
     else v = -alphaBeta(board, depth - 1, -beta, -alpha, next, ply + 1, childPV, ctx, childHash);
     undoMoveOnBoard(board, m, cap);
@@ -234,12 +246,17 @@ export function findBestMove(
   const cfg = LEVEL_CONFIG[difficulty];
   let base = cfg.depth;
 
+  // Soft time budget: demon gets a responsive ceiling while still reaching
+  // deep depths when fast. (Other levels keep their node-cap behaviour.)
+  const TIME_BUDGET_MS = difficulty === 4 ? 3800 : 0;
+
   const ctx: XqSearchContext = {
     nodes: 0,
     level: difficulty,
     mode,
     curQD: cfg.qd,
     boost: false,
+    deadline: TIME_BUDGET_MS ? (typeof performance !== 'undefined' ? performance.now() + TIME_BUDGET_MS : 0) : undefined,
   };
 
   // Demon AI-vs-AI: deeper
@@ -271,7 +288,7 @@ export function findBestMove(
       const cap = makeMove(board, m);
       let v: number;
       const pv: XqMove[] = [];
-      const childHash = applyHash(rootHash, { ...m, cap });
+      const childHash = applyHash(rootHash, m);
       const oppKing = findKing(board, next);
       if (!oppKing) v = MATE;
       else v = -alphaBeta(board, depth - 1, -Infinity, Infinity, next, 1, pv, ctx, childHash);
@@ -295,16 +312,25 @@ export function findBestMove(
   const hardCap = 8;
   const disAdv = (v: number) => v < -80;    // clearly losing for the side to move
   const adv = (v: number) => v > 120;       // clearly winning for the side to move
+  const pastDeadline = () => !!ctx.deadline && typeof performance !== 'undefined' && performance.now() > ctx.deadline;
 
   let searchDepth = base;
+  // Keeps the last COMPLETE (budget-safe) depth result so a time-out deepens
+  // fall back to a solid shallower search instead of a garbled partial one.
+  let lastGood: ReturnType<typeof runAtDepth> | null = null;
+  let lastGoodDepth = base;
+
   if (demon) {
     // Resume from the persisted warm-start depth (if still >= base).
     searchDepth = Math.max(base, Math.min(warmDepth[side] || base, hardCap));
 
     // Deepen while losing; start from the warm depth, capped at base+3.
     for (let iter = 0; iter < 3; iter++) {
+      if (pastDeadline()) break; // time's up — keep the best complete depth
+      ctx.hitDeadline = false;
       const r = runAtDepth(searchDepth);
-      if (!disAdv(r.bestV) || searchDepth >= Math.min(base + 3, hardCap)) break;
+      if (!ctx.hitDeadline) { lastGood = r; lastGoodDepth = searchDepth; }
+      if (ctx.hitDeadline || !disAdv(r.bestV) || searchDepth >= Math.min(base + 3, hardCap)) break;
       ctx.boost = true;
       searchDepth++;
     }
@@ -312,12 +338,22 @@ export function findBestMove(
 
   // Settle on a reduced depth once the position is no longer losing.
   let res: ReturnType<typeof runAtDepth>;
-  if (demon && searchDepth > base) {
+  if (demon && searchDepth > base && lastGood && !pastDeadline()) {
     const preSettleDepth = searchDepth;
+    ctx.hitDeadline = false;
     const probe = runAtDepth(searchDepth);
-    if (adv(probe.bestV)) searchDepth = Math.max(base, searchDepth - 2);
-    else if (!disAdv(probe.bestV)) searchDepth = Math.max(base, searchDepth - 1); // balanced
-    res = searchDepth === preSettleDepth ? probe : runAtDepth(searchDepth);
+    if (ctx.hitDeadline || pastDeadline()) {
+      // Ran out of time while settling — trust the last complete depth we have.
+      res = lastGood;
+      searchDepth = lastGoodDepth;
+    } else {
+      if (adv(probe.bestV)) searchDepth = Math.max(base, searchDepth - 2);
+      else if (!disAdv(probe.bestV)) searchDepth = Math.max(base, searchDepth - 1); // balanced
+      res = searchDepth === preSettleDepth ? probe : runAtDepth(searchDepth);
+    }
+  } else if (demon && pastDeadline()) {
+    res = lastGood ?? runAtDepth(searchDepth);
+    if (lastGood) searchDepth = lastGoodDepth;
   } else {
     res = runAtDepth(searchDepth);
   }
