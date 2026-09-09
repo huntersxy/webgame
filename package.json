@@ -1,7 +1,7 @@
 {
   "name": "webgame",
   "version": "3.0.0",
-  "description": "乐下 · 网页游戏平台 — 五子棋 & 中国象棋 & 军棋（增量评估 + 迭代加深 α-β + VCF 引擎）",
+  "description": "汐兮雨的小鱼池 — 五子棋 & 中国象棋 & 军棋（增量评估 + 迭代加深 α-β + VCF 引擎）",
   "license": "MIT",
   "type": "module",
   "scripts": {
