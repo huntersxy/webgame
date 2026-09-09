@@ -73,19 +73,9 @@ npm test           # 引擎自测：五子棋 16 项 + 军棋 30 项
 - **明棋**：全明对弈，支持自定义摆阵（军旗入大本营、地雷后两排、炸弹不进第一排、行营留空，实时校验）
 - **揭棋（暗棋）**：双方棋子对对方暗置，自己始终可见己方；攻击对方暗子时守方翻明，攻方不翻明——吃子后继续潜伏，攻方阵亡则守方保持明牌
 
-## 📦 部署（GitHub Actions → FTP）
+## 📦 部署
 
-推送 `master` 自动触发：**引擎自测 → 类型检查 + 构建 → FTP 上传 `dist/`**，也可在 [Actions](https://github.com/huntersxy/webgame/actions) 页面手动触发（`workflow_dispatch`）。
-
-工作流复用 [xqecz](https://github.com/huntersxy/xqecz) 的部署方案（[SamKirkland/FTP-Deploy-Action](https://github.com/SamKirkland/FTP-Deploy-Action) 增量上传）。需在仓库 **Settings → Secrets and variables → Actions** 配置三个 Secret：
-
-| Secret | 说明 |
-| --- | --- |
-| `FTP_SERVER` | FTP 服务器地址 |
-| `FTP_USERNAME_FRONTEND` | FTP 账号（登录后落在站点根目录） |
-| `FTP_PASSWORD` | FTP 密码 |
-
-> 纯静态站点无需停启服务；默认上传到 FTP 根目录，如需子目录修改 [deploy.yml](.github/workflows/deploy.yml) 中的 `server-dir`（如 `/webgame/`）。
+推送 `master` 自动触发：**引擎自测 → 类型检查 + 构建 → FTP 上传 `dist/`**，也可在 [Actions](https://github.com/huntersxy/webgame/actions) 页面手动触发。部署方案见 [deploy.yml](.github/workflows/deploy.yml)。
 
 ## 🧱 项目结构
 
