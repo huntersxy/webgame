@@ -3,9 +3,10 @@
  *  so the UI never freezes, even during demon-level deep searches.
  * ──────────────────────────────────────────────────────────── */
 
-import type { WorkerRequest, WorkerResponse, GomokuBoard, XqBoard, GomokuPlayer, XqSide } from '../types';
+import type { WorkerRequest, WorkerResponse, GomokuBoard, XqBoard, GomokuPlayer, XqSide, JqBoard, JqSide } from '../types';
 import { findBestMove as gomokuSearch, findHintMove as gomokuHint } from '../gomoku/search';
 import { findBestMove as xqSearch, findHintMove as xqHint } from '../xiangqi/search';
+import { findBestMove as jqSearch, findHintMove as jqHint } from '../junqi/ai';
 
 self.onmessage = (e: MessageEvent<WorkerRequest>) => {
   const req = e.data;
@@ -35,6 +36,20 @@ self.onmessage = (e: MessageEvent<WorkerRequest>) => {
     case 'xq-hint': {
       const board = req.board as XqBoard;
       const result = xqHint(board, req.side as XqSide, req.mode, req.historyLength);
+      const res: WorkerResponse = { type: 'search-result', result: result as any };
+      (self as unknown as Worker).postMessage(res);
+      break;
+    }
+    case 'junqi-search': {
+      const board = req.board as JqBoard;
+      const result = jqSearch(board, req.side as JqSide, req.difficulty, req.mode, req.flip, req.historyLength);
+      const res: WorkerResponse = { type: 'search-result', result: result as any };
+      (self as unknown as Worker).postMessage(res);
+      break;
+    }
+    case 'junqi-hint': {
+      const board = req.board as JqBoard;
+      const result = jqHint(board, req.side as JqSide, req.mode, req.flip, req.historyLength);
       const res: WorkerResponse = { type: 'search-result', result: result as any };
       (self as unknown as Worker).postMessage(res);
       break;

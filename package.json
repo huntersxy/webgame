@@ -1,7 +1,7 @@
 {
-  "name": "chess-ai",
-  "version": "2.0.0",
-  "description": "智棋双绝 · 五子棋 & 象棋 AI — TypeScript + Vite + Web Workers",
+  "name": "webgame",
+  "version": "3.0.0",
+  "description": "乐下 · 网页游戏平台 — 五子棋 & 中国象棋（全新增量评估 + 迭代加深 α-β + VCF 引擎）",
   "type": "module",
   "scripts": {
     "dev": "vite",

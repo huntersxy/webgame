@@ -2,6 +2,9 @@
  *  types.ts — Shared type definitions across all game engines
  * ──────────────────────────────────────────────────────────── */
 
+import type { Board as JqBoard, Side as JqSide } from './junqi/rules';
+export type { JqBoard, JqSide };
+
 /** Player color for Gomoku: 1 = Black, 2 = White */
 export type GomokuPlayer = 1 | 2;
 /** 15×15 board cell: 0 empty, 1 black, 2 white */
@@ -38,6 +41,14 @@ export interface XqMove {
   piece: XqPiece;
   /** Ordering score (internal, not serialized) */
   ord?: number;
+}
+
+/** A Junqi (陆战棋) move: board node indices */
+export interface JqMove {
+  from: number;
+  to: number;
+  /** Search value */
+  v?: number;
 }
 
 /** Search result returned by the AI */
@@ -96,9 +107,11 @@ export type WorkerRequest =
   | { type: 'gomoku-hint'; board: GomokuBoard; player: GomokuPlayer; mode: GameMode; historyLength: number }
   | { type: 'xq-search'; board: XqBoard; side: XqSide; difficulty: Difficulty; mode: GameMode; historyLength: number }
   | { type: 'xq-hint'; board: XqBoard; side: XqSide; mode: GameMode; historyLength: number }
+  | { type: 'junqi-search'; board: JqBoard; side: JqSide; difficulty: Difficulty; mode: GameMode; flip: boolean; historyLength: number }
+  | { type: 'junqi-hint'; board: JqBoard; side: JqSide; mode: GameMode; flip: boolean; historyLength: number }
   | { type: 'cancel' };
 
 /** Worker response messages */
 export type WorkerResponse =
-  | { type: 'search-result'; result: SearchResult<GomokuMove | XqMove> }
+  | { type: 'search-result'; result: SearchResult<GomokuMove | XqMove | JqMove> }
   | { type: 'progress'; nodes: number };

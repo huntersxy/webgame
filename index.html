@@ -3,265 +3,502 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-<title>智棋双绝 · 五子棋 & 象棋 AI</title>
+<title>乐下 · 网页游戏平台</title>
+<meta name="description" content="简洁清新的网页小游戏平台：五子棋、中国象棋、军棋、龙卷风成长记，本地即开即玩。">
 <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
-<div class="bg-orbs"><span></span><span></span><span></span></div>
 
-<header class="topbar glass">
-  <div class="logo">
-    <img class="logo-mark" id="logo-mark" alt="智棋双绝" />
-    <div>
-      <h1>智棋双绝</h1>
-      <p>五子棋 · 象棋 双 AI 对弈平台</p>
-    </div>
-  </div>
+<header class="topbar">
+  <a class="brand" href="#/" data-goto="home">
+    <span class="brand-mark">乐</span>
+    <span class="brand-name">乐下<i>LEPLAY</i></span>
+  </a>
   <nav class="tabs">
-    <button class="tab active" data-tab="home">🏠 首页</button>
-    <button class="tab" data-tab="gomoku">⚫ 五子棋</button>
-    <button class="tab" data-tab="campaign">⚔️ 战役</button>
-    <button class="tab" data-tab="xiangqi">♞ 象棋</button>
+    <button class="tab active" data-tab="home">首页</button>
+    <button class="tab" data-tab="tornado">龙卷风</button>
+    <button class="tab" data-tab="gomoku">五子棋</button>
+    <button class="tab" data-tab="xiangqi">中国象棋</button>
+    <button class="tab" data-tab="junqi">军棋</button>
   </nav>
   <div class="top-status"><span id="global-status-dot"></span><span id="global-status-text">AI 就绪</span></div>
 </header>
 
 <main>
-  <!-- HOME -->
+  <!-- ═══════════ 首页 · 游戏平台 ═══════════ -->
   <section id="view-home" class="view active">
-    <div class="hero glass">
+    <div class="hero">
       <div class="hero-text">
-        <div class="badge">✨ 本地 AI · 无需联网 · 即开即下</div>
-        <h2>一处落子，<span class="gold">双棋皆通</span></h2>
-        <p class="sub">精致木纹棋盘 × 丝滑动画 × 强力 Alpha-Beta 搜索。<br>五子棋凌厉进攻，象棋老辣算度——挑战属于你的 AI 等级。</p>
-        <div class="hero-btns">
-          <button class="btn primary big" data-goto="gomoku">⚫ 来一盘五子棋</button>
-          <button class="btn red big" data-goto="xiangqi">♞ 摆开象棋楚河界</button>
+        <p class="eyebrow">免注册 · 无广告 · 离线可玩</p>
+        <h1>打开浏览器，<br><em>随手开一局。</em></h1>
+        <p class="sub">乐下是一个轻量的网页游戏平台——棋类对决、休闲小游戏都在这里。全部本地运行：AI 在你的浏览器里计算，不上传、不限速、即开即玩。</p>
+        <div class="hero-actions">
+          <button class="btn primary big" data-goto="tornado">🌪️ 卷走全世界</button>
+          <button class="btn plain big" data-goto="gomoku">来一盘五子棋</button>
         </div>
         <div class="stats">
-          <div><b id="stat-games">0</b><i>总对局</i></div>
-          <div><b id="stat-wins">0</b><i>玩家胜</i></div>
-          <div><b id="stat-ai">强力 AI</b><i>Alpha-Beta 引擎</i></div>
+          <div><b id="stat-games">0</b><i>累计对局</i></div>
+          <div><b id="stat-wins">0</b><i>你的胜场</i></div>
+          <div><b>4</b><i>已上线游戏</i></div>
         </div>
       </div>
-      <div class="hero-cards">
-        <div class="mini-board gomoku-mini"><div class="mini-grid"></div><div class="mstone b" style="left:32%;top:30%"></div><div class="mstone w" style="left:44%;top:38%"></div><div class="mstone b" style="left:56%;top:46%"></div><div class="mstone w" style="left:50%;top:58%"></div><div class="mstone b win" style="left:62%;top:34%"></div></div>
-        <div class="feature-list">
-          <div class="feat">⚔️ <b>五子棋 AI</b><span>威胁空间搜索 + 攻防评分，恶魔模式深达 5 层全算</span></div>
-          <div class="feat">🏯 <b>象棋 AI</b><span>完整规则 + 位置价值表 + 吃子延伸，恶魔 depth5</span></div>
-          <div class="feat">🎨 <b>精致体验</b><span>木纹渲染 / 落子音效 / 复盘悔棋 / 四档难度 / 思考可视化</span></div>
-          <div class="feat">⚡ <b>Web Worker</b><span>AI 在独立线程运算，UI 永不卡顿</span></div>
+      <div class="hero-art" aria-hidden="true">
+        <div class="board-card">
+          <div class="mini-grid"></div>
+          <span class="mstone b" style="left:30%;top:28%"></span>
+          <span class="mstone w" style="left:44%;top:36%"></span>
+          <span class="mstone b" style="left:58%;top:44%"></span>
+          <span class="mstone w" style="left:52%;top:58%"></span>
+          <span class="mstone b win" style="left:70%;top:36%"></span>
         </div>
       </div>
     </div>
 
-    <div class="cards">
-      <div class="card glass">
-        <div class="card-icon">⚫⚪</div>
-        <h3>五子棋 Gomoku</h3>
-        <p>15×15 标准棋盘。禁手可选，双人 / 人机切换，四档 AI 从入门到烧脑。</p>
-        <div class="tags"><span>连五判定</span><span>悔棋复盘</span><span>开局库</span></div>
-        <button class="btn primary" data-goto="gomoku">进入对弈 →</button>
-      </div>
-      <div class="card glass">
-        <div class="card-icon">俥傌炮</div>
-        <h3>中国象棋 Xiangqi</h3>
-        <p>完整走法：马腿象眼、将军应将、飞将判定。红黑可执，支持翻转棋盘。</p>
-        <div class="tags"><span>完整规则</span><span>将军提示</span><span>吃子统计</span></div>
-        <button class="btn red" data-goto="xiangqi">进入对弈 →</button>
-      </div>
-      <div class="card glass how">
-        <div class="card-icon">💡</div>
-        <h3>怎么玩？</h3>
-        <ul>
-          <li>点击顶部标签或卡片即可切换棋种</li>
-          <li>右侧面板可调 <b>难度 / 执子 / 先后手</b></li>
-          <li>象棋点击棋子显示 <span class="dot-demo"></span> 可走位</li>
-          <li>所有对局均在本地运行，可断网玩</li>
-        </ul>
-      </div>
+    <h2 class="sec-title">游戏库 <small>GAME LIBRARY</small></h2>
+    <div class="game-grid">
+      <article class="game-card">
+        <div class="game-thumb tornado-thumb">
+          <span class="tt big" style="left:46%;top:52%">🌪️</span>
+          <span class="tt" style="left:20%;top:26%">🗑️</span>
+          <span class="tt" style="left:74%;top:22%">🏠</span>
+          <span class="tt" style="left:80%;top:66%">🏢</span>
+          <span class="tt" style="left:16%;top:70%">🚲</span>
+          <span class="tt" style="left:62%;top:78%">🌳</span>
+        </div>
+        <div class="game-body">
+          <h3>龙卷风成长记 <span class="chip hot">NEW</span></h3>
+          <p>大鱼吃小鱼式成长：卷走比你小的一切壮大自己，撞上更大的只会被弹开、零惩罚。清空一个量级，镜头拉远——从街道一路卷到全地球。</p>
+          <div class="tags"><span>单人休闲</span><span>键盘 / 触屏</span><span>六段量级</span><span>弹开无伤</span></div>
+          <div class="game-foot">
+            <span class="price">免费</span>
+            <button class="btn primary" data-goto="tornado">立即开玩</button>
+          </div>
+        </div>
+      </article>
+
+      <article class="game-card">
+        <div class="game-thumb gomoku-thumb">
+          <div class="grid-lines"></div>
+          <span class="t-stone s1" style="left:22%;top:30%"></span>
+          <span class="t-stone s2" style="left:40%;top:38%"></span>
+          <span class="t-stone s1" style="left:58%;top:46%"></span>
+          <span class="t-stone s1" style="left:76%;top:54%"></span>
+        </div>
+        <div class="game-body">
+          <h3>五子棋 <span class="chip new">AI 重制</span></h3>
+          <p>15×15 标准棋盘。全新引擎：增量评估 + 迭代加深 α-β + VCF 杀棋搜索，恶魔级 3 秒烧脑算力。</p>
+          <div class="tags"><span>人机对战</span><span>双人同乐</span><span>AI 互搏</span><span>战役闯关</span></div>
+          <div class="game-foot">
+            <span class="price">免费</span>
+            <button class="btn primary" data-goto="gomoku">立即开玩</button>
+          </div>
+        </div>
+      </article>
+
+      <article class="game-card">
+        <div class="game-thumb xiangqi-thumb">
+          <span class="t-piece" style="left:20%;top:24%">俥</span>
+          <span class="t-piece" style="left:44%;top:40%">傌</span>
+          <span class="t-piece dark" style="left:68%;top:56%">炮</span>
+          <span class="t-piece dark" style="left:36%;top:68%">帥</span>
+        </div>
+        <div class="game-body">
+          <h3>中国象棋</h3>
+          <p>完整规则：蹩马腿、塞象眼、将军应将、白脸将。红黑任选，支持棋盘翻转与吃子复盘。</p>
+          <div class="tags"><span>完整规则</span><span>将军提示</span><span>棋谱记录</span><span>四档难度</span></div>
+          <div class="game-foot">
+            <span class="price">免费</span>
+            <button class="btn primary" data-goto="xiangqi">立即开玩</button>
+          </div>
+        </div>
+      </article>
+
+      <article class="game-card">
+        <div class="game-thumb junqi-thumb">
+          <span class="t-piece red" style="left:24%;top:30%">指</span>
+          <span class="t-piece blue" style="left:56%;top:44%">排</span>
+          <span class="t-piece red" style="left:74%;top:24%">炸</span>
+          <span class="t-piece blue" style="left:36%;top:70%">旗</span>
+        </div>
+        <div class="game-body">
+          <h3>军棋 <span class="chip hot">NEW</span></h3>
+          <p>陆战棋人机对战：自定义摆阵、揭棋暗战（暗棋规则）、AI 互搏观战。铁路直行、工兵拐弯、行营保护，扛旗或绝杀致胜。</p>
+          <div class="tags"><span>自定义摆阵</span><span>揭棋暗战</span><span>人机 / AI 互搏</span><span>四档难度</span></div>
+          <div class="game-foot">
+            <span class="price">免费</span>
+            <button class="btn primary" data-goto="junqi">立即开玩</button>
+          </div>
+        </div>
+      </article>
+
+      <article class="game-card coming">
+        <div class="game-thumb soon-thumb"><span>?</span></div>
+        <div class="game-body">
+          <h3>新游戏 · 筹备中</h3>
+          <p>棋类之外更多品类正在路上：围棋入门、跳棋、黑白棋、贪吃蛇…… 敬请期待。</p>
+          <div class="tags"><span>规划中</span></div>
+          <div class="game-foot">
+            <span class="price muted">—</span>
+            <button class="btn plain" disabled>Coming Soon</button>
+          </div>
+        </div>
+      </article>
+    </div>
+
+    <div class="why">
+      <div class="why-item"><b>⚡ 即开即玩</b><span>无需下载与注册，浏览器打开就是一盘好棋。</span></div>
+      <div class="why-item"><b>🔒 完全本地</b><span>AI 在 Web Worker 中离线计算，断网也能下。</span></div>
+      <div class="why-item"><b>🧠 硬核引擎</b><span>五子棋引擎采用迭代加深 α-β + 置换表 + VCF 战术搜索。</span></div>
+      <div class="why-item"><b>🎮 不止棋类</b><span>休闲小游戏持续上新，平台不局限于棋盘对弈。</span></div>
     </div>
   </section>
 
-  <!-- GOMOKU -->
-  <section id="view-gomoku" class="view">
+  <!-- ═══════════ 龙卷风成长记 ═══════════ -->
+  <section id="view-tornado" class="view">
+    <div class="page-head">
+      <nav class="crumbs"><a href="#/" data-goto="home">游戏库</a><span>/</span><b>龙卷风成长记</b></nav>
+      <div class="page-actions">
+        <div id="t-turn" class="turn-pill">当前量级 街道内</div>
+      </div>
+    </div>
     <div class="layout">
-      <div class="board-wrap glass">
+      <div class="board-wrap">
         <div class="board-head">
-          <h2>⚫ 五子棋 <small>GOMOKU · 15×15</small></h2>
+          <h2>龙卷风成长记 <small>TORNADO RISE · 大鱼吃小鱼</small></h2>
+          <div class="hint-line">WASD / 方向键移动 · 按住画面即可牵引龙卷风</div>
+        </div>
+        <div class="canvas-holder">
+          <canvas id="t-canvas" width="640" height="640"></canvas>
+        </div>
+        <div id="t-result" class="result-banner hidden"></div>
+      </div>
+      <aside class="panel">
+        <div class="panel-block">
+          <h3>量级进度</h3>
+          <div class="tier-list" id="t-tier-list"></div>
+        </div>
+        <div class="panel-block info-box">
+          <div class="info-line"><span>当前量级</span><b id="t-tier">街道内 · 1/6</b></div>
+          <div class="info-line"><span>已卷走</span><b id="t-eaten">0 / 16</b></div>
+          <div class="bar"><i id="t-progress" style="width:0%"></i></div>
+          <div class="info-line"><span>得分</span><b id="t-score">0</b></div>
+          <div class="info-line"><span>最高分</span><b id="t-best">0</b></div>
+          <div class="info-line small"><span>体型</span><b id="t-radius">22 px</b></div>
+          <div class="info-line small"><span>状态</span><b id="t-status">吞噬中…</b></div>
+        </div>
+        <div class="panel-block">
+          <div class="btn-grid">
+            <button id="t-restart" class="btn primary">↻ 重新开始</button>
+            <button id="t-restart-tier" class="btn soft" title="重新生成当前量级的建筑与地形，得分回滚到本关开始">⤓ 本关重置</button>
+          </div>
+          <div class="btn-grid">
+            <button id="t-sound" class="btn plain on">🔊 音效开</button>
+          </div>
+        </div>
+        <details class="rules" open><summary>玩法说明</summary><p>你是一株初始只有 22px 的小龙卷风。<b>比它小的建筑统统卷走</b>（体积按面积增长，被卷起的建筑会旋转着吸进风眼）；<b>比它大的建筑撞上去只会被弹开，没有任何惩罚</b>，放心大胆试。地图上的<b>湖泊、巨石、雪山、树林是地形障碍，永远无法破坏</b>，绕着走。清空本阶段全部建筑后，镜头自动拉远、你相对缩小，进入下一个更大的量级：街道 → 楼房 → 城市 → 国家 → 洲 → 全地球。</p></details>
+        <details class="rules"><summary>操作</summary><p>桌面：WASD 或方向键推风；也可用鼠标/手指按住画面任意位置，龙卷风会持续向该点加速。移动端：单指按住拖动牵引即可。</p></details>
+      </aside>
+    </div>
+  </section>
+
+  <!-- ═══════════ 五子棋 ═══════════ -->
+  <section id="view-gomoku" class="view">
+    <div class="page-head">
+      <nav class="crumbs"><a href="#/" data-goto="home">游戏库</a><span>/</span><b>五子棋</b></nav>
+      <div class="page-actions">
+        <button class="btn plain" data-goto="campaign">⚔ 战役模式</button>
+      </div>
+    </div>
+    <div class="layout">
+      <div class="board-wrap">
+        <div class="board-head">
+          <h2>五子棋 <small>GOMOKU · 15×15</small></h2>
           <div id="gomoku-turn" class="turn-pill">轮到 黑方 落子</div>
         </div>
-        <div class="canvas-holder"><canvas id="gomoku-canvas" width="620" height="620"></canvas>
-          <div id="gomoku-thinking" class="thinking hidden"><div class="spinner"></div>AI 正在算棋…</div>
+        <div class="canvas-holder">
+          <canvas id="gomoku-canvas" width="620" height="620"></canvas>
+          <div id="gomoku-thinking" class="thinking hidden"><div class="spinner"></div>AI 思考中…</div>
         </div>
         <div id="gomoku-result" class="result-banner hidden"></div>
       </div>
-      <aside class="panel glass">
-        <h3>⚙️ 对局设置</h3>
-        <label class="row"><span>模式</span>
-          <div class="seg col3b" id="g-mode"><button data-v="ai" class="on">人机对战</button><button data-v="pvp">双人对战</button><button data-v="aivai">🤖AI互搏</button></div>
-        </label>
-        <label class="row"><span>执子</span>
-          <div class="seg" id="g-color"><button data-v="1" class="on">执黑先手</button><button data-v="2">执白后手</button></div>
-        </label>
-        <label class="row"><span>难度</span>
-          <div class="seg col4" id="g-level"><button data-v="1">简单</button><button data-v="2" class="on">普通</button><button data-v="3">困难</button><button data-v="4" class="demon">😈恶魔</button></div>
-        </label>
-        <div class="demon-warn hidden" id="g-demon-warn">😈 恶魔模式：最强算力全开，不保证人类能赢，做好被碾压的准备！</div>
-        <div class="demon-profile hidden" id="g-demon-profile">
-          <img class="demon-avatar" id="g-demon-avatar" alt="褚赢" />
-          <div class="demon-info">
-            <b>褚赢 <span class="demon-tag">😈 恶魔</span></b>
-            <small>南梁棋圣 · 现役最强 AI</small>
-            <p>“一局定胜负？你准备好了吗。”</p>
+      <aside class="panel">
+        <div class="panel-block">
+          <h3>对局设置</h3>
+          <label class="row"><span>模式</span>
+            <div class="seg" id="g-mode"><button data-v="ai" class="on">人机</button><button data-v="pvp">双人</button><button data-v="aivai">AI 互搏</button></div>
+          </label>
+          <label class="row"><span>执子</span>
+            <div class="seg" id="g-color"><button data-v="1" class="on">执黑先手</button><button data-v="2">执白后手</button></div>
+          </label>
+          <label class="row"><span>难度</span>
+            <div class="seg col4" id="g-level"><button data-v="1">简单</button><button data-v="2" class="on">普通</button><button data-v="3">困难</button><button data-v="4" class="demon">😈 恶魔</button></div>
+          </label>
+          <div class="demon-warn hidden" id="g-demon-warn">恶魔模式：时间预算拉满、VCF 必杀搜索全开，不保证你能赢。</div>
+          <div class="demon-profile hidden" id="g-demon-profile">
+            <img class="demon-avatar" id="g-demon-avatar" alt="褚赢" />
+            <div class="demon-info">
+              <b>褚赢 <span class="demon-tag">恶魔</span></b>
+              <small>南梁棋圣 · 引擎 v3</small>
+              <p>“开局即中盘，你准备好了吗。”</p>
+            </div>
+          </div>
+          <button id="g-demon-memory" class="btn plain full demon-memory-btn">📋 恶魔败局档案</button>
+        </div>
+        <div class="panel-block">
+          <div class="btn-grid">
+            <button id="g-new" class="btn primary">新开局</button>
+            <button id="g-undo" class="btn plain">悔棋</button>
+          </div>
+          <div class="btn-grid">
+            <button id="g-hint" class="btn soft">💡 求一着</button>
+            <button id="g-god" class="btn soft god">🙏 请神上身</button>
+          </div>
+          <div class="btn-grid">
+            <button id="g-sound" class="btn plain on">🔊 音效开</button>
+            <button id="g-stop" class="btn plain">⏹ 停止互搏</button>
           </div>
         </div>
-        <button id="g-demon-memory" class="btn ghost demon-memory-btn">📋 恶魔败局档案</button>
-        <div class="btn-grid">
-          <button id="g-new" class="btn primary">🔄 新开一局</button>
-          <button id="g-undo" class="btn ghost">↩ 悔棋</button>
-        </div>
-        <div class="btn-grid">
-          <button id="g-hint" class="btn gold">💡 恶魔支招</button>
-          <button id="g-god" class="btn god ghost">🙏 请神上身</button>
-        </div>
-        <div class="btn-grid">
-          <button id="g-sound" class="btn ghost on">🔊 音效开</button>
-          <button id="g-stop" class="btn ghost">⏹ 停止互搏</button>
-        </div>
-        <div class="info-box">
+        <div class="panel-block info-box">
           <div class="info-line"><span>步数</span><b id="g-steps">0</b></div>
           <div class="info-line"><span>状态</span><b id="g-status">对弈中</b></div>
           <div class="bar"><i id="g-score-bar" style="width:50%"></i></div>
           <div class="info-line small"><span>局势</span><b id="g-score-text">均势</b></div>
         </div>
-        <div class="think-box">
-          <div class="think-head"><h4>🧠 AI 思考</h4><label class="viz-toggle"><input type="checkbox" id="g-viz" checked> 候选可视化</label></div>
+        <div class="panel-block think-box">
+          <div class="think-head"><h4>AI 思考</h4><label class="viz-toggle"><input type="checkbox" id="g-viz" checked> 候选点显示</label></div>
           <div class="think-stats" id="g-think-stats">等待 AI 行棋…</div>
           <div class="think-progress hidden" id="g-think-progress"><i></i></div>
-          <div class="thinklog" id="g-think-log"><div class="empty">暂无思考记录，人机对战时自动输出深度 / 节点 / 评分 / 候选</div></div>
+          <div class="thinklog" id="g-think-log"><div class="empty">人机对战时自动输出深度 / 节点 / 评估 / 候选</div></div>
         </div>
-        <details class="rules"><summary>📖 规则说明</summary><p>黑白轮流落子，先连成五子（横/竖/斜）者胜。支持悔棋、AI 支招。困难 AI 会主动造双三、双四，请小心防守！</p></details>
+        <details class="rules"><summary>规则说明</summary><p>黑白轮流落子，横、竖、斜任一方向先连成五子者胜。支持悔棋与提示；恶魔级会使用 VCF（连续冲四）搜索发现远程杀棋。</p></details>
       </aside>
     </div>
   </section>
 
-  <!-- CAMPAIGN -->
+  <!-- ═══════════ 五子棋 · 战役 ═══════════ -->
   <section id="view-campaign" class="view">
+    <div class="page-head">
+      <nav class="crumbs"><a href="#/" data-goto="home">游戏库</a><span>/</span><a href="#/gomoku" data-goto="gomoku">五子棋</a><span>/</span><b>战役模式</b></nav>
+      <div class="page-actions">
+        <button class="btn plain" data-goto="gomoku">← 返回对弈</button>
+      </div>
+    </div>
     <div class="layout">
-      <div class="board-wrap glass">
+      <div class="board-wrap">
         <div class="board-head">
-          <h2>⚔️ 五子棋战役 <small>CAMPAIGN · 风格对决</small></h2>
+          <h2>五子棋战役 <small>CAMPAIGN · 风格对决</small></h2>
           <div id="camp-turn" class="turn-pill">轮到 黑方 落子</div>
         </div>
-        <div class="canvas-holder"><canvas id="camp-canvas" width="620" height="620"></canvas>
+        <div class="canvas-holder">
+          <canvas id="camp-canvas" width="620" height="620"></canvas>
           <div id="camp-thinking" class="thinking hidden"><div class="spinner"></div>对手正在布防…</div>
         </div>
         <div id="camp-result" class="result-banner hidden"></div>
       </div>
-      <aside class="panel glass">
-        <h3>🗺️ 战役进度</h3>
-        <div class="camp-progress"><span id="camp-progress-text">已通关 0 / 5</span><div class="bar"><i id="camp-progress-bar" style="width:0%"></i></div></div>
-        <div class="camp-list" id="camp-list"></div>
-        <div class="camp-ai-card" id="camp-ai-card">
+      <aside class="panel">
+        <div class="panel-block">
+          <h3>战役进度</h3>
+          <div class="camp-progress"><span id="camp-progress-text">已通关 0 / 5</span><div class="bar"><i id="camp-progress-bar" style="width:0%"></i></div></div>
+          <div class="camp-list" id="camp-list"></div>
+        </div>
+        <div class="panel-block camp-ai-card" id="camp-ai-card">
           <div class="camp-ai-head"><span class="camp-ai-emoji">🏰</span><div><b id="camp-ai-name">严防死守</b><small id="camp-ai-style">纯防守 · 堡垒拦截</small></div></div>
           <p id="camp-ai-desc">它从不主动进攻，只筑墙。你的每一步进攻都会被提前算死——先破防，再取胜。</p>
           <div class="camp-tags" id="camp-ai-tags"><span>玩家威胁 ×3 惩罚</span><span>只认杀棋</span><span>深度4</span></div>
         </div>
-        <div class="btn-grid">
-          <button id="camp-new" class="btn primary">🔄 重开本关</button>
-          <button id="camp-undo" class="btn ghost">↩ 悔棋</button>
+        <div class="panel-block">
+          <div class="btn-grid">
+            <button id="camp-new" class="btn primary">重开本关</button>
+            <button id="camp-undo" class="btn plain">悔棋</button>
+          </div>
         </div>
-        <div class="think-box">
-          <div class="think-head"><h4>🧠 对手动向</h4></div>
+        <div class="panel-block think-box">
+          <div class="think-head"><h4>对手动向</h4></div>
           <div class="think-stats" id="camp-stats">等待对局开始…</div>
           <div class="thinklog" id="camp-log"><div class="empty">击败守关者解锁后续关卡</div></div>
         </div>
-        <details class="rules"><summary>📖 战役规则</summary><p>战役中你执黑先手，对战不同风格的守关 AI。每关风格不同——有的只守不攻，有的疯狂抢攻。破防获胜即通关，进度自动保存。</p></details>
+        <details class="rules"><summary>战役规则</summary><p>战役中你执黑先手，对战不同风格的守关 AI。每关风格不同——有的只守不攻，有的疯狂抢攻。破防获胜即通关，进度自动保存。</p></details>
       </aside>
     </div>
   </section>
 
-  <!-- XIANGQI -->
+  <!-- ═══════════ 中国象棋 ═══════════ -->
   <section id="view-xiangqi" class="view">
+    <div class="page-head">
+      <nav class="crumbs"><a href="#/" data-goto="home">游戏库</a><span>/</span><b>中国象棋</b></nav>
+    </div>
     <div class="layout">
-      <div class="board-wrap glass">
+      <div class="board-wrap">
         <div class="board-head">
-          <h2>♞ 象棋 <small>XIANGQI · 楚河汉界</small></h2>
+          <h2>中国象棋 <small>XIANGQI · 楚河汉界</small></h2>
           <div id="xiangqi-turn" class="turn-pill red">轮到 红方 走棋</div>
         </div>
-        <div class="canvas-holder slim"><canvas id="xiangqi-canvas" width="560" height="620"></canvas>
-          <div id="xiangqi-thinking" class="thinking hidden"><div class="spinner"></div>AI 正在深算…</div>
+        <div class="canvas-holder slim">
+          <canvas id="xiangqi-canvas" width="560" height="620"></canvas>
+          <div id="xiangqi-thinking" class="thinking hidden"><div class="spinner"></div>AI 深算中…</div>
         </div>
         <div id="xiangqi-result" class="result-banner hidden"></div>
       </div>
-      <aside class="panel glass">
-        <h3>⚙️ 对局设置</h3>
-        <label class="row"><span>模式</span>
-          <div class="seg col3b" id="x-mode"><button data-v="ai" class="on">人机对战</button><button data-v="pvp">双人对战</button><button data-v="aivai">🤖AI互搏</button></div>
-        </label>
-        <label class="row"><span>执子</span>
-          <div class="seg" id="x-color"><button data-v="r" class="on">执红先行</button><button data-v="b">执黑后走</button></div>
-        </label>
-        <label class="row"><span>难度</span>
-          <div class="seg col4" id="x-level"><button data-v="1">简单</button><button data-v="2" class="on">普通</button><button data-v="3">困难</button><button data-v="4" class="demon">😈恶魔</button></div>
-        </label>
-        <div class="demon-warn hidden" id="x-demon-warn">😈 恶魔模式：depth5 + 杀棋延伸 + 全宽度搜索，只求最强，不求你能赢！</div>
-        <div class="demon-profile hidden" id="x-demon-profile">
-          <img class="demon-avatar" id="x-demon-avatar" alt="褚赢" />
-          <div class="demon-info">
-            <b>褚赢 <span class="demon-tag">😈 恶魔</span></b>
-            <small>南梁棋圣 · 现役最强 AI</small>
-            <p>“一局定胜负？你准备好了吗。”</p>
+      <aside class="panel">
+        <div class="panel-block">
+          <h3>对局设置</h3>
+          <label class="row"><span>模式</span>
+            <div class="seg" id="x-mode"><button data-v="ai" class="on">人机</button><button data-v="pvp">双人</button><button data-v="aivai">AI 互搏</button></div>
+          </label>
+          <label class="row"><span>执子</span>
+            <div class="seg" id="x-color"><button data-v="r" class="on">执红先行</button><button data-v="b">执黑后走</button></div>
+          </label>
+          <label class="row"><span>难度</span>
+            <div class="seg col4" id="x-level"><button data-v="1">简单</button><button data-v="2" class="on">普通</button><button data-v="3">困难</button><button data-v="4" class="demon">😈 恶魔</button></div>
+          </label>
+          <div class="demon-warn hidden" id="x-demon-warn">恶魔模式：深算 + 杀棋延伸 + 全宽度搜索，只求最强。</div>
+          <div class="demon-profile hidden" id="x-demon-profile">
+            <img class="demon-avatar" id="x-demon-avatar" alt="褚赢" />
+            <div class="demon-info">
+              <b>褚赢 <span class="demon-tag">恶魔</span></b>
+              <small>南梁棋圣 · 现役最强</small>
+              <p>“一局定胜负？”</p>
+            </div>
           </div>
         </div>
-        <div class="btn-grid">
-          <button id="x-new" class="btn red">🔄 重新摆棋</button>
-          <button id="x-undo" class="btn ghost">↩ 悔棋</button>
+        <div class="panel-block">
+          <div class="btn-grid">
+            <button id="x-new" class="btn primary">重新摆棋</button>
+            <button id="x-undo" class="btn plain">悔棋</button>
+          </div>
+          <div class="btn-grid">
+            <button id="x-hint" class="btn soft">💡 求一着</button>
+            <button id="x-god" class="btn soft god">🙏 请神上身</button>
+          </div>
+          <div class="btn-grid">
+            <button id="x-flip" class="btn plain">⇅ 翻转棋盘</button>
+            <button id="x-sound" class="btn plain on">🔊 音效开</button>
+          </div>
+          <div class="btn-grid">
+            <button id="x-stop" class="btn plain">⏹ 停止互搏</button>
+          </div>
         </div>
-        <div class="btn-grid">
-          <button id="x-hint" class="btn gold">💡 恶魔支招</button>
-          <button id="x-god" class="btn god ghost">🙏 请神上身</button>
-        </div>
-        <div class="btn-grid">
-          <button id="x-flip" class="btn ghost">🔃 翻转棋盘</button>
-          <button id="x-sound" class="btn ghost on">🔊 音效开</button>
-        </div>
-        <div class="btn-grid">
-          <button id="x-stop" class="btn ghost">⏹ 停止互搏</button>
-        </div>
-        <div class="info-box">
+        <div class="panel-block info-box">
           <div class="info-line"><span>回合</span><b id="x-steps">1</b></div>
           <div class="info-line"><span>状态</span><b id="x-status">红方行棋</b></div>
-          <div class="capture"><div>红吃：<span id="x-cap-r">—</span></div><div>黑吃：<span id="x-cap-b">—</span></div></div>
+          <div class="capture"><div>红方吃子：<span id="x-cap-r">—</span></div><div>黑方吃子：<span id="x-cap-b">—</span></div></div>
           <div class="movelog" id="x-log"><div class="empty">暂无棋谱，点击棋子开始</div></div>
         </div>
-        <div class="think-box">
-          <div class="think-head"><h4>🧠 AI 思考</h4><label class="viz-toggle"><input type="checkbox" id="x-viz" checked> 走法可视化</label></div>
+        <div class="panel-block think-box">
+          <div class="think-head"><h4>AI 思考</h4><label class="viz-toggle"><input type="checkbox" id="x-viz" checked> 走法显示</label></div>
           <div class="think-stats" id="x-think-stats">等待 AI 行棋…</div>
           <div class="think-progress hidden" id="x-think-progress"><i></i></div>
-          <div class="thinklog" id="x-think-log"><div class="empty">暂无思考记录，人机对战时自动输出深度 / 节点 / 评估 / 主变</div></div>
+          <div class="thinklog" id="x-think-log"><div class="empty">对局时自动输出深度 / 节点 / 评估 / 主变</div></div>
         </div>
-        <details class="rules"><summary>📖 走法速查</summary><p>马走日（蹩腿不行）、象走田（不过河）、士走斜（不出宫）、将不出宫、炮隔子打、兵过河可平移。困毙、绝杀皆判负，长捉禁手按和棋精神由 AI 回避。</p></details>
+        <details class="rules"><summary>走法速查</summary><p>马走日（蹩腿不行）、象走田（不过河）、士走斜（不出宫）、将不出宫、炮隔子打、兵过河可平移。困毙、绝杀皆判负。</p></details>
+      </aside>
+    </div>
+  </section>
+
+  <!-- ═══════════ 军棋（陆战棋）═══════════ -->
+  <section id="view-junqi" class="view">
+    <div class="page-head">
+      <nav class="crumbs"><a href="#/" data-goto="home">游戏库</a><span>/</span><b>军棋</b></nav>
+      <div class="page-actions">
+        <div id="jq-turn" class="turn-pill red">摆阵中</div>
+      </div>
+    </div>
+    <div class="layout">
+      <div class="board-wrap">
+        <div class="board-head">
+          <h2>军棋 <small>JUNQI · 陆战棋</small></h2>
+          <div class="hint-line" id="jq-hint-line">点击下方兵种放入棋盘 · 点击已放的子可取回</div>
+        </div>
+        <div class="canvas-holder">
+          <canvas id="jq-canvas" width="580" height="730"></canvas>
+          <div id="jq-thinking" class="thinking hidden"><div class="spinner"></div>AI 深算中…</div>
+        </div>
+        <div id="jq-result" class="result-banner hidden"></div>
+      </div>
+      <aside class="panel">
+        <div class="panel-block">
+          <h3>对局设置</h3>
+          <label class="row"><span>玩法</span>
+            <div class="seg" id="jq-style"><button data-v="open" class="on">明棋</button><button data-v="flip">揭棋</button></div>
+          </label>
+          <label class="row"><span>模式</span>
+            <div class="seg" id="jq-mode"><button data-v="ai" class="on">人机</button><button data-v="aivai">AI 互搏</button></div>
+          </label>
+          <label class="row" id="jq-color-row"><span>执子</span>
+            <div class="seg" id="jq-color"><button data-v="r" class="on">执红先行</button><button data-v="b">执蓝后走</button></div>
+          </label>
+          <label class="row"><span>难度</span>
+            <div class="seg col4" id="jq-level"><button data-v="1">简单</button><button data-v="2" class="on">普通</button><button data-v="3">困难</button><button data-v="4" class="demon">😈 恶魔</button></div>
+          </label>
+        </div>
+        <div class="panel-block" id="jq-setup">
+          <h3>自定义摆阵</h3>
+          <p class="setup-tip">点击下方兵种再点棋盘放置；点击已放的子可取回。<b>军旗</b>须入大本营，<b>地雷</b>限后两排，<b>炸弹</b>不进第一排，行营留空。</p>
+          <div class="jq-tray" id="jq-tray"></div>
+          <div class="btn-grid">
+            <button id="jq-random" class="btn plain">🎲 随机布阵</button>
+            <button id="jq-clear" class="btn plain">🧹 清空</button>
+          </div>
+          <div class="btn-grid">
+            <button id="jq-autofill" class="btn plain">✨ 补全空位</button>
+            <button id="jq-start" class="btn primary" disabled>⚔ 开始对战</button>
+          </div>
+          <div class="setup-msg" id="jq-setup-msg">尚未摆阵</div>
+        </div>
+        <div class="panel-block" id="jq-battle-ctl">
+          <h3>对局控制</h3>
+          <div class="btn-grid">
+            <button id="jq-new" class="btn primary">↻ 重新开局</button>
+            <button id="jq-undo" class="btn plain">↩ 悔棋</button>
+          </div>
+          <div class="btn-grid">
+            <button id="jq-hint" class="btn soft">💡 求一着</button>
+            <button id="jq-stop" class="btn plain hidden">⏹ 停止互搏</button>
+          </div>
+          <div class="btn-grid">
+            <button id="jq-sound" class="btn plain on">🔊 音效开</button>
+          </div>
+        </div>
+        <div class="panel-block info-box">
+          <div class="info-line"><span>红方兵力</span><b id="jq-rcount">25</b></div>
+          <div class="info-line"><span>蓝方兵力</span><b id="jq-bcount">25</b></div>
+          <div class="info-line"><span>回合数</span><b id="jq-moves">0</b></div>
+          <div class="info-line small"><span>状态</span><b id="jq-status">摆阵阶段</b></div>
+        </div>
+        <div class="panel-block">
+          <div class="think-head"><h4>走法记录</h4></div>
+          <div class="movelog" id="jq-log" style="max-height:220px"><div class="empty">暂无棋谱</div></div>
+        </div>
+        <div class="panel-block think-box">
+          <div class="think-head"><h4>AI 思考</h4></div>
+          <div class="think-stats" id="jq-think-stats">等待 AI 行棋…</div>
+          <div class="think-progress hidden" id="jq-think-progress"><i></i></div>
+          <div class="thinklog" id="jq-think-log"><div class="empty">对局时自动输出深度 / 节点 / 评估 / 主变</div></div>
+        </div>
+        <details class="rules" open><summary>规则速查</summary><p>每方 25 枚：<b>司令&gt;军长&gt;师长&gt;旅长&gt;团长&gt;营长&gt;连长&gt;排长&gt;工兵</b>，大吃小、同级同归于尽。<b>炸弹</b>与任何子互炸；<b>地雷</b>只有工兵能挖，其余撞上自亡；<b>军旗</b>不可移动，被扛即负。<b>行营</b>（圆圈）内的子不可被攻击；<b>铁路</b>（双线）上普通子直线滑行、工兵可任意拐弯；公路与行营斜线每次一步。布阵约束：军旗入大本营、地雷限后两排、炸弹不进第一排、行营留空。无子可动者判负，240 手判和。</p><p><b>揭棋（暗棋）玩法</b>：双方棋子对对方暗置，自己始终可见己方；己方棋子攻击对方暗子时守方翻明，攻方不翻明——吃子后继续潜伏，攻方阵亡则守方保持明牌。人机模式下明棋 / 揭棋都支持自定义摆阵（也可随机布阵）。</p></details>
       </aside>
     </div>
   </section>
 </main>
 
-<!-- Gomoku：恶魔败局档案弹层 -->
+<!-- 恶魔败局档案弹窗 -->
 <div class="modal-backdrop hidden" id="demon-memory-modal">
   <div class="modal-card">
     <div class="modal-head">
-      <h3>📋 恶魔败局档案</h3>
+      <h3>恶魔败局档案</h3>
       <button class="modal-x" id="demon-memory-close">✕</button>
     </div>
-    <p class="modal-sub">恶魔每次输给人类都会把败局存档，并从中学到教训。<b>下次遇到完全相同的局面时，它不会重蹈覆辙。</b></p>
+    <p class="modal-sub">恶魔每次输给人类都会存档并从中学到教训。<b>下次遇到完全相同的局面时，它不会重蹈覆辙。</b></p>
     <div class="memory-stats" id="demon-memory-stats"></div>
     <div class="memory-list" id="demon-memory-list"></div>
   </div>
 </div>
 
-<footer>智棋双绝 · TypeScript + Vite + Web Workers · 祝棋运昌隆 ♞</footer>
+<footer>
+  <p>乐下 · 网页游戏平台 — 本地 AI · Web Worker · TypeScript + Vite</p>
+  <p class="foot-dim">棋运昌隆 ♞</p>
+</footer>
+
 <script type="module" src="/src/main.ts"></script>
 </body>
 </html>

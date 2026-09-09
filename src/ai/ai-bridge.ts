@@ -2,11 +2,11 @@
  *  ai/ai-bridge.ts — Main-thread ↔ Worker bridge with promise API
  * ──────────────────────────────────────────────────────────── */
 
-import type { WorkerRequest, WorkerResponse, Difficulty, GameMode, SearchResult, GomokuBoard, GomokuPlayer, XqBoard, XqSide, GomokuMove, XqMove } from '../types';
+import type { WorkerRequest, WorkerResponse, Difficulty, GameMode, SearchResult, GomokuBoard, GomokuPlayer, XqBoard, XqSide, GomokuMove, XqMove, JqMove, JqBoard, JqSide } from '../types';
 
 export class AIBridge {
   private worker: Worker | null = null;
-  private pendingResolve: ((r: SearchResult<GomokuMove | XqMove>) => void) | null = null;
+  private pendingResolve: ((r: SearchResult<GomokuMove | XqMove | JqMove>) => void) | null = null;
   private currentSeq = 0;
 
   constructor() {
@@ -36,7 +36,7 @@ export class AIBridge {
     }
   }
 
-  private send(req: WorkerRequest): Promise<SearchResult<GomokuMove | XqMove>> {
+  private send(req: WorkerRequest): Promise<SearchResult<GomokuMove | XqMove | JqMove>> {
     return new Promise((resolve) => {
       this.currentSeq++;
       this.pendingResolve = resolve;
@@ -111,6 +111,42 @@ export class AIBridge {
       mode,
       historyLength,
     }) as Promise<SearchResult<XqMove>>;
+  }
+
+  searchJq(
+    board: JqBoard,
+    side: JqSide,
+    difficulty: Difficulty,
+    mode: GameMode,
+    flip: boolean,
+    historyLength: number,
+  ): Promise<SearchResult<JqMove>> {
+    return this.send({
+      type: 'junqi-search',
+      board,
+      side,
+      difficulty,
+      mode,
+      flip,
+      historyLength,
+    }) as Promise<SearchResult<JqMove>>;
+  }
+
+  hintJq(
+    board: JqBoard,
+    side: JqSide,
+    mode: GameMode,
+    flip: boolean,
+    historyLength: number,
+  ): Promise<SearchResult<JqMove>> {
+    return this.send({
+      type: 'junqi-hint',
+      board,
+      side,
+      mode,
+      flip,
+      historyLength,
+    }) as Promise<SearchResult<JqMove>>;
   }
 
   cancel(): void {

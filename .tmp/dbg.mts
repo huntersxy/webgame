@@ -1,0 +1,10 @@
+import { findBestMove, LEVEL_CONFIG } from '../src/gomoku/search';
+const N=15;
+const empty = () => Array.from({length:N},()=>new Array(N).fill(0));
+const b = empty();
+for (const [x,y,c] of [[7,7,1],[7,8,1],[8,8,1],[2,2,2],[12,2,2],[2,12,2]] as const) b[y][x]=c;
+const t0=Date.now();
+const r = findBestMove(b.map(r=>[...r]), 2, 4, 'ai', 6);
+console.log('level4:', JSON.stringify(r), 'wall', Date.now()-t0);
+const r2 = findBestMove(b.map(r=>[...r]), 2, 4, 'ai', 6);
+console.log('repeat:', JSON.stringify(r2));
