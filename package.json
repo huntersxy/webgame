@@ -1,13 +1,17 @@
 {
   "name": "webgame",
   "version": "3.0.0",
-  "description": "乐下 · 网页游戏平台 — 五子棋 & 中国象棋（全新增量评估 + 迭代加深 α-β + VCF 引擎）",
+  "description": "乐下 · 网页游戏平台 — 五子棋 & 中国象棋 & 军棋（增量评估 + 迭代加深 α-β + VCF 引擎）",
+  "license": "MIT",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test:engine": "esbuild tests/engine.test.mts --bundle --platform=node --format=esm --outfile=.tmp/engine.test.mjs --log-level=warning && node .tmp/engine.test.mjs",
+    "test:junqi": "esbuild tests/junqi.test.mts --bundle --platform=node --format=esm --outfile=.tmp/junqi.test.mjs --log-level=warning && node .tmp/junqi.test.mjs",
+    "test": "npm run test:engine && npm run test:junqi"
   },
   "devDependencies": {
     "typescript": "^5.7.0",

@@ -1,0 +1,52 @@
+# 构建 & FTP 部署 — 推送 master 自动执行，也可在 Actions 页面手动触发。
+#
+# 需要在仓库 Settings → Secrets and variables → Actions 中配置（与 xqecz 相同命名）：
+#   FTP_SERVER              FTP 服务器地址（如 8.134.190.23）
+#   FTP_USERNAME_FRONTEND   FTP 账号（登录后落在站点根目录）
+#   FTP_PASSWORD            FTP 密码
+#
+# 默认上传到 FTP 根目录（server-dir: ./）；如需部署到子目录，
+# 把 server-dir 改成例如 /webgame/ 即可。
+
+name: Build & Deploy
+
+on:
+  push:
+    branches: ["master"]
+  workflow_dispatch:
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+
+      # ── 构建 ──
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Engine tests
+        run: npm test
+
+      - name: Typecheck & Build
+        run: npm run build
+
+      # ── FTP 上传（纯静态站点，dist/ 即全部产物） ──
+
+      - name: Deploy to FTP
+        uses: SamKirkland/FTP-Deploy-Action@v4.4.0
+        with:
+          server: ${{ secrets.FTP_SERVER }}
+          username: ${{ secrets.FTP_USERNAME_FRONTEND }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          local-dir: dist/
+          server-dir: ./
+          state-name: .ftp-state-webgame.json
