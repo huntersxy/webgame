@@ -35,7 +35,7 @@ self.onmessage = function (e) {
         typeof self.crossOriginIsolated !== 'undefined' &&
         self.crossOriginIsolated;
 
-      const variant = canThread ? 'rapfi-fb-multi.js' : 'rapfi-fb-single.js';
+      const variant = canThread ? 'rapfi-multi.js' : 'rapfi-single.js';
       self.importScripts(variant);
       self.__rapfiVariant = variant;
 
@@ -62,7 +62,8 @@ self.onmessage = function (e) {
       self.Rapfi({
         locateFile: (url) => {
           // Every build requests its own '<name>.data'; all variants share
-          // the single 18KB config file 'rapfi.data' in this directory.
+          // the single package 'rapfi.data' in this directory (config.toml
+          // + mix9svq NNUE weights + classical model tables).
           if (/\.data$/.test(url)) url = 'rapfi.data';
           return url; // resolved against this worker's URL (same dir)
         },

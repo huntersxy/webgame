@@ -85,11 +85,11 @@ async function loadEngine() {
   // The glue is UMD; package.json sets "type":"module" so require() of .js
   // would treat it as ESM. Load it as a classic script body instead (this
   // matches how importScripts() exposes `Rapfi` in the real worker).
-  const src = fs.readFileSync(path.join(RAPFI_DIR, 'rapfi-fb-single.js'), 'utf8');
+  const src = fs.readFileSync(path.join(RAPFI_DIR, 'rapfi-single.js'), 'utf8');
   const mod = { exports: {} };
   new Function('module', 'exports', 'require', '__dirname', src)(mod, mod.exports, require, __dirname);
   const Rapfi = mod.exports.default || mod.exports;
-  const wasmBytes = fs.readFileSync(path.join(RAPFI_DIR, 'rapfi-fb-single.wasm'));
+  const wasmBytes = fs.readFileSync(path.join(RAPFI_DIR, 'rapfi-single.wasm'));
   const lines = [];
   let move = null;
   let onLine = null;
@@ -122,7 +122,7 @@ function setupCmds(engine, turnMs, strength) {
 
 async function run() {
   console.log('▶ rapfi wasm smoke test');
-  check('engine files exist', fs.existsSync(path.join(RAPFI_DIR, 'rapfi-fb-single.js')) && fs.existsSync(path.join(RAPFI_DIR, 'rapfi.data')));
+  check('engine files exist', fs.existsSync(path.join(RAPFI_DIR, 'rapfi-single.js')) && fs.existsSync(path.join(RAPFI_DIR, 'rapfi.data')));
 
   const eng = await loadEngine();
   const cmd = (c) => eng.engine.sendCommand(c);
@@ -150,6 +150,21 @@ async function run() {
   const mv2 = eng.getMove();
   check('midgame returns a move within budget', !!mv2 && Date.now() - t0 < 700 + 2500, JSON.stringify(mv2));
   check('move is on an empty cell', !!mv2 && ![8, 8, 7, 7, 6, 8, 7, 9, 8, 7, 9, 9].some((v, i, a) => i % 2 === 0 && a[i] === mv2.x && a[i + 1] === mv2.y));
+
+  // 2b) quiet position must produce a NON-ZERO evaluation — guards against a
+  //     broken data package (engine silently running a zero evaluator).
+  {
+    eng.resetMove();
+    const pEval = new Parser();
+    eng.setOnLine((l) => pEval.feed(l));
+    setupCmds(eng.engine, 500, 100);
+    t0 = Date.now();
+    cmd('YXBOARD 7,7,1 8,8,1 3,11,2 12,3,2 DONE');
+    cmd('YXNBEST 1');
+    while (!eng.getMove() && Date.now() - t0 < 500 + 2500) await sleep(10);
+    const last = pEval.blocks[pEval.blocks.length - 1];
+    check('mix9svq evaluator active (non-zero eval)', !!last && last.eval !== 0, JSON.stringify(last && last.eval));
+  }
 
   // 3) STRENGTH low → finishes fast (capped search)
   eng.resetMove();

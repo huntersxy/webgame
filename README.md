@@ -54,7 +54,7 @@ npm test           # 引擎自测：五子棋 JS 引擎 16 项 + 军棋 51 项 +
 
 接入了 [Rapfi](https://github.com/dhbloo/rapfi)（Gomocup 顶级 C++ 引擎，GPL v3）的官方 WebAssembly 版本：
 
-- **加载即战力** — 引擎文件（~2.5MB，`public/rapfi/`）随站点静态分发，首次落子即完成实例化；引擎实例跨搜索常驻，置换表保温
+- **加载即战力** — 引擎文件（~12MB，`public/rapfi/`，含 mix9svq NNUE 评估权重）随站点静态分发，首次落子即完成实例化；引擎实例跨搜索常驻，置换表保温
 - **多线程自适应** — 服务器返回 COOP/COEP 头时自动启用多线程构建（`rapfi-fb-multi`），否则降级单线程构建（`rapfi-fb-single`），纯静态托管开箱即用
 - **难度 = 官方棋力档** — 通过引擎协议的 `INFO STRENGTH`（0~100）+ `INFO TIMEOUT_TURN` 时间预算映射四档难度（简单 120ms/棋力15 → 恶魔 2.8s/棋力100），AI 互搏附加以时间抖动保证每局不同
 - **协议层全无状态** — 每手搜索用一条 `BOARD` 命令重放全盘，天然兼容悔棋/重开；引擎侧增量维护棋盘状态
@@ -105,7 +105,7 @@ webgame/
 ├── vite.config.ts / tsconfig.json / package.json
 ├── .github/workflows/deploy.yml   构建 + FTP 自动部署
 ├── public/
-│   └── rapfi/                 Rapfi WASM 引擎（multi/single 构建 + 配置 + classic worker 胶水）
+│   └── rapfi/                 Rapfi WASM 引擎（multi/single 构建 + mix9svq 权重包 + classic worker 胶水）
 ├── tests/
 │   ├── engine.test.mts        五子棋引擎测试（增量状态不变量 / 战术 / 速度 / 自对弈）
 │   ├── junqi.test.mts         军棋规则引擎测试（摆阵 / 铁路 / 战斗 / 可逆走子 / AI）

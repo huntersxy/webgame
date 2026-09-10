@@ -65,6 +65,8 @@ export interface SearchResult<M> {
   opening?: boolean;
   book?: boolean;
   qd?: number;
+  /** Which engine produced this result: rapfi WASM variant or the bundled JS engine */
+  engine?: 'rapfi-multi' | 'rapfi-single' | 'js';
 }
 
 /** Difficulty levels */

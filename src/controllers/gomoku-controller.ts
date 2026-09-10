@@ -44,6 +44,7 @@ export class GomokuController {
   private _animFrame: number | null = null;
   private _down: { x: number; y: number } | null = null;
   private _openingWarned = false;
+  private _engineLogged = false;
 
   constructor(canvas: HTMLCanvasElement, ai: AIBridge, audio: AudioEngine) {
     this.canvas = canvas;
@@ -163,15 +164,23 @@ export class GomokuController {
       toggleProgress(document.getElementById('g-think-progress'), false);
 
       const who = aiPlayer === 1 ? '黑' : '白';
-      if (res.instant) {
-        setStats(document.getElementById('g-think-stats'), `⚡ <b>${who}·${cfg.name}</b> 秒断胜负手 (${m?.x},${m?.y}) · 直接成五/堵五`);
+      const engineName = res.engine === 'rapfi-multi' ? '🧩Rapfi·多线程' : res.engine === 'rapfi-single' ? '🧩Rapfi·单线程' : res.engine === 'js' ? '内置引擎' : '';
+      if ((res.engine === 'rapfi-multi' || res.engine === 'rapfi-single') && !this._engineLogged) {
+        this._engineLogged = true;
+        appendLog(document.getElementById('g-think-log'), `🧩 <b>Rapfi WASM 引擎已接入</b>（${res.engine === 'rapfi-multi' ? '多线程构建' : '单线程构建 · 服务器未启用 COOP/COEP 时自动降级'}）`);
+      }
+      if (res.opening) {
+        setStats(document.getElementById('g-think-stats'), `⚡ <b>${who}</b> 开局速答 (${m?.x},${m?.y})${engineName ? ' · ' + engineName : ''}`);
+        appendLog(document.getElementById('g-think-log'), `⚡ 开局速答 [${who}] → (${m?.x},${m?.y})${engineName ? ` · ${engineName}` : ''}（开局谱固定应手，未启动搜索）`);
+      } else if (res.instant) {
+        setStats(document.getElementById('g-think-stats'), `⚡ <b>${who}·${cfg.name}</b> 秒断胜负手 (${m?.x},${m?.y}) · 直接成五/堵五${engineName ? ' · ' + engineName : ''}`);
         appendLog(document.getElementById('g-think-log'), `⚡ <b>即时胜负手</b> [${who}] → (${m?.x},${m?.y}) · depth${res.depth}免搜索`);
       } else {
         const top = (res.scores || []).slice(0, 5).map((s, i) => `#${i + 1}(${s.x},${s.y}):${s.v > 99999 ? '胜' : s.v}`).join(' ');
         const ev = fmtEval(res.eval, 100000);
         const boost = res.boosted ? ` <span style="color:#ff6b6b">·劣势加深→depth${res.depth}</span>` : '';
-        setStats(document.getElementById('g-think-stats'), `✅ <b>${who}·${cfg.name}</b> depth${res.depth} 宽${cfg.limit} · 节点 <b>${res.nodes.toLocaleString()}</b> · ${res.ms}ms · 评估 <b>${ev}</b> · 选 (${m?.x},${m?.y})${boost}`);
-        appendLog(document.getElementById('g-think-log'), `🧠 depth<b>${res.depth}</b> 宽${cfg.limit} · 节点${res.nodes.toLocaleString()} · ${res.ms}ms · 评估${ev} · 选<b>(${m?.x},${m?.y})</b>${res.boosted ? ' · <span style="color:#ff6b6b">劣势加深</span>' : ''}<br><span class="cand">${top}</span>`);
+        setStats(document.getElementById('g-think-stats'), `✅ <b>${who}·${cfg.name}</b>${engineName ? `〔${engineName}〕` : ''} depth${res.depth} · 节点 <b>${res.nodes.toLocaleString()}</b> · ${res.ms}ms · 评估 <b>${ev}</b> · 选 (${m?.x},${m?.y})${boost}`);
+        appendLog(document.getElementById('g-think-log'), `🧠${engineName ? `<b>${engineName}</b>·` : ''} depth<b>${res.depth}</b> · 节点${res.nodes.toLocaleString()} · ${res.ms}ms · 评估${ev} · 选<b>(${m?.x},${m?.y})</b>${res.boosted ? ' · <span style="color:#ff6b6b">劣势加深</span>' : ''}<br><span class="cand">${top}</span>`);
       }
 
       if (m) {
@@ -247,9 +256,10 @@ export class GomokuController {
       const res = await this.ai.hintGomoku(cloneBoard(this.board), this.turn, this.mode, this.history.length);
       const m = res.move;
       if (m) {
+        const engineName = res.engine === 'rapfi-multi' ? '🧩Rapfi·多线程' : res.engine === 'rapfi-single' ? '🧩Rapfi·单线程' : res.engine === 'js' ? '内置引擎' : '';
         this.thinkCandidates = (res.scores || []).map((s, i) => ({ ...s, rank: i + 1 }));
-        appendLog(document.getElementById('g-think-log'), `💡 <b>恶魔支招</b> depth${res.depth}宽${res.eval} · 推荐<b>(${m.x},${m.y})</b> · 评估${res.eval} · 节点${res.nodes.toLocaleString()}`);
-        setStats(document.getElementById('g-think-stats'), `💡 恶魔支招 depth${res.depth} · 推荐 (${m.x},${m.y}) · 节点${res.nodes.toLocaleString()} · ${res.ms}ms`);
+        appendLog(document.getElementById('g-think-log'), `💡 <b>恶魔支招</b>${engineName ? `〔${engineName}〕` : ''} depth${res.depth} · 推荐<b>(${m.x},${m.y})</b> · 评估${fmtEval(res.eval, 100000)} · 节点${res.nodes.toLocaleString()} · ${res.ms}ms`);
+        setStats(document.getElementById('g-think-stats'), `💡 恶魔支招 depth${res.depth} · 推荐 (${m.x},${m.y}) · 节点${res.nodes.toLocaleString()} · ${res.ms}ms${engineName ? ' · ' + engineName : ''}`);
         this.hintPos = { x: m.x, y: m.y };
         this.redraw();
         this.audio.hint();

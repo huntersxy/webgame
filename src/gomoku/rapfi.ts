@@ -4,8 +4,8 @@
  *
  *  Rapfi is the gomocup-level C++ engine (github.com/dhbloo/rapfi),
  *  compiled to WebAssembly. The engine files live in public/rapfi/
- *  (rapfi-fb-{multi,single}.{js,wasm} + rapfi.data config) and are
- *  loaded by public/rapfi/engine-worker.js. The multi build needs
+ *  (rapfi-{multi,single}.{js,wasm} + rapfi.data with mix9svq NNUE
+ *  weights) and are loaded by public/rapfi/engine-worker.js. The multi build needs
  *  SharedArrayBuffer (nginx must send COOP/COEP headers); without
  *  it we transparently use the single-thread build, and if the
  *  wasm fails to load entirely the caller falls back to the
@@ -115,6 +115,8 @@ export class RapfiEngine {
   private worker: Worker | null = null;
   private readyPromise: Promise<void> | null = null;
   private onLine: ((line: string) => void) | null = null;
+  /** 'multi' | 'single' once the engine has booted */
+  variant: 'multi' | 'single' | null = null;
   private threads = 1;
   /** serialization so concurrent requests never interleave stdout */
   private chain: Promise<unknown> = Promise.resolve();
@@ -140,7 +142,8 @@ export class RapfiEngine {
           case 'ready': {
             clearTimeout(timer);
             const variant = typeof msg.data === 'string' ? msg.data : '';
-            this.threads = variant.includes('multi')
+            this.variant = variant.includes('multi') ? 'multi' : 'single';
+            this.threads = this.variant === 'multi'
               ? Math.max(1, Math.min(4, (self.navigator?.hardwareConcurrency || 2) - 1))
               : 1;
             resolve();
@@ -223,11 +226,11 @@ export class RapfiEngine {
     // ── Opening shortcuts (instant, keeps aivai varied) ──
     if (historyLength === 0) {
       const mv = { x: 7, y: 7, v: 0 };
-      return { move: mv, depth: 1, nodes: 1, ms: 0, eval: 0, scores: [mv], opening: true };
+      return { move: mv, depth: 1, nodes: 1, ms: 0, eval: 0, scores: [mv], opening: true, engine: this.engineTag() };
     }
     if (historyLength === 1) {
       const mv = nearFirstReply(board, player);
-      return { move: mv, depth: 1, nodes: 1, ms: 0, eval: 0, scores: [mv], opening: true };
+      return { move: mv, depth: 1, nodes: 1, ms: 0, eval: 0, scores: [mv], opening: true, engine: this.engineTag() };
     }
 
     const t0 = now();
@@ -303,6 +306,7 @@ export class RapfiEngine {
         ms: Math.round(now() - t0),
         eval: last?.eval ?? 0,
         scores,
+        engine: this.engineTag(),
       };
     } catch (err) {
       console.warn('[rapfi] search failed, falling back to JS engine:', err);
@@ -310,6 +314,11 @@ export class RapfiEngine {
     } finally {
       this.onLine = null;
     }
+  }
+
+  /** Engine label for the UI ('rapfi-multi' | 'rapfi-single' | 'js'). */
+  private engineTag(): SearchResult<GomokuMove>['engine'] {
+    return this.variant === 'multi' ? 'rapfi-multi' : this.variant === 'single' ? 'rapfi-single' : undefined;
   }
 }
 

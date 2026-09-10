@@ -22,9 +22,10 @@ self.onmessage = (e: MessageEvent<WorkerRequest>) => {
       const player = req.player as GomokuPlayer;
       const { difficulty, mode, historyLength } = req;
       rapfi
-        .findMove(board, player, difficulty, mode, historyLength, () =>
-          gomokuSearch(board, player, difficulty, mode, historyLength),
-        )
+        .findMove(board, player, difficulty, mode, historyLength, () => ({
+          ...gomokuSearch(board, player, difficulty, mode, historyLength),
+          engine: 'js' as const,
+        }))
         .then((result) => post({ type: 'search-result', result: result as any }));
       break;
     }
@@ -33,9 +34,10 @@ self.onmessage = (e: MessageEvent<WorkerRequest>) => {
       const player = req.player as GomokuPlayer;
       const { mode, historyLength } = req;
       rapfi
-        .findMove(board, player, 4, mode, historyLength, () =>
-          gomokuHint(board, player, mode, historyLength),
-        )
+        .findMove(board, player, 4, mode, historyLength, () => ({
+          ...gomokuHint(board, player, mode, historyLength),
+          engine: 'js' as const,
+        }))
         .then((result) => post({ type: 'search-result', result: result as any }));
       break;
     }
