@@ -8,12 +8,18 @@ import { prefetchRapfiData } from '../gomoku/rapfi-assets';
 /** 数据包下载进度来源：主线程预取，或引擎自己的那次请求 */
 export type LoadPhase = 'prefetch' | 'engine';
 
+/** 请求被取消/worker 崩溃时回给调用方的空结果 */
+const EMPTY_RESULT: SearchResult<GomokuMove | XqMove | JqMove> = { move: null, depth: 0, nodes: 0, ms: 0, eval: 0, scores: [] };
+
 export class AIBridge {
   private worker: Worker | null = null;
-  private pendingResolve: ((r: SearchResult<GomokuMove | XqMove | JqMove>) => void) | null = null;
+  /** 在途请求：id → resolver。必须按 id 一一对应，不能只留「最后一个」——
+   *  「请神上身」会与 AI 落子、求一着并发，单槽 resolver 会让先发的那个
+   *  promise 永不 settle，后发的那个冒领前者的结果。 */
+  private pending = new Map<number, (r: SearchResult<GomokuMove | XqMove | JqMove>) => void>();
+  private nextId = 0;
   private warmupResolve: ((r: { ok: boolean; variant?: 'multi' | 'single' }) => void) | null = null;
   private loadProgressCb: ((loaded: number, total: number, src: LoadPhase) => void) | null = null;
-  private currentSeq = 0;
 
   constructor() {
     this.initWorker();
@@ -24,9 +30,14 @@ export class AIBridge {
       this.worker = new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' });
       this.worker.onmessage = (e: MessageEvent<WorkerResponse>) => {
         const msg = e.data;
-        if (msg.type === 'search-result' && this.pendingResolve) {
-          this.pendingResolve(msg.result);
-          this.pendingResolve = null;
+        if (msg.type === 'search-result') {
+          // 只认回带的 id：拿不到对应在途请求的结果直接丢弃，
+          // 绝不「顺延」给别的调用方。
+          const resolve = msg.id !== undefined ? this.pending.get(msg.id) : undefined;
+          if (resolve && msg.id !== undefined) {
+            this.pending.delete(msg.id);
+            resolve(msg.result);
+          }
         } else if (msg.type === 'warmup-done') {
           this.warmupResolve?.({ ok: msg.ok, variant: msg.variant });
           this.warmupResolve = null;
@@ -36,11 +47,7 @@ export class AIBridge {
       };
       this.worker.onerror = (e) => {
         console.error('AI Worker error:', e);
-        if (this.pendingResolve) {
-          // Fallback: return null move
-          this.pendingResolve({ move: null, depth: 0, nodes: 0, ms: 0, eval: 0, scores: [] });
-          this.pendingResolve = null;
-        }
+        this.failAllPending();
       };
     } catch (err) {
       console.error('Failed to create AI worker:', err);
@@ -72,15 +79,21 @@ export class AIBridge {
 
   private send(req: WorkerRequest): Promise<SearchResult<GomokuMove | XqMove | JqMove>> {
     return new Promise((resolve) => {
-      this.currentSeq++;
-      this.pendingResolve = resolve;
-      if (this.worker) {
-        this.worker.postMessage(req);
-      } else {
+      if (!this.worker) {
         // No worker — resolve immediately with null
-        resolve({ move: null, depth: 0, nodes: 0, ms: 0, eval: 0, scores: [] });
+        resolve(EMPTY_RESULT);
+        return;
       }
+      const id = ++this.nextId;
+      this.pending.set(id, resolve);
+      this.worker.postMessage({ ...req, id });
     });
+  }
+
+  /** 把全部在途请求以空结果落地，避免 worker 崩溃后调用方永久 await。 */
+  private failAllPending(): void {
+    for (const resolve of this.pending.values()) resolve(EMPTY_RESULT);
+    this.pending.clear();
   }
 
   searchGomoku(
@@ -90,6 +103,7 @@ export class AIBridge {
     mode: GameMode,
     historyLength: number,
     moves: GomokuHistoryMove[],
+    forceJs = false,
   ): Promise<SearchResult<GomokuMove>> {
     return this.send({
       type: 'gomoku-search',
@@ -99,6 +113,7 @@ export class AIBridge {
       mode,
       historyLength,
       moves,
+      forceJs,
     }) as Promise<SearchResult<GomokuMove>>;
   }
 
@@ -108,6 +123,7 @@ export class AIBridge {
     mode: GameMode,
     historyLength: number,
     moves: GomokuHistoryMove[],
+    forceJs = false,
   ): Promise<SearchResult<GomokuMove>> {
     return this.send({
       type: 'gomoku-hint',
@@ -116,6 +132,7 @@ export class AIBridge {
       mode,
       historyLength,
       moves,
+      forceJs,
     }) as Promise<SearchResult<GomokuMove>>;
   }
 
@@ -191,10 +208,10 @@ export class AIBridge {
     if (this.worker) {
       this.worker.postMessage({ type: 'cancel' } as WorkerRequest);
     }
-    this.pendingResolve = null;
+    this.failAllPending();
   }
 
   get isBusy(): boolean {
-    return this.pendingResolve !== null;
+    return this.pending.size > 0;
   }
 }

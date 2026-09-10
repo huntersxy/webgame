@@ -256,6 +256,7 @@
         <div class="canvas-holder">
           <canvas id="gomoku-canvas" width="620" height="620"></canvas>
           <div id="gomoku-thinking" class="thinking hidden"><div class="spinner"></div>AI 思考中…</div>
+          <div id="gomoku-god-thinking" class="thinking god-thinking hidden"><div class="spinner"></div>神在思考…正在算最佳点 · 约 3 秒</div>
         </div>
         <div id="gomoku-result" class="result-banner hidden"></div>
       </div>
@@ -280,7 +281,10 @@
               <p>“开局即中盘，你准备好了吗。”</p>
             </div>
           </div>
-          <button id="g-demon-memory" class="btn plain full demon-memory-btn">📋 恶魔败局档案</button>
+          <label class="row"><span>引擎</span>
+            <div class="seg" id="g-engine"><button data-v="auto" class="on">自动</button><button data-v="js">内置 JS</button></div>
+          </label>
+          <div class="engine-note" id="g-engine-note">自动：优先 Rapfi；加载完成前先用内置 JS 引擎应手。</div>
         </div>
         <div class="panel-block">
           <div class="btn-grid">
@@ -374,6 +378,7 @@
         <div class="canvas-holder slim">
           <canvas id="xiangqi-canvas" width="560" height="620"></canvas>
           <div id="xiangqi-thinking" class="thinking hidden"><div class="spinner"></div>AI 深算中…</div>
+          <div id="xiangqi-god-thinking" class="thinking god-thinking hidden"><div class="spinner"></div>神在思考…正在算最佳走法 · 约 3 秒</div>
         </div>
         <div id="xiangqi-result" class="result-banner hidden"></div>
       </div>
@@ -519,18 +524,6 @@
   </section>
 </main>
 
-<!-- 恶魔败局档案弹窗 -->
-<div class="modal-backdrop hidden" id="demon-memory-modal">
-  <div class="modal-card">
-    <div class="modal-head">
-      <h3>恶魔败局档案</h3>
-      <button class="modal-x" id="demon-memory-close">✕</button>
-    </div>
-    <p class="modal-sub">恶魔每次输给人类都会存档并从中学到教训。<b>下次遇到完全相同的局面时，它不会重蹈覆辙。</b></p>
-    <div class="memory-stats" id="demon-memory-stats"></div>
-    <div class="memory-list" id="demon-memory-list"></div>
-  </div>
-</div>
 
 <footer>
   <p>汐兮雨的小鱼池 — 本地 AI · Web Worker · TypeScript + Vite</p>

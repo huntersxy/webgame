@@ -142,3 +142,83 @@ export function probeOpening(
 }
 
 export type OpeningReply = ReturnType<typeof probeOpening>;
+
+// ── 黑棋必胜开局识别 ─────────────────────────────────────────
+// 用于「人类正在使用必胜定式」的提醒。原寄生在 gomoku/learn.ts（恶魔记忆
+// 子系统，已移除）里，迁来此处与上面的应对谱同源——同样按 8 对称归一化。
+
+type Pt2 = { x: number; y: number };
+
+const OPENING_TABLE: Array<[string, Pt2, Pt2]> = [
+  // 直指 (黑3 直连) — canonical 黑3 = (0,1)
+  ['花月', { x: 0, y: 1 }, { x: 1, y: -1 }],
+  ['浦月', { x: 0, y: 1 }, { x: -1, y: 0 }],
+  ['丘月', { x: 0, y: 1 }, { x: -1, y: 1 }],
+  ['寒星', { x: 0, y: 1 }, { x: 1, y: 0 }],
+  ['溪月', { x: 0, y: 1 }, { x: 0, y: 2 }],
+  ['疏星', { x: 0, y: 1 }, { x: 2, y: 1 }],
+  // 斜指 (黑3 斜连) — canonical 黑3 = (1,1)
+  ['明星', { x: 1, y: 1 }, { x: 1, y: -1 }],
+  ['斜月', { x: 1, y: 1 }, { x: -1, y: 1 }],
+  ['岚月', { x: 1, y: 1 }, { x: 2, y: 0 }],
+  ['银月', { x: 1, y: 1 }, { x: 0, y: 2 }],
+  ['金星', { x: 1, y: 1 }, { x: 0, y: -1 }],
+];
+
+/** All 8 symmetries as (x,y) → (x',y') transforms. */
+const SYMS: Array<(p: Pt2) => Pt2> = [
+  (p) => ({ x: p.x, y: p.y }),
+  (p) => ({ x: -p.x, y: p.y }),
+  (p) => ({ x: p.x, y: -p.y }),
+  (p) => ({ x: -p.x, y: -p.y }),
+  (p) => ({ x: p.y, y: p.x }),
+  (p) => ({ x: -p.y, y: p.x }),
+  (p) => ({ x: p.y, y: -p.x }),
+  (p) => ({ x: -p.y, y: -p.x }),
+];
+
+const keyOf = (p: Pt2): string => `${p.x},${p.y}`;
+
+/**
+ * Detect a classic black winning opening from the move history.
+ * Returns the opening name, or a generic "起手式" label, or null.
+ * Only meaningful when a human plays black (mode ai, human === 1).
+ */
+export function detectWinningOpening(
+  moves: Array<{ x: number; y: number; c: number }>,
+  human: GomokuPlayer,
+): { name: string; exact: boolean } | null {
+  if (human !== 1) return null;               // black winning openings require human black
+  const blacks = moves.filter((m) => m.c === 1).slice(0, 3); // 黑1 黑3 黑5
+  if (blacks.length < 2) return null;
+  const b1 = blacks[0];
+  const p3 = { x: blacks[1].x - b1.x, y: blacks[1].y - b1.y };
+  const straight = (p3.x === 0 && Math.abs(p3.y) === 1) || (p3.y === 0 && Math.abs(p3.x) === 1);
+  const diag = Math.abs(p3.x) === 1 && Math.abs(p3.y) === 1;
+  if (!straight && !diag) return null;
+
+  // Generic read on the first three stones: a 直指/斜指 start is itself a
+  // known "black winning" skeleton.
+  const base: { name: string; exact: boolean } = {
+    name: straight ? '直指型黑棋必胜开局' : '斜指型黑棋必胜开局',
+    exact: false,
+  };
+  if (blacks.length < 3) return base;
+
+  const p5 = { x: blacks[2].x - b1.x, y: blacks[2].y - b1.y };
+  const target3: Pt2 = straight ? { x: 0, y: 1 } : { x: 1, y: 1 };
+  let best: { name: string; exact: boolean } | null = null;
+  for (const sym of SYMS) {
+    const q3 = sym(p3);
+    if (q3.x !== target3.x || q3.y !== target3.y) continue;
+    const q5 = sym(p5);
+    for (const [name, t3, t5] of OPENING_TABLE) {
+      if (t3.x === target3.x && t3.y === target3.y && keyOf(t5) === keyOf(q5)) {
+        best = { name, exact: true };
+        break;
+      }
+    }
+    if (best) break;
+  }
+  return best ?? base;
+}

@@ -49,10 +49,15 @@ export class XiangqiController {
   private god = false;
   private godMove: XqMove | null = null;
   private godThinking = false;
+  /** 神算期间局面又变了：等这次算完立刻补算，否则神指会停在旧局面 */
+  private _godDirty = false;
+  /** 「提示」在途：挡住连点造成的重复搜索 */
+  private _hintBusy = false;
+  /** 局面版本号：走子/悔棋/重开各 +1，用来作废在途的提示与神指结果 */
+  private _posSeq = 0;
   private _aiTimer: ReturnType<typeof setTimeout> | null = null;
   /** 搜索代次：重置局面时 +1，作废「重置前发出、重置后才返回」的旧结果 */
   private _searchSeq = 0;
-  private _godTimer: ReturnType<typeof setInterval> | null = null;
   private _haltAivai = false;
   private _animFrame: number | null = null;
   private _down: { x: number; y: number } | null = null;
@@ -85,7 +90,10 @@ export class XiangqiController {
 
   private startAnimLoop(): void {
     const loop = () => {
-      if (this.god || (this.viz && this.thinkMoves.length > 0 && !this.over)) {
+      // 只在真的有会动的内容（神指 / 候选）时重绘。旧写法只要 god 打开就每帧
+      // 全画布重绘，与有没有神指无关——空转的 60fps，纯烧电。
+      const godMark = this.god && !!this.godMove && !this.over;
+      if (godMark || (this.viz && this.thinkMoves.length > 0 && !this.over)) {
         this.redraw();
       }
       this._animFrame = requestAnimationFrame(loop);
@@ -98,8 +106,8 @@ export class XiangqiController {
   newGame(): void {
     resetXqWarmDepth(); // new game → drop any warm-start adaptive depth
     this._searchSeq++; // 在途搜索作废
+    this._posSeq++;
     if (this._aiTimer) { clearTimeout(this._aiTimer); this._aiTimer = null; }
-    if (this._godTimer) { clearInterval(this._godTimer); this._godTimer = null; }
     this.board = createInitialBoard();
     this.turn = 'r';
     this.sel = null;
@@ -122,7 +130,6 @@ export class XiangqiController {
     const cfg = LEVEL_CONFIG[this.level];
     const modeName = this.mode === 'aivai' ? '🤖AI互搏观战' : (this.mode === 'pvp' ? '双人对战' : '人机对战');
     setStats(document.getElementById('x-think-stats'), `新对局 · ${modeName} · 难度 <b>${cfg.name}</b> · depth${cfg.depth}+Q${cfg.qd} · 等待行棋…`);
-    if (this.god) this.startGodTimer();
     if (this.mode === 'ai' && this.turn !== this.human) this.aiMove();
     else if (this.mode === 'aivai') this.aiMove();
     else this.refreshGod();
@@ -157,6 +164,7 @@ export class XiangqiController {
     this.sel = null;
     this.moves = [];
     this.godMove = null;
+    this._posSeq++;
     this.check = inCheck(this.board, this.turn);
     if (this.check) this.audio.check();
     const opp = legalMoves(this.board, this.turn);
@@ -224,6 +232,7 @@ export class XiangqiController {
     if (this.thinking || !this.hist.length) return;
     this.thinkMoves = [];
     this.godMove = null;
+    this._posSeq++;
     if (this.mode === 'aivai') this.stopAivaiSilent();
     const n = this.mode === 'ai' ? (this.turn !== this.human ? 1 : 2) : 1;
     for (let i = 0; i < n && this.hist.length; i++) {
@@ -250,65 +259,91 @@ export class XiangqiController {
   }
 
   async hint(): Promise<void> {
-    if (this.over || this.thinking || this.godThinking) return;
+    // _hintBusy 挡住连点：每次提示都是一次恶魔档满配搜索
+    if (this.over || this.thinking || this.godThinking || this._hintBusy) return;
+    this._hintBusy = true;
+    this.syncGodUI();          // 亮进度条，别让玩家以为没反应
+    const seq = this._posSeq;
     setStats(document.getElementById('x-think-stats'), '👉 恶魔正在附体算招… depth4+Q3全开，请稍候');
     setTimeout(async () => {
-      const res = await this.ai.hintXq(this.board.map((r) => [...r]), this.turn, this.mode, this.hist.length);
-      const m = res.move;
-      if (m) {
-        this.thinkMoves = (res.scores || []).map((s, i) => ({ ...s, rank: i + 1 }));
-        const ev = res.eval >= MATE - 1000 ? '绝杀' : res.eval;
-        appendLog(document.getElementById('x-think-log'), `💡 <b>恶魔支招</b> depth${res.depth}+Q${res.qd} · 推荐<b>${moveStr(m)}</b> · 评估${ev} · 节点${res.nodes.toLocaleString()}`);
-        setStats(document.getElementById('x-think-stats'), `💡 恶魔支招 depth${res.depth} · 推荐 ${moveStr(m)} · 节点${res.nodes.toLocaleString()} · ${res.ms}ms`);
-        this.sel = { x: m.fx, y: m.fy };
-        this.moves = legalMoves(this.board, this.turn).filter((z) => z.fx === m.fx && z.fy === m.fy);
-        this.redraw();
-        this.audio.hint();
+      try {
+        const res = await this.ai.hintXq(this.board.map((r) => [...r]), this.turn, this.mode, this.hist.length);
+        // 这手算的是「走子/悔棋/重开之前」的局面就丢弃，别把提示画到新局面
+        if (seq !== this._posSeq) return;
+        const m = res.move;
+        if (m) {
+          this.thinkMoves = (res.scores || []).map((s, i) => ({ ...s, rank: i + 1 }));
+          const ev = res.eval >= MATE - 1000 ? '绝杀' : res.eval;
+          appendLog(document.getElementById('x-think-log'), `💡 <b>恶魔支招</b> depth${res.depth}+Q${res.qd} · 推荐<b>${moveStr(m)}</b> · 评估${ev} · 节点${res.nodes.toLocaleString()}`);
+          setStats(document.getElementById('x-think-stats'), `💡 恶魔支招 depth${res.depth} · 推荐 ${moveStr(m)} · 节点${res.nodes.toLocaleString()} · ${res.ms}ms`);
+          this.sel = { x: m.fx, y: m.fy };
+          this.moves = legalMoves(this.board, this.turn).filter((z) => z.fx === m.fx && z.fy === m.fy);
+          this.redraw();
+          this.audio.hint();
+        }
+      } finally {
+        this._hintBusy = false;
+        this.syncGodUI();
       }
     }, 30);
   }
 
   toggleGod(): void {
     this.god = !this.god;
-    const btn = document.getElementById('x-god');
-    if (btn) { btn.classList.toggle('on', this.god); btn.textContent = this.god ? '🛌 送神离开' : '🙏 请神上身'; }
     if (this.god) {
       appendLog(document.getElementById('x-think-log'), '🙏 <b>恶魔附体！请神上身成功</b>，每手都将用 depth4 给你指 👇 最佳走法');
-      this.startGodTimer();
+      this.syncGodUI();
       this.refreshGod();
     } else {
       this.godMove = null;
       this.godThinking = false;
-      if (this._godTimer) { clearInterval(this._godTimer); this._godTimer = null; }
+      this._godDirty = false;
       appendLog(document.getElementById('x-think-log'), '🛌 已送神，神指消失');
+      this.syncGodUI();
       this.redraw();
     }
   }
 
-  private startGodTimer(): void {
-    if (this._godTimer) return;
-    this._godTimer = setInterval(() => { if (this.god && this.godMove && !this.over) this.redraw(); }, 600);
+  /** 「神在思考」提示 + 按钮态 + 进度条：让玩家知道在算、大概等多久。 */
+  private syncGodUI(): void {
+    const btn = document.getElementById('x-god');
+    if (btn) {
+      btn.classList.toggle('on', this.god);
+      btn.textContent = !this.god ? '🙏 请神上身' : (this.godThinking ? '🙏 神算中…' : '🛌 送神离开');
+    }
+    const busy = this.god && this.godThinking;
+    document.getElementById('xiangqi-god-thinking')?.classList.toggle('hidden', !busy);
+    toggleProgress(document.getElementById('x-think-progress'), busy || this._hintBusy || this.thinking);
+    this.updatePanel();
   }
 
   private refreshGod(): void {
-    if (!this.god || this.over || this.thinking || this.godThinking) return;
+    if (!this.god || this.over || this.thinking) return;
     if (this.mode === 'aivai' && !this._haltAivai) return;
+    // 上一次还在算：记脏标记，等它收尾时补算——直接 return 会让神指停在旧局面
+    if (this.godThinking) { this._godDirty = true; return; }
     this.godThinking = true;
-    this.updatePanel();
+    this.syncGodUI();          // 立刻亮起「神在思考」，别让玩家干等
+    const seq = this._posSeq;
     setTimeout(async () => {
       try {
         const res = await this.ai.hintXq(this.board.map((r) => [...r]), this.turn, this.mode, this.hist.length);
+        // 结果算的是旧局面、或期间已经送神，就丢弃（脏标记会在 finally 里补算）
+        if (!this.god || seq !== this._posSeq) return;
         this.godMove = res.move;
         if (res.scores) this.thinkMoves = res.scores.map((s, i) => ({ ...s, rank: i + 1 }));
         this.redraw();
-      } finally { this.godThinking = false; this.updatePanel(); }
+      } finally {
+        this.godThinking = false;
+        this.syncGodUI();
+        if (this._godDirty) { this._godDirty = false; this.refreshGod(); }
+      }
     }, 40);
   }
 
   private onEnd(): void {
     const el = document.getElementById('xiangqi-result');
     el?.classList.remove('hidden');
-    if (this._godTimer) { clearInterval(this._godTimer); this._godTimer = null; }
     const w = this.winner;
     let t = '';
     if (w === 'draw') { t = '🤝 和棋！双方激战 80 回合未分胜负。'; }

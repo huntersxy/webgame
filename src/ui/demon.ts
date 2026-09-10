@@ -9,12 +9,10 @@ import type { AudioEngine } from './audio';
 export const DEMON_NAME = '褚赢';
 
 /**
- * Populate the logo and any demon avatars with the project image.
+ * Populate any demon avatars with the project image.
  * Safe to call multiple times; only sets src when element exists.
  */
 export function setupDemonAssets(): void {
-  const logo = document.getElementById('logo-mark') as HTMLImageElement | null;
-  if (logo) logo.src = demonAvatarUrl;
   for (const id of ['g-demon-avatar', 'x-demon-avatar']) {
     const img = document.getElementById(id) as HTMLImageElement | null;
     if (img) img.src = demonAvatarUrl;

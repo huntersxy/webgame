@@ -111,21 +111,24 @@ export interface ThinkInfo {
   qd?: number;
 }
 
-/** Worker request messages */
-export type WorkerRequest =
-  | { type: 'gomoku-search'; board: GomokuBoard; player: GomokuPlayer; difficulty: Difficulty; mode: GameMode; historyLength: number; moves: GomokuHistoryMove[] }
-  | { type: 'gomoku-hint'; board: GomokuBoard; player: GomokuPlayer; mode: GameMode; historyLength: number; moves: GomokuHistoryMove[] }
+/** Worker request messages.
+ *  `id` 由 AIBridge 分配并原样回带，用于把响应精确配回发起它的那次请求——
+ *  否则并发请求（如「请神上身」与 AI 落子同时进行）会互相冒领结果。 */
+export type WorkerRequest = (
+  | { type: 'gomoku-search'; board: GomokuBoard; player: GomokuPlayer; difficulty: Difficulty; mode: GameMode; historyLength: number; moves: GomokuHistoryMove[]; forceJs?: boolean }
+  | { type: 'gomoku-hint'; board: GomokuBoard; player: GomokuPlayer; mode: GameMode; historyLength: number; moves: GomokuHistoryMove[]; forceJs?: boolean }
   | { type: 'xq-search'; board: XqBoard; side: XqSide; difficulty: Difficulty; mode: GameMode; historyLength: number }
   | { type: 'xq-hint'; board: XqBoard; side: XqSide; mode: GameMode; historyLength: number }
   | { type: 'junqi-search'; board: JqBoard; side: JqSide; difficulty: Difficulty; mode: GameMode; flip: boolean; historyLength: number }
   | { type: 'junqi-hint'; board: JqBoard; side: JqSide; mode: GameMode; flip: boolean; historyLength: number }
   /** 提前唤醒 Rapfi 引擎，把首次 ~11MB 加载挪到玩家思考首手的时间里 */
   | { type: 'gomoku-warmup' }
-  | { type: 'cancel' };
+  | { type: 'cancel' }
+) & { id?: number };
 
 /** Worker response messages */
 export type WorkerResponse =
-  | { type: 'search-result'; result: SearchResult<GomokuMove | XqMove | JqMove> }
+  | { type: 'search-result'; id?: number; result: SearchResult<GomokuMove | XqMove | JqMove> }
   | { type: 'progress'; nodes: number }
   | { type: 'warmup-done'; ok: boolean; variant?: 'multi' | 'single' }
   /** 引擎数据包下载进度（worker 侧上报，主线程预取时通常一闪而过） */

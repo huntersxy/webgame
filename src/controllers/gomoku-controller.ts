@@ -13,9 +13,17 @@ import { Stats } from '../ui/stats';
 import { renderGomoku, pxToCellGomoku, gomokuScorePercent, type GomokuRenderState } from '../ui/gomoku-renderer';
 import { appendLog, setStats, toggleProgress, fmtEval } from '../ui/format';
 import { applyDemonTheme } from '../ui/demon';
-import { checkLesson, detectWinningOpening, recordLoss, lessonCount, getLosses } from '../gomoku/learn';
+import { detectWinningOpening } from '../gomoku/book';
 
 interface HistoryEntry { x: number; y: number; c: GomokuPlayer; }
+
+/** 「恶魔记忆/学习」子系统已移除，顺手清掉老访客浏览器里遗留的存储键。 */
+function dropLegacyDemonMemory(): void {
+  try {
+    localStorage.removeItem('gomoku.demonLessons.v1');
+    localStorage.removeItem('gomoku.demonLosses.v1');
+  } catch { /* 无痕模式等场景下 localStorage 不可用，忽略 */ }
+}
 
 export class GomokuController {
   private canvas: HTMLCanvasElement;
@@ -38,8 +46,13 @@ export class GomokuController {
   private god = false;
   private godMove: GomokuMove | null = null;
   private godThinking = false;
+  /** 神算期间局面又变了：等这次算完立刻补算，否则神指会停在旧局面 */
+  private _godDirty = false;
+  /** 「求一着」在途：挡住连点造成的重复搜索 */
+  private _hintBusy = false;
+  /** 局面版本号：落子/悔棋/重开各 +1，用来作废在途的提示与神指结果 */
+  private _posSeq = 0;
   private _aiTimer: ReturnType<typeof setTimeout> | null = null;
-  private _godTimer: ReturnType<typeof setInterval> | null = null;
   private _haltAivai = false;
   private _animFrame: number | null = null;
   private _down: { x: number; y: number } | null = null;
@@ -47,8 +60,15 @@ export class GomokuController {
   /** 搜索代次：每次重置局面 +1，用于作废「重置前发出、重置后才返回」的旧结果 */
   private _searchSeq = 0;
   private _engineLogged = false;
+  /** 恶魔档退回内置引擎只播报一次，避免每手刷屏 */
+  private _demonFallbackWarned = false;
   private _warmed = false;
   private _warming = false;
+  /** 玩家选的引擎：auto = 优先 Rapfi、不可用则回退内置 JS；js = 只用内置 JS。
+   *  恶魔档不受它影响——恶魔固定走 Rapfi（见 forceJs）。 */
+  private enginePref: 'auto' | 'js' = 'auto';
+  /** Rapfi 是否可用：null = 还在加载/未知，true = 就绪，false = 加载失败 */
+  private _rapfiReady: boolean | null = null;
   private _loadShowTimer: ReturnType<typeof setTimeout> | null = null;
   /** 最近一次加载进度文案：加载期间 AI 落子后会把它恢复回顶栏，别被「AI 思考中」顶掉 */
   private _loadText = '🧩 Rapfi 引擎预热中…';
@@ -57,9 +77,68 @@ export class GomokuController {
     this.canvas = canvas;
     this.ai = ai;
     this.audio = audio;
+    dropLegacyDemonMemory();
     this.wireEvents();
     this.newGame();
+    this.syncEngineUI();
     this.startAnimLoop();
+  }
+
+  /** 恶魔档固定 Rapfi；其余档位由玩家的「引擎」选择决定是否强制内置 JS。 */
+  private get forceJs(): boolean {
+    return this.level !== 4 && this.enginePref === 'js';
+  }
+
+  private paintSeg(id: string, value: string): void {
+    document.getElementById(id)?.querySelectorAll<HTMLButtonElement>('button')
+      .forEach((b) => b.classList.toggle('on', b.dataset.v === value));
+  }
+
+  /**
+   * 刷新「引擎」区块与恶魔档的可用性。
+   * 恶魔档只能与 Rapfi 对局，所以 Rapfi 没就绪（加载中/加载失败）时
+   * 直接把「😈 恶魔」按钮禁用掉，而不是让它降级成内置引擎偷偷开赛。
+   */
+  private syncEngineUI(): void {
+    const demonForced = this.level === 4;                 // 恶魔档固定 Rapfi，不可切换
+    this.paintSeg('g-engine', demonForced ? 'auto' : this.enginePref);
+    document.getElementById('g-engine')?.querySelectorAll<HTMLButtonElement>('button')
+      .forEach((b) => { b.disabled = demonForced; });
+
+    const note = document.getElementById('g-engine-note');
+    if (note) note.textContent = this.engineNote(demonForced);
+
+    const demonBtn = document.querySelector<HTMLButtonElement>('#g-level button[data-v="4"]');
+    if (demonBtn) {
+      const ready = this._rapfiReady === true;
+      demonBtn.disabled = !ready;
+      demonBtn.title = ready
+        ? '恶魔档：Rapfi 引擎满火力搜索'
+        : this._rapfiReady === false
+          ? 'Rapfi 引擎加载失败，恶魔模式不可用（刷新页面可重试）'
+          : 'Rapfi 引擎加载中…加载完成后可挑战恶魔';
+    }
+  }
+
+  private engineNote(demonForced: boolean): string {
+    if (demonForced) return '恶魔档固定使用 Rapfi 引擎（满火力搜索），不可切换。';
+    if (this.enginePref === 'js') return '当前使用内置 JS 引擎（不加载、不等待 Rapfi）。';
+    if (this._rapfiReady === true) return '自动：使用 Rapfi 引擎（WASM）。';
+    if (this._rapfiReady === false) return '自动：Rapfi 加载失败，已回退内置 JS 引擎。';
+    return '自动：优先 Rapfi；加载完成前先用内置 JS 引擎应手。';
+  }
+
+  /** 「神在思考」提示 + 按钮态 + 进度条：让玩家知道在算、大概等多久。 */
+  private syncGodUI(): void {
+    const btn = document.getElementById('g-god');
+    if (btn) {
+      btn.classList.toggle('on', this.god);
+      btn.textContent = !this.god ? '🙏 请神上身' : (this.godThinking ? '🙏 神算中…' : '🛌 送神离开');
+    }
+    const busy = this.god && this.godThinking;
+    document.getElementById('gomoku-god-thinking')?.classList.toggle('hidden', !busy);
+    toggleProgress(document.getElementById('g-think-progress'), busy || this._hintBusy || this.thinking);
+    this.updatePanel();
   }
 
   private get state(): GomokuRenderState {
@@ -82,8 +161,10 @@ export class GomokuController {
 
   private startAnimLoop(): void {
     const loop = () => {
-      // Only redraw if there's animated content (god mode, candidates, hint)
-      if (this.god || this.hintPos || (this.viz && this.thinkCandidates.length > 0 && !this.over)) {
+      // 只在真的有会动的内容（神指 / 提示 / 候选）时重绘。旧写法只要 god 打开
+      // 就每帧全画布重绘，与有没有神指无关——空转的 60fps，纯烧电。
+      const godMark = this.god && !!this.godMove && !this.over;
+      if (godMark || this.hintPos || (this.viz && this.thinkCandidates.length > 0 && !this.over)) {
         this.redraw();
       }
       this._animFrame = requestAnimationFrame(loop);
@@ -96,8 +177,8 @@ export class GomokuController {
   newGame(): void {
     resetGomokuWarmDepth(); // new game → drop any warm-start adaptive depth
     this._searchSeq++; // 在途搜索的结果作废（clearTimeout 拦不住已经 await 出去的那次）
+    this._posSeq++;
     if (this._aiTimer) { clearTimeout(this._aiTimer); this._aiTimer = null; }
-    if (this._godTimer) { clearInterval(this._godTimer); this._godTimer = null; }
     this.board = createBoard();
     this.history = [];
     this.turn = 1;
@@ -116,7 +197,6 @@ export class GomokuController {
     const cfg = LEVEL_CONFIG[this.level];
     const modeName = this.mode === 'aivai' ? '🤖AI互搏观战' : (this.mode === 'pvp' ? '双人对战' : '人机对战');
     setStats(document.getElementById('g-think-stats'), `新对局 · ${modeName} · 难度 <b>${cfg.name}</b> · 等待行棋…`);
-    if (this.god) this.startGodTimer();
     if (this.mode === 'ai' && this.human === 2) this.aiMove();
     else if (this.mode === 'aivai') this.aiMove();
     else this.refreshGod();
@@ -143,6 +223,7 @@ export class GomokuController {
     this.history.push({ x, y, c: this.turn });
     this.hintPos = null;
     this.godMove = null;
+    this._posSeq++;
     this.audio.move();
     this.checkWinningOpening();
     const w = checkWin(this.board, x, y);
@@ -168,25 +249,15 @@ export class GomokuController {
     const seq = ++this._searchSeq;
     this._aiTimer = setTimeout(async () => {
       const aiPlayer = this.turn;
-      const lesson = this.level === 4 ? checkLesson(cloneBoard(this.board)) : null;
       // Rapfi 引擎按落子顺序重摆棋盘，必须把棋谱一并传过去（只给 2D 棋盘
       // 无法还原顺序，引擎会因奇偶失配静默放弃摆盘——曾表现为不拦横线）。
       const moves = this.history.map((h) => ({ x: h.x, y: h.y, c: h.c }));
-      const res = await this.ai.searchGomoku(cloneBoard(this.board), aiPlayer, this.level, this.mode, moves.length, moves);
+      const res = await this.ai.searchGomoku(cloneBoard(this.board), aiPlayer, this.level, this.mode, moves.length, moves, this.forceJs);
       // 这段 await 期间局面可能已被重置（新开局 / 换执子 / 换模式都会走 newGame）。
       // 不作校验的话，为旧局面算出的着法会落到新棋盘上——甚至直接盖掉玩家
       // 刚落下的子（表现为「AI 下在我的棋子上」）。
       if (seq !== this._searchSeq) return;
       let m = res.move;
-      // Demon memory: if this exact position was lost before and the search
-      // wants to repeat the losing move, pick the next-best scored candidate.
-      if (lesson && m && m.x === lesson.x && m.y === lesson.y) {
-        const alt = (res.scores || []).find((s) => s.x !== lesson.x || s.y !== lesson.y);
-        if (alt) {
-          appendLog(document.getElementById('g-think-log'), `📖 <b>恶魔记忆</b>：此局面前次走 (${lesson.x},${lesson.y}) 落败（第${lesson.count}次教训）→ 改走 <b>(${alt.x},${alt.y})</b>`);
-          m = alt;
-        }
-      }
       // 兜底：引擎若返回越界或已占用的点，绝不覆盖盘上已有的棋子
       if (m && (!inBounds(m.x, m.y) || this.board[m.y][m.x] !== 0)) {
         const alt = (res.scores || []).find((s) => inBounds(s.x, s.y) && this.board[s.y][s.x] === 0);
@@ -205,6 +276,13 @@ export class GomokuController {
       if ((res.engine === 'rapfi-multi' || res.engine === 'rapfi-single') && !this._engineLogged) {
         this._engineLogged = true;
         appendLog(document.getElementById('g-think-log'), `🧩 <b>Rapfi WASM 引擎已接入</b>（${res.engine === 'rapfi-multi' ? '多线程构建' : '单线程构建 · 服务器未启用 COOP/COEP 时自动降级'}）`);
+      }
+      // 恶魔档只该与 Rapfi 对局：若它不可用而退回了内置引擎，必须让玩家知道
+      // （加载中的情况下面已有专门的文案，不重复播报）
+      if (this.level === 4 && res.engine === 'js' && !this._warming && !this._demonFallbackWarned) {
+        this._demonFallbackWarned = true;
+        appendLog(document.getElementById('g-think-log'),
+          '⚠️ <b>Rapfi 引擎不可用</b>，本局恶魔档已临时改用内置 JS 引擎应手（刷新页面可重试加载）。');
       }
       if (res.opening) {
         setStats(document.getElementById('g-think-stats'), `⚡ <b>${who}</b> 开局速答 (${m?.x},${m?.y})${engineName ? ' · ' + engineName : ''}`);
@@ -228,6 +306,7 @@ export class GomokuController {
         this.history.push({ x: m.x, y: m.y, c: aiPlayer });
         this.hintPos = null;
         this.godMove = null;
+        this._posSeq++;
         this.audio.move();
         const w = checkWin(this.board, m.x, m.y);
         if (w) { this.over = true; this.winLine = w; this.onGameEnd(aiPlayer); }
@@ -280,6 +359,7 @@ export class GomokuController {
     this.thinkCandidates = [];
     this.godMove = null;
     this.hintPos = null;
+    this._posSeq++;
     this.hideResult();
     this.updatePanel();
     this.redraw();
@@ -290,79 +370,85 @@ export class GomokuController {
   }
 
   async showHint(): Promise<void> {
-    if (this.over || this.thinking || this.godThinking) return;
+    // _hintBusy 挡住连点：每次求一着都是一次恶魔档满配搜索，
+    // 连点会并发两次（旧桥接层下还会互相冒领结果）。
+    if (this.over || this.thinking || this.godThinking || this._hintBusy) return;
+    this._hintBusy = true;
+    this.syncGodUI();          // 亮进度条，别让玩家以为没反应
+    const seq = this._posSeq;
     setStats(document.getElementById('g-think-stats'), '👉 恶魔正在附体算招… depth4全开，请稍候');
     setTimeout(async () => {
-      const moves = this.history.map((h) => ({ x: h.x, y: h.y, c: h.c }));
-      const res = await this.ai.hintGomoku(cloneBoard(this.board), this.turn, this.mode, moves.length, moves);
-      const m = res.move;
-      if (m) {
-        const engineName = res.engine === 'rapfi-multi' ? '🧩Rapfi·多线程' : res.engine === 'rapfi-single' ? '🧩Rapfi·单线程' : res.engine === 'js' ? '内置引擎' : '';
-        this.thinkCandidates = (res.scores || []).map((s, i) => ({ ...s, rank: i + 1 }));
-        appendLog(document.getElementById('g-think-log'), `💡 <b>恶魔支招</b>${engineName ? `〔${engineName}〕` : ''} depth${res.depth} · 推荐<b>(${m.x},${m.y})</b> · 评估${fmtEval(res.eval, 100000)} · 节点${res.nodes.toLocaleString()} · ${res.ms}ms`);
-        setStats(document.getElementById('g-think-stats'), `💡 恶魔支招 depth${res.depth} · 推荐 (${m.x},${m.y}) · 节点${res.nodes.toLocaleString()} · ${res.ms}ms${engineName ? ' · ' + engineName : ''}`);
-        this.hintPos = { x: m.x, y: m.y };
-        this.redraw();
-        this.audio.hint();
-        setTimeout(() => { this.hintPos = null; this.redraw(); }, 4000);
+      try {
+        const moves = this.history.map((h) => ({ x: h.x, y: h.y, c: h.c }));
+        const res = await this.ai.hintGomoku(cloneBoard(this.board), this.turn, this.mode, moves.length, moves, this.forceJs);
+        // 这手算的是「落子/悔棋/重开之前」的局面就丢弃，别把提示画到新局面
+        if (seq !== this._posSeq) return;
+        const m = res.move;
+        if (m) {
+          const engineName = res.engine === 'rapfi-multi' ? '🧩Rapfi·多线程' : res.engine === 'rapfi-single' ? '🧩Rapfi·单线程' : res.engine === 'js' ? '内置引擎' : '';
+          this.thinkCandidates = (res.scores || []).map((s, i) => ({ ...s, rank: i + 1 }));
+          appendLog(document.getElementById('g-think-log'), `💡 <b>恶魔支招</b>${engineName ? `〔${engineName}〕` : ''} depth${res.depth} · 推荐<b>(${m.x},${m.y})</b> · 评估${fmtEval(res.eval, 100000)} · 节点${res.nodes.toLocaleString()} · ${res.ms}ms`);
+          setStats(document.getElementById('g-think-stats'), `💡 恶魔支招 depth${res.depth} · 推荐 (${m.x},${m.y}) · 节点${res.nodes.toLocaleString()} · ${res.ms}ms${engineName ? ' · ' + engineName : ''}`);
+          this.hintPos = { x: m.x, y: m.y };
+          this.redraw();
+          this.audio.hint();
+          setTimeout(() => { this.hintPos = null; this.redraw(); }, 4000);
+        }
+      } finally {
+        this._hintBusy = false;
+        this.syncGodUI();
       }
     }, 30);
   }
 
   toggleGod(): void {
     this.god = !this.god;
-    const btn = document.getElementById('g-god');
-    if (btn) { btn.classList.toggle('on', this.god); btn.textContent = this.god ? '🛌 送神离开' : '🙏 请神上身'; }
     if (this.god) {
       appendLog(document.getElementById('g-think-log'), '🙏 <b>恶魔附体！请神上身成功</b>，每手都将用 depth4 给你指 👇 最佳点');
-      this.startGodTimer();
+      this.syncGodUI();
       this.refreshGod();
     } else {
       this.godMove = null;
       this.godThinking = false;
-      if (this._godTimer) { clearInterval(this._godTimer); this._godTimer = null; }
+      this._godDirty = false;
       appendLog(document.getElementById('g-think-log'), '🛌 已送神，神指消失');
+      this.syncGodUI();
       this.redraw();
     }
   }
 
-  private startGodTimer(): void {
-    if (this._godTimer) return;
-    this._godTimer = setInterval(() => { if (this.god && this.godMove && !this.over) this.redraw(); }, 550);
-  }
-
   private refreshGod(): void {
-    if (!this.god || this.over || this.thinking || this.godThinking) return;
+    if (!this.god || this.over || this.thinking) return;
     if (this.mode === 'aivai' && !this._haltAivai) return;
+    // 上一次还在算：记脏标记，等它收尾时补算——直接 return 会让神指停在旧局面
+    if (this.godThinking) { this._godDirty = true; return; }
     this.godThinking = true;
+    this.syncGodUI();          // 立刻亮起「神在思考」，别让玩家干等
+    const seq = this._posSeq;
     setTimeout(async () => {
       try {
         const moves = this.history.map((h) => ({ x: h.x, y: h.y, c: h.c }));
-        const res = await this.ai.hintGomoku(cloneBoard(this.board), this.turn, this.mode, moves.length, moves);
-        this.godMove = res.move;
-        this.redraw();
-      } finally { this.godThinking = false; }
+        const res = await this.ai.hintGomoku(cloneBoard(this.board), this.turn, this.mode, moves.length, moves, this.forceJs);
+        // 结果算的是旧局面、或期间已经送神，就丢弃（脏标记会在 finally 里补算）
+        if (this.god && seq === this._posSeq) { this.godMove = res.move; this.redraw(); }
+      } finally {
+        this.godThinking = false;
+        this.syncGodUI();
+        if (this._godDirty) { this._godDirty = false; this.refreshGod(); }
+      }
     }, 40);
   }
 
   private onGameEnd(winner: GomokuPlayer | 0): void {
     const banner = document.getElementById('gomoku-result');
     banner?.classList.remove('hidden');
-    if (this._godTimer) { clearInterval(this._godTimer); this._godTimer = null; }
     if (winner === 0) { if (banner) banner.textContent = '🤝 和棋！棋盘已满，旗鼓相当。'; this.audio.win(); Stats.add(false); }
     else if (this.mode === 'aivai') { if (banner) banner.textContent = `🤖 互搏结束！${winner === 1 ? '黑方AI' : '白方AI'} 五连获胜！`; this.audio.win(); }
     else if (this.mode === 'ai' && winner === this.human) {
-      // ── Demon lost to the human: record, review & warn ──
       const opening = detectWinningOpening(this.history, this.human);
-      const { losses, lessons } = recordLoss(this.history, this.human, this.level, opening?.name ?? null);
-      const log = document.getElementById('g-think-log');
-      if (opening) {
-        if (banner) banner.textContent = `⚠️ 你用了「${opening.name}」黑棋必胜开局！恶魔已记录这次惨败并开始学习。`;
-        appendLog(log, `📉 <b>恶魔败北并复盘</b>：检测到人类使用 <b>「${opening.name}」${opening.exact ? '必胜定式' : '必胜起手式'}</b>。已存入败局档案 #${losses}，从 ${lessons} 条教训中学习——下次会避开相同应对。`);
-      } else {
-        if (banner) banner.textContent = '🎉 恭喜！你击败了 AI！';
-        appendLog(log, `📉 <b>恶魔败北并复盘</b>：已记录败局 #${losses}（${this.history.length} 手），习得教训共 ${lessons} 条，下次遇到相似局面将避开败手。`);
-      }
+      if (banner) banner.textContent = opening
+        ? `🏆 你用「${opening.name}」${opening.exact ? '必胜定式' : '必胜起手式'}击败了 AI！`
+        : '🎉 恭喜！你击败了 AI！';
       this.audio.lose(); Stats.add(true);
     }
     else if (this.mode === 'ai') { if (banner) banner.textContent = '🤖 AI 获胜，再接再厉！点「🔄 新开一局」再来。'; this.audio.lose(); Stats.add(false); }
@@ -422,6 +508,7 @@ export class GomokuController {
     }).then(({ ok, variant }) => {
       this._warming = false;
       this._warmed = ok;
+      this._rapfiReady = ok;
       if (this._loadShowTimer !== null) { clearTimeout(this._loadShowTimer); this._loadShowTimer = null; }
       this.showEngineLoad(false);
       if (ok) {
@@ -431,7 +518,10 @@ export class GomokuController {
         this._engineLogged = true; // 避免首次搜索时重复播报
       } else {
         this.setGlobalStatus('AI 就绪（内置引擎）');
+        appendLog(document.getElementById('g-think-log'),
+          '⚠️ <b>Rapfi 引擎加载失败</b>，已回退内置 JS 引擎；<b>恶魔模式暂不可用</b>（刷新页面可重试）。');
       }
+      this.syncEngineUI();
     });
   }
 
@@ -484,12 +574,26 @@ export class GomokuController {
     this.segWire('g-mode', (v) => { this.mode = v as GameMode; if (v === 'aivai') appendLog(document.getElementById('g-think-log'), '🤖 <b>AI互搏观战开始</b>，双方都用当前难度恶战到底'); this.newGame(); });
     this.segWire('g-color', (v) => { this.human = +v as GomokuPlayer; this.newGame(); });
     this.segWire('g-level', (v) => {
-      this.level = +v as Difficulty;
+      const lv = +v as Difficulty;
+      // 恶魔档只能与 Rapfi 对局：引擎没就绪就不放行（按钮已禁用，这里再兜一层）
+      if (lv === 4 && this._rapfiReady !== true) {
+        appendLog(document.getElementById('g-think-log'), '🚫 <b>恶魔模式不可用</b>：Rapfi 引擎尚未就绪。');
+        this.paintSeg('g-level', String(this.level));
+        return;
+      }
+      this.level = lv;
       applyDemonTheme('g', this.level, this.audio);
       const cfg = LEVEL_CONFIG[this.level];
       setStats(document.getElementById('g-think-stats'), `难度切换 → <b>${cfg.name}</b> · 棋力档 ${cfg.depth <= 2 ? '低' : cfg.depth >= 30 ? '满' : '中'}`);
       appendLog(document.getElementById('g-think-log'), `⚙️ 难度切换 → <b>${cfg.name}</b>${this.level === 4 ? ' · <span style="color:#ff6b6b">恶魔全开，不留情面</span>' : ''}`);
-      this.updatePanel();
+      this.syncEngineUI();
+    });
+    this.segWire('g-engine', (v) => {
+      this.enginePref = v === 'js' ? 'js' : 'auto';
+      appendLog(document.getElementById('g-think-log'), this.enginePref === 'js'
+        ? '🔧 引擎切换 → <b>内置 JS 引擎</b>（不再加载、不再等待 Rapfi）'
+        : '🔧 引擎切换 → <b>自动</b>（优先 Rapfi，不可用时回退内置引擎）');
+      this.syncEngineUI();
     });
 
     const gv = document.getElementById('g-viz') as HTMLInputElement | null;
@@ -499,7 +603,6 @@ export class GomokuController {
     document.getElementById('g-undo')?.addEventListener('click', () => this.undo());
     document.getElementById('g-hint')?.addEventListener('click', () => this.showHint());
     document.getElementById('g-god')?.addEventListener('click', () => this.toggleGod());
-    document.getElementById('g-demon-memory')?.addEventListener('click', () => this.openDemonMemory());
     document.getElementById('g-stop')?.addEventListener('click', () => this.stopAivai());
     document.getElementById('g-sound')?.addEventListener('click', (e) => {
       this.audio.enabled = !this.audio.enabled;
@@ -509,44 +612,6 @@ export class GomokuController {
       // Keep demon BGM in sync with the sound toggle.
       if (this.level === 4) { if (this.audio.enabled) this.audio.startBGM(); else this.audio.stopBGM(); }
     });
-  }
-
-  /** Open the demon defeat-archive panel (五子棋). */
-  private openDemonMemory(): void {
-    const modal = document.getElementById('demon-memory-modal');
-    const stats = document.getElementById('demon-memory-stats');
-    const list = document.getElementById('demon-memory-list');
-    if (!modal || !stats || !list) return;
-
-    const losses = getLosses();
-    const lessons = lessonCount();
-    stats.innerHTML = lessons > 0
-      ? `<span class="pill">📖 已学教训 <b>${lessons}</b> 条</span><span class="pill">📉 败局 <b>${losses.length}</b> 局</span>`
-      : `<span class="pill">📉 败局 <b>${losses.length}</b> 局 · 尚无教训（先输一局让恶魔复盘）</span>`;
-
-    if (losses.length === 0) {
-      list.innerHTML = `<div class="memory-empty">🤖 恶魔从未输过……直到你亲手终结它的不败神话。<br><small>赢一局「😈恶魔」难度，这里就会出现档案。</small></div>`;
-    } else {
-      const rows = losses.map((l, i) => {
-        const when = new Date(l.ts).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
-        const opp = l.human === 1 ? '黑(你)' : '白(你)';
-        const opening = l.opening ? `<span class="tag-warn">⚠️ ${l.opening}</span>` : '';
-        const finalMove = l.moves[l.moves.length - 1];
-        const last = `末手 (${finalMove?.x},${finalMove?.y})`;
-        return `<div class="memory-row">
-          <div class="m-left"><b>#${losses.length - i}</b></div>
-          <div class="m-body">
-            <div>${when} · 执${opp} · ${l.moves.length} 手 ${opening}</div>
-            <small>${last} · level${l.level}</small>
-          </div>
-        </div>`;
-      }).join('');
-      list.innerHTML = rows;
-    }
-
-    modal.classList.remove('hidden');
-    document.getElementById('demon-memory-close')?.addEventListener('click', () => modal.classList.add('hidden'));
-    modal.addEventListener('click', (e) => { if (e.target === modal) modal.classList.add('hidden'); });
   }
 
   private segWire(id: string, fn: (v: string) => void): void {
