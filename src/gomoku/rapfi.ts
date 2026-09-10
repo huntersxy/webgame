@@ -154,7 +154,16 @@ export class RapfiEngine {
         return;
       }
       let settled = false;
-      const timer = setTimeout(() => finish(new Error('rapfi engine init timeout')), 60_000);
+      // 超时语义是「多久没有进展」，不是「总共用了多久」：数据包有 10MB，
+      // 弱网（约 1.2Mbps 及以下）下要下一分多钟，用固定总时长判定会把正常
+      // 下载误判为失败，用户每次进对局都静默掉到内置引擎。
+      // 所以每收到一次下载进度/输出就重新计时。
+      let timer: ReturnType<typeof setTimeout>;
+      function arm(): void {
+        clearTimeout(timer);
+        timer = setTimeout(() => finish(new Error('rapfi engine init timeout (无进展)')), 120_000);
+      }
+      arm();
       function finish(err?: Error): void {
         if (settled) return;
         settled = true;
@@ -180,12 +189,15 @@ export class RapfiEngine {
             break;
           }
           case 'stdout':
+            arm();
             this.onLine?.(String(msg.data));
             break;
           case 'stderr':
+            arm();
             this.noteStderr(String(msg.data));
             break;
           case 'load-progress': {
+            arm(); // 下载推进中，说明引擎活着，别让超时误杀
             const d = msg.data as { loaded?: number; total?: number } | undefined;
             if (d && d.total) this.onLoadProgress?.(d.loaded ?? 0, d.total);
             break;
@@ -332,6 +344,17 @@ export class RapfiEngine {
     if (historyLength === 1) {
       const mv = nearFirstReply(board, player);
       return { move: mv, depth: 1, nodes: 1, ms: 0, eval: 0, scores: [mv], opening: true, engine: this.engineTag() };
+    }
+
+    // ── 引擎还在加载时，不要卡住这一手 ──
+    // 首次进对局那 10MB 可能要几秒到几十秒，而玩家随时可能已经落子到第 3 手；
+    // 此时若照旧 await ensureReady()，AI 会一直等到加载完成才应手，玩家看到的
+    // 就是「明明开局很快，第三手开始卡死」。所以没就绪就先让内置 JS 引擎立刻
+    // 给出着法，加载在后台继续，下一手通常就能接上 WASM 引擎。
+    // 覆盖两种情况：正在加载，以及连续失败后已被停用（variant 为 null）。
+    if (!this.isReady) {
+      void this.warmUp().catch(() => undefined); // 幂等：确保加载已经启动
+      return fallback();
     }
 
     try {

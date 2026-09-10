@@ -48,6 +48,8 @@ export class GomokuController {
   private _warmed = false;
   private _warming = false;
   private _loadShowTimer: ReturnType<typeof setTimeout> | null = null;
+  /** 最近一次加载进度文案：加载期间 AI 落子后会把它恢复回顶栏，别被「AI 思考中」顶掉 */
+  private _loadText = '🧩 Rapfi 引擎预热中…';
 
   constructor(canvas: HTMLCanvasElement, ai: AIBridge, audio: AudioEngine) {
     this.canvas = canvas;
@@ -181,9 +183,12 @@ export class GomokuController {
       } else {
         const top = (res.scores || []).slice(0, 5).map((s, i) => `#${i + 1}(${s.x},${s.y}):${s.v > 99999 ? '胜' : s.v}`).join(' ');
         const ev = fmtEval(res.eval, 100000);
+        // 引擎还在加载时本手走了内置 JS 引擎，说明一下，免得看起来像引擎坏了
+        const pending = res.engine === 'js' && this._warming
+          ? ' <span style="color:#d69a2e">· 引擎加载中，本手先用内置引擎</span>' : '';
         const boost = res.boosted ? ` <span style="color:#ff6b6b">·劣势加深→depth${res.depth}</span>` : '';
-        setStats(document.getElementById('g-think-stats'), `✅ <b>${who}·${cfg.name}</b>${engineName ? `〔${engineName}〕` : ''} depth${res.depth} · 节点 <b>${res.nodes.toLocaleString()}</b> · ${res.ms}ms · 评估 <b>${ev}</b> · 选 (${m?.x},${m?.y})${boost}`);
-        appendLog(document.getElementById('g-think-log'), `🧠${engineName ? `<b>${engineName}</b>·` : ''} depth<b>${res.depth}</b> · 节点${res.nodes.toLocaleString()} · ${res.ms}ms · 评估${ev} · 选<b>(${m?.x},${m?.y})</b>${res.boosted ? ' · <span style="color:#ff6b6b">劣势加深</span>' : ''}<br><span class="cand">${top}</span>`);
+        setStats(document.getElementById('g-think-stats'), `✅ <b>${who}·${cfg.name}</b>${engineName ? `〔${engineName}〕` : ''} depth${res.depth} · 节点 <b>${res.nodes.toLocaleString()}</b> · ${res.ms}ms · 评估 <b>${ev}</b> · 选 (${m?.x},${m?.y})${boost}${pending}`);
+        appendLog(document.getElementById('g-think-log'), `🧠${engineName ? `<b>${engineName}</b>·` : ''} depth<b>${res.depth}</b> · 节点${res.nodes.toLocaleString()} · ${res.ms}ms · 评估${ev} · 选<b>(${m?.x},${m?.y})</b>${res.boosted ? ' · <span style="color:#ff6b6b">劣势加深</span>' : ''}${pending}<br><span class="cand">${top}</span>`);
       }
 
       if (m) {
@@ -199,7 +204,7 @@ export class GomokuController {
       }
       this.updatePanel();
       this.redraw();
-      this.setGlobalStatus('AI 就绪');
+      this.setGlobalStatus(this._warming ? this._loadText : 'AI 就绪');
       if (!this.over && this.mode === 'aivai' && !this._haltAivai) {
         this._aiTimer = setTimeout(() => this.aiMove(), 10);
       } else {
@@ -377,7 +382,8 @@ export class GomokuController {
       const pct = total ? Math.round((loaded / total) * 100) : 0;
       this.setEngineLoad(pct, loaded, `引擎加载中… ${mb(loaded)}/${mb(total)} MB`);
       if (src === 'prefetch' && total) {
-        this.setGlobalStatus(`🧩 Rapfi 引擎预热中… ${pct}%（${mb(loaded)}/${mb(total)} MB）`);
+        this._loadText = `🧩 Rapfi 引擎预热中… ${pct}%（${mb(loaded)}/${mb(total)} MB）`;
+        this.setGlobalStatus(this._loadText);
       }
     }).then(({ ok, variant }) => {
       this._warming = false;
