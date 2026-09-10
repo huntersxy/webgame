@@ -33,7 +33,7 @@ export class GomokuController {
   private hover: Pt | null = null;
   private hintPos: Pt | null = null;
   private thinking = false;
-  private viz = true;
+  private viz = false; // 候选点默认不显示，想要的人自己勾
   private thinkCandidates: Array<GomokuMove & { v: number; rank?: number }> = [];
   private god = false;
   private godMove: GomokuMove | null = null;
