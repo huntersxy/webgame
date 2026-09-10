@@ -2,12 +2,13 @@
  *  junqi/rules.ts — 军棋（陆战棋）规则引擎
  *
  *  棋盘：12 行 × 5 列节点，双方各 6 行。
- *    • 行营（每方 5 个，梅花形）：内有子不可被攻击，布阵时必须为空
+ *    • 行营（每方 5 个，以己方第 3 排中心为心的梅花形）：
+ *      内有子不可被攻击，布阵时必须为空
  *    • 大本营（每方 2 个，底线）：军旗必须置于其一
  *    • 铁路：双方前线行 + 左右边列 + 三座桥，普通子直线滑行，
  *      工兵可在铁路网内任意拐弯
- *    • 公路：其余连线（含行营斜线），一步
- *    • 河流：仅 1/2/3 列三座桥可渡
+ *    • 公路：其余连线（含 12 条行营斜线），一步
+ *    • 河流：仅第 1/3/5 列（两端铁路与中路）三座桥可渡
  *  兵种（每方 25 枚）：司令1 军长1 师长2 旅长2 团长2 营长2
  *    连长3 排长3 工兵3 炸弹2 地雷3 军旗1
  *  吃子：大吃小，同级同归于尽；炸弹与任何子互炸；
@@ -30,10 +31,10 @@ export const rowOf = (i: number): number => (i / COLS) | 0;
 export const colOf = (i: number): number => i % COLS;
 export const other = (s: Side): Side => (s === 'r' ? 'b' : 'r');
 
-/** 行营 / 大本营 */
+/** 行营（每方 5 个，以己方第 3 排中心 (3,2)/(8,2) 为心的梅花形）/ 大本营 */
 const CAMPS = new Set<number>([
-  idx(1, 1), idx(1, 3), idx(2, 2), idx(3, 1), idx(3, 3),
-  idx(8, 1), idx(8, 3), idx(9, 2), idx(10, 1), idx(10, 3),
+  idx(2, 1), idx(2, 3), idx(3, 2), idx(4, 1), idx(4, 3),
+  idx(9, 1), idx(9, 3), idx(8, 2), idx(7, 1), idx(7, 3),
 ]);
 export const HQS: Record<Side, number[]> = {
   b: [idx(0, 1), idx(0, 3)],
@@ -56,18 +57,27 @@ export const ADJ: Edge[][] = (() => {
   for (let r = 0; r < ROWS; r++) {
     for (let c = 0; c < COLS - 1; c++) add(idx(r, c), idx(r, c + 1), r === 5 || r === 6);
   }
-  // 竖线：边列 0/4 为铁路；5→6 河段只有 1/2/3 列的桥（铁路）
+  // 竖线：边列 0/4 为铁路；5→6 河段只有第 1/3/5 列（两端铁路与中路）三座桥（铁路）
   for (let c = 0; c < COLS; c++) {
     for (let r = 0; r < ROWS - 1; r++) {
-      if (r === 5) { if (c >= 1 && c <= 3) add(idx(r, c), idx(r + 1, c), true); continue; }
+      if (r === 5) { if (c === 0 || c === 2 || c === 4) add(idx(r, c), idx(r + 1, c), true); continue; }
       add(idx(r, c), idx(r + 1, c), c === 0 || c === 4);
     }
   }
-  // 行营斜线（公路）
-  add(idx(2, 2), idx(1, 1), false); add(idx(2, 2), idx(1, 3), false);
-  add(idx(2, 2), idx(3, 1), false); add(idx(2, 2), idx(3, 3), false);
-  add(idx(9, 2), idx(8, 1), false); add(idx(9, 2), idx(8, 3), false);
-  add(idx(9, 2), idx(10, 1), false); add(idx(9, 2), idx(10, 3), false);
+  // 行营斜线（公路）：每方 12 条，从第 1 排一直连到前线，
+  // 蓝方以 (3,2) 行营为中心的梅花链，红方以 (8,2) 为中心镜像
+  add(idx(1, 0), idx(2, 1), false); add(idx(1, 2), idx(2, 1), false);
+  add(idx(1, 2), idx(2, 3), false); add(idx(1, 4), idx(2, 3), false);
+  add(idx(2, 1), idx(3, 2), false); add(idx(2, 3), idx(3, 2), false);
+  add(idx(3, 2), idx(4, 1), false); add(idx(3, 2), idx(4, 3), false);
+  add(idx(4, 1), idx(5, 0), false); add(idx(4, 1), idx(5, 2), false);
+  add(idx(4, 3), idx(5, 2), false); add(idx(4, 3), idx(5, 4), false);
+  add(idx(10, 0), idx(9, 1), false); add(idx(10, 2), idx(9, 1), false);
+  add(idx(10, 2), idx(9, 3), false); add(idx(10, 4), idx(9, 3), false);
+  add(idx(9, 1), idx(8, 2), false); add(idx(9, 3), idx(8, 2), false);
+  add(idx(8, 2), idx(7, 1), false); add(idx(8, 2), idx(7, 3), false);
+  add(idx(7, 1), idx(6, 0), false); add(idx(7, 1), idx(6, 2), false);
+  add(idx(7, 3), idx(6, 2), false); add(idx(7, 3), idx(6, 4), false);
   return g;
 })();
 

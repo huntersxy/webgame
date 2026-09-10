@@ -1,6 +1,6 @@
 /* 军棋规则引擎自测：esbuild 打包后 node 运行 */
 import {
-  randomBoard, randomLayout, legalMoves, allJqMoves, resolve, hasAnyMove, isCamp, isHQ, sideOfNode,
+  randomBoard, randomLayout, legalMoves, allJqMoves, resolve, hasAnyMove, isCamp, isHQ, sideOfNode, ADJ,
   idx, rowOf, colOf, canMoveType, validateLayout, layoutComplete, autofillLayout,
   makeJqMove, undoJqMove, ownHalf,
   type Board, type Piece, type Side, type PType,
@@ -85,19 +85,50 @@ console.log('== 工兵 ==');
 console.log('== 公路 ==');
 {
   const b = empty();
-  b[idx(2, 2)] = mk('r', '连长'); // 中心行营，四斜+四直邻
-  const mv = legalMoves(b, idx(2, 2));
-  check('普通子公路只走一步', mv.every((i) => Math.abs(rowOf(i) - 2) + Math.abs(colOf(i) - 2) <= 2) && mv.length <= 8 && mv.length >= 4, JSON.stringify(mv.map(i => [rowOf(i), colOf(i)])));
+  b[idx(3, 2)] = mk('r', '连长'); // 中心行营，四斜（行营链）+四直邻
+  const mv = legalMoves(b, idx(3, 2));
+  check('普通子公路只走一步', mv.every((i) => Math.abs(rowOf(i) - 3) + Math.abs(colOf(i) - 2) <= 2) && mv.length <= 8 && mv.length >= 4, JSON.stringify(mv.map(i => [rowOf(i), colOf(i)])));
 }
 
 // ── 行营保护 ──
 console.log('== 行营 ==');
 {
   const b = empty();
-  b[idx(2, 2)] = mk('b', '排长');   // 蓝方行营内
-  b[idx(3, 1)] = mk('r', '司令');    // 红方紧邻
-  const mv = legalMoves(b, idx(3, 1));
-  check('行营内敌子不可被攻击', !mv.includes(idx(2, 2)), JSON.stringify(mv.map(i => [rowOf(i), colOf(i)])));
+  b[idx(2, 1)] = mk('b', '排长');   // 蓝方行营内
+  b[idx(1, 0)] = mk('r', '司令');    // 红方经斜线紧邻
+  const mv = legalMoves(b, idx(1, 0));
+  check('行营内敌子不可被攻击（斜线邻接）', !mv.includes(idx(2, 1)), JSON.stringify(mv.map(i => [rowOf(i), colOf(i)])));
+  const b2 = empty();
+  b2[idx(4, 1)] = mk('b', '排长');   // 蓝方前线侧行营
+  b2[idx(5, 0)] = mk('r', '司令');   // 红方前线角
+  check('行营内敌子不可被攻击（前线斜线）', !legalMoves(b2, idx(5, 0)).includes(idx(4, 1)));
+}
+
+// ── 棋盘结构 ──
+console.log('== 棋盘结构 ==');
+{
+  // 标准梅花行营：蓝方 2/3/4 排，红方镜像 9/8/7 排，各 5 个
+  const blueCamps = [[2, 1], [2, 3], [3, 2], [4, 1], [4, 3]].map(([r, c]) => idx(r, c));
+  const redCamps = [[9, 1], [9, 3], [8, 2], [7, 1], [7, 3]].map(([r, c]) => idx(r, c));
+  const allCamps = [...blueCamps, ...redCamps];
+  check('行营为标准梅花形（每方 5 个）', allCamps.every(isCamp) && [...Array(60).keys()].filter(isCamp).length === 10);
+  // 行营不在大本营行、不在前线行
+  check('行营不在前线/大本营排', allCamps.every((i) => rowOf(i) !== 5 && rowOf(i) !== 6 && rowOf(i) !== 0 && rowOf(i) !== 11));
+  // 每方 12 条斜线：行营菱形四角各有 2 条斜线，中心有 4 条
+  const deg = (i: number) => ADJ[i].length;
+  check('行营中心 (3,2)/(8,2) 有 8 条邻边（4 斜 + 4 直）', deg(idx(3, 2)) === 8 && deg(idx(8, 2)) === 8);
+  check('行营四角各有 7 条邻边（3 斜 + 4 直）', [[2, 1], [2, 3], [4, 1], [4, 3]].every(([r, c]) => deg(idx(r, c)) === 7) && [[7, 1], [7, 3], [9, 1], [9, 3]].every(([r, c]) => deg(idx(r, c)) === 7));
+  // 前线角 (5,0) 应有斜线通 (4,1)；(1,0) 应有斜线通 (2,1)
+  const hasEdge = (a: number, bb: number) => ADJ[a].some((e) => e.to === bb && !e.rail);
+  check('前线与第 1 排都有斜线入行营', hasEdge(idx(5, 0), idx(4, 1)) && hasEdge(idx(1, 0), idx(2, 1)) && hasEdge(idx(6, 4), idx(7, 3)) && hasEdge(idx(10, 4), idx(9, 3)));
+  // 三座桥在第 1/3/5 列（0 起：0/2/4），其余列不能过河
+  const cross = (c: number, rail: boolean) => ADJ[idx(5, c)].some((e) => e.to === idx(6, c) && e.rail === rail);
+  const anyCross = (c: number) => ADJ[idx(5, c)].some((e) => e.to === idx(6, c));
+  check('桥在第 1/3/5 列且为铁路', cross(0, true) && cross(2, true) && cross(4, true));
+  check('第 2/4 列不能过河', !anyCross(1) && !anyCross(3));
+  // 边列铁路贯穿全列（0→11 无缝）
+  const railVert = (r: number, c: number) => ADJ[idx(r, c)].some((e) => e.to === idx(r + 1, c) && e.rail);
+  check('边列铁路贯穿含河段', [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10].every((r) => railVert(r, 0) && railVert(r, 4)));
 }
 
 // ── 战斗结算 ──
@@ -164,9 +195,10 @@ console.log('== 摆阵校验 ==');
   let fillOk = true;
   for (let k = 0; k < 100; k++) {
     const b = new Array(60).fill(null) as Board;
-    // 随手放 6 个普通子
+    // 随手放 6 个普通子（避开行营与大本营）
+    const spots: Array<[number, number]> = [[6, 0], [6, 2], [7, 0], [7, 2], [9, 0], [9, 4]];
     const types: PType[] = ['司令', '军长', '师长', '旅长', '团长', '营长'];
-    types.forEach((t, k2) => { b[idx(6 + (k2 % 4), k2 % 5)] = { id: k2, side: 'r', type: t }; });
+    spots.forEach(([r, c], k2) => { b[idx(r, c)] = { id: k2, side: 'r', type: types[k2] }; });
     const err = autofillLayout(b, 'r');
     if (err !== null || !layoutComplete(b, 'r')) fillOk = false;
   }
