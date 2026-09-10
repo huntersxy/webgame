@@ -236,6 +236,44 @@ async function run() {
     check('补丁不影响普通 ArrayBuffer 解码', plainOk);
   }
 
+  // ── 多线程构建：pthread 工作线程的脚本地址 ──
+  // 曾经这里有个致命 bug：glue 用 `_scriptName`（在 worker 里退化成
+  // self.location.href = engine-worker.js 自己）来 new Worker 起 pthread，
+  // 于是 pthread 加载的是我们的包装层而不是 glue，协议对不上、线程永远起不来。
+  // 表现为多线程构建能就绪、却搜不出任何着法且 stderr 为空（"produced no move"）。
+  // engine-worker.js 现在把 name === 'em-pthread' 的那次构造改指向真正的 glue。
+  {
+    const vm = require('vm');
+    const created = [];
+    class FakeWorker {
+      constructor(url, opts) { created.push({ url: String(url), opts }); }
+    }
+    const sandbox = {
+      console, ArrayBuffer, Uint8Array, WebAssembly, setTimeout, URL, Promise, TextDecoder,
+      self: {
+        postMessage() {},
+        crossOriginIsolated: true,
+        location: { href: 'https://example.test/rapfi/engine-worker.js?v=v1' },
+        Worker: FakeWorker,
+        importScripts() {},
+        Rapfi: () => Promise.resolve({}),
+      },
+    };
+    vm.createContext(sandbox);
+    vm.runInContext(fs.readFileSync(path.join(RAPFI_DIR, 'engine-worker.js'), 'utf8'), sandbox, { filename: 'engine-worker.js' });
+    sandbox.self.onmessage({ data: { type: 'init', version: 'v1' } });
+
+    const Patched = sandbox.self.Worker;
+    check('多线程初始化后 Worker 构造被接管', Patched !== FakeWorker);
+    if (Patched !== FakeWorker) {
+      new Patched('WRONG-URL', { name: 'em-pthread' });
+      new Patched('OTHER-URL', { name: 'app-thread' });
+      check('em-pthread 被改指向真正的 glue（rapfi-multi.js）',
+        created[0] && created[0].url === 'https://example.test/rapfi/rapfi-multi.js?v=v1', JSON.stringify(created[0]));
+      check('其余 Worker 构造不受影响', created[1] && created[1].url === 'OTHER-URL', JSON.stringify(created[1]));
+    }
+  }
+
   console.log(`\n${passed} passed, ${failed} failed`);
   process.exit(failed ? 1 : 0);
 }

@@ -81,6 +81,31 @@ self.onmessage = function (e) {
       self.importScripts(variant + ver);
       self.__rapfiVariant = variant;
 
+      // ── 修正 pthread 工作线程的脚本地址 ──
+      // 本文件是我们自己的 classic worker 包装层，只 importScripts 了 emscripten
+      // glue。而 glue 起 pthread 时用的是 `_scriptName`：它在普通页面取
+      // document.currentScript.src，在 worker 里退化成 self.location.href——
+      // 也就是「本文件」。于是 pthread 会去加载本文件而不是 glue，协议对不上，
+      // 线程永远起不来；多线程引擎就卡在等线程上：能 ready、却搜不出任何着法，
+      // 而且 stderr 为空（没有报错可看），最终表现为 "rapfi produced no move"。
+      // 这个 emscripten 版本没有 mainScriptUrlOrBlob 可用，只能在这里把
+      // name === 'em-pthread' 的那次 Worker 构造改指向真正的 glue 地址。
+      // 仅在本 worker 内生效，也只影响 Rapfi 自己起的线程。
+      if (canThread) {
+        const glueUrl = new URL(variant + ver, self.location.href).href;
+        const NativeWorker = self.Worker;
+        const PatchedWorker = function (url, opts) {
+          if (opts && opts.name === 'em-pthread') return new NativeWorker(glueUrl, opts);
+          return new NativeWorker(url, opts);
+        };
+        PatchedWorker.prototype = NativeWorker.prototype;
+        try {
+          self.Worker = PatchedWorker;
+        } catch (err) {
+          post({ type: 'stderr', data: 'pthread worker url patch failed: ' + err });
+        }
+      }
+
       let wasmMemory;
       if (canThread) {
         // Find the largest shared memory the browser will grant (2GB → 512MB)

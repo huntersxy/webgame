@@ -33,7 +33,7 @@ export const RAPFI_LEVELS: Record<Difficulty, { strength: number; turnMs: number
 type EngineMsg = { type: 'ready' | 'stdout' | 'stderr' | 'error' | 'exit'; data?: unknown };
 
 /** Bump when any file under public/rapfi/ changes to defeat browser caches. */
-const ASSET_VERSION = '20260910d';
+const ASSET_VERSION = '20260910e';
 
 /** Parse an rapfi EVAL token ("+M5", "-M3", plain integer) to UI scale. */
 function parseEval(tok: string): number {
