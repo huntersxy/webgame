@@ -2,7 +2,7 @@
  *  ai/ai-bridge.ts — Main-thread ↔ Worker bridge with promise API
  * ──────────────────────────────────────────────────────────── */
 
-import type { WorkerRequest, WorkerResponse, Difficulty, GameMode, SearchResult, GomokuBoard, GomokuPlayer, XqBoard, XqSide, GomokuMove, XqMove, JqMove, JqBoard, JqSide } from '../types';
+import type { WorkerRequest, WorkerResponse, Difficulty, GameMode, SearchResult, GomokuBoard, GomokuPlayer, GomokuHistoryMove, XqBoard, XqSide, GomokuMove, XqMove, JqMove, JqBoard, JqSide } from '../types';
 import { prefetchRapfiData } from '../gomoku/rapfi-assets';
 
 /** 数据包下载进度来源：主线程预取，或引擎自己的那次请求 */
@@ -89,6 +89,7 @@ export class AIBridge {
     difficulty: Difficulty,
     mode: GameMode,
     historyLength: number,
+    moves: GomokuHistoryMove[],
   ): Promise<SearchResult<GomokuMove>> {
     return this.send({
       type: 'gomoku-search',
@@ -97,6 +98,7 @@ export class AIBridge {
       difficulty,
       mode,
       historyLength,
+      moves,
     }) as Promise<SearchResult<GomokuMove>>;
   }
 
@@ -105,6 +107,7 @@ export class AIBridge {
     player: GomokuPlayer,
     mode: GameMode,
     historyLength: number,
+    moves: GomokuHistoryMove[],
   ): Promise<SearchResult<GomokuMove>> {
     return this.send({
       type: 'gomoku-hint',
@@ -112,6 +115,7 @@ export class AIBridge {
       player,
       mode,
       historyLength,
+      moves,
     }) as Promise<SearchResult<GomokuMove>>;
   }
 

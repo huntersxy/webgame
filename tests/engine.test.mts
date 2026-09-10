@@ -247,13 +247,13 @@ console.log('== rapfi opening shortcuts ==');
     return { move: { x: -1, y: -1, v: 0 }, depth: 0, nodes: 0, ms: 0, eval: 0, scores: [] };
   };
 
-  const r0 = await eng.findMove(empty(), 1, 2, 'ai', 0, fallback);
+  const r0 = await eng.findMove(empty(), 1, 2, 'ai', 0, [], fallback);
   check('空盘首手走定式天元，且不触发引擎加载',
     fallbackUsed === 0 && r0.opening === true && r0.move?.x === 7 && r0.move?.y === 7, JSON.stringify(r0.move));
 
   const b1 = empty();
   put(b1, [[7, 7, 1]]);
-  const r1 = await eng.findMove(clone(b1), 2, 2, 'ai', 1, fallback);
+  const r1 = await eng.findMove(clone(b1), 2, 2, 'ai', 1, [{ x: 7, y: 7, c: 1 }], fallback);
   const near = !!r1.move && Math.abs(r1.move.x - 7) <= 2 && Math.abs(r1.move.y - 7) <= 2;
   check('首子后的应手走定式，且不触发引擎加载（「下第一个子卡很久」的路径）',
     fallbackUsed === 0 && r1.opening === true && near, `${JSON.stringify(r1.move)} fallback=${fallbackUsed}`);
@@ -261,9 +261,63 @@ console.log('== rapfi opening shortcuts ==');
   // 第三手起才真正要引擎；Node 无 Worker，应干净降级到内置引擎
   const b2 = empty();
   put(b2, [[7, 7, 1], [8, 8, 2]]);
-  const r2 = await eng.findMove(clone(b2), 1, 2, 'ai', 2, fallback);
+  const r2 = await eng.findMove(clone(b2), 1, 2, 'ai', 2, [{ x: 7, y: 7, c: 1 }, { x: 8, y: 8, c: 2 }], fallback);
   check('第三手起才调用引擎（无 Worker 时降级到内置引擎）',
     fallbackUsed === 1 && r2.move?.x === -1, `fallback=${fallbackUsed}`);
+}
+
+// ── 8) YXBOARD 摆盘命令：落子序 + 一致性校验 ──
+// 回归：rapfi 的 getPosition 按落子顺序重摆棋盘，类型(1=SELF/2=OPPO)必须
+// 与交替行棋方一致；连续两次失配（禁止连续 PASS）会让摆盘静默中止——
+// 引擎看着残局下棋（曾表现为「不拦横线」「下在已有棋子上」）。
+// 旧实现用 y 优先扫描序 + plain BOARD，这里钉死新契约。
+console.log('== rapfi YXBOARD 命令构建 ==');
+{
+  const { buildYxBoardCmd } = await import('../src/gomoku/rapfi');
+  type HM = { x: number; y: number; c: 1 | 2 };
+  const boardOf = (moves: HM[]): Board => {
+    const b = empty();
+    for (const m of moves) b[m.y][m.x] = m.c;
+    return b;
+  };
+
+  // 落子序逐手输出、类型按 player 视角（player 的子=1，对方=2）。
+  // 两个局面奇偶不同：moves6 结尾是白(2) → 轮黑(1)；moves5 结尾是黑(1) → 轮白(2)。
+  const moves6: HM[] = [
+    { x: 7, y: 7, c: 1 }, { x: 8, y: 8, c: 2 }, { x: 7, y: 9, c: 1 },
+    { x: 6, y: 8, c: 2 }, { x: 7, y: 8, c: 1 }, { x: 9, y: 8, c: 2 },
+  ];
+  const moves5: HM[] = [
+    { x: 7, y: 7, c: 1 }, { x: 8, y: 8, c: 2 }, { x: 7, y: 9, c: 1 },
+    { x: 6, y: 8, c: 2 }, { x: 7, y: 8, c: 1 },
+  ];
+  const cmd = buildYxBoardCmd(boardOf(moves6), moves6, 1);
+  check('按落子序整发 YXBOARD，类型=引擎方1/对方2',
+    cmd === 'YXBOARD 7,7,1 8,8,2 7,9,1 6,8,2 7,8,1 9,8,2 DONE', String(cmd));
+  const cmdW = buildYxBoardCmd(boardOf(moves5), moves5, 2);
+  check('player=2 时类型翻转（2=引擎方）',
+    cmdW === 'YXBOARD 7,7,2 8,8,1 7,9,2 6,8,1 7,8,2 DONE', String(cmdW));
+
+  check('拒绝：moves 与棋盘不一致（少一颗子）',
+    buildYxBoardCmd(boardOf(moves6), moves6.slice(0, 4), 1) === null);
+  check('拒绝：颜色不交替（同一方连走）', (() => {
+    const bad: HM[] = [{ x: 7, y: 7, c: 1 }, { x: 8, y: 8, c: 1 }, { x: 6, y: 8, c: 2 }, { x: 7, y: 9, c: 1 }];
+    return buildYxBoardCmd(boardOf(bad), bad, 2) === null;
+  })());
+  check('拒绝：还没轮到 player（最后一手是 player 下的）', (() => {
+    const bad: HM[] = [{ x: 7, y: 7, c: 1 }, { x: 8, y: 8, c: 2 }, { x: 7, y: 9, c: 1 }];
+    return buildYxBoardCmd(boardOf(bad), bad, 1) === null;
+  })());
+  check('拒绝：重复落子', (() => {
+    const bad: HM[] = [{ x: 7, y: 7, c: 1 }, { x: 7, y: 7, c: 2 }];
+    return buildYxBoardCmd(boardOf([{ x: 7, y: 7, c: 1 }]), bad, 1) === null;
+  })());
+  check('拒绝：越界坐标', (() => {
+    const bad: HM[] = [{ x: 7, y: 7, c: 1 }, { x: 15, y: 8, c: 2 }];
+    return buildYxBoardCmd(boardOf([{ x: 7, y: 7, c: 1 }]), bad, 1) === null;
+  })());
+  check('空棋谱 + 空盘 → 引擎执黑开局（合法）',
+    buildYxBoardCmd(empty(), [], 1) === 'YXBOARD DONE');
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

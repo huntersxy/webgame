@@ -11,13 +11,14 @@
  *  wasm fails to load entirely the caller falls back to the
  *  bundled JS engine in gomoku/search.ts.
  *
- *  Every search is stateless from our side: the full stone list is
- *  replayed through one BOARD command (rapfi rebuilds its board via
- *  board->newGame() in the BOARD handler), while the engine instance
- *  itself persists to keep its transposition table warm.
+ *  Every search is stateless from our side: the full game record (in move
+ *  order — rapfi replays stones sequentially and aborts on parity
+ *  violations, see buildYxBoardCmd) is sent through one YXBOARD command,
+ *  while the engine instance itself persists to keep its transposition
+ *  table warm.
  * ──────────────────────────────────────────────────────────── */
 
-import type { GomokuBoard, GomokuPlayer, Difficulty, GameMode, SearchResult, GomokuMove } from '../types';
+import type { GomokuBoard, GomokuPlayer, Difficulty, GameMode, SearchResult, GomokuMove, GomokuHistoryMove } from '../types';
 
 /** Mate-scale used by the bundled engine & UI (fmtEval thresholds at 100000). */
 const MATE_SCALE = 100_000;
@@ -49,6 +50,50 @@ function parseEval(tok: string): number {
   }
   const n = parseInt(tok, 10);
   return Number.isFinite(n) ? n : 0;
+}
+
+/**
+ * Build the YXBOARD position-replay command from the ORDERED move list.
+ *
+ * Rapfi's getPosition()（Rapfi/command/gomocup.cpp）按【落子顺序】重摆棋盘：
+ * 每颗子的类型（1=SELF 引擎方 / 2=OPPO 对方）必须与当时的行棋方一致；
+ * 遇到一次类型失配会自动替缺棋的一方插一个 PASS，但「连续 PASS」被协议
+ * 禁止——连续两次失配会让整个摆盘静默中止，棋盘停在半路上，引擎就看着
+ * 一副残局下棋。
+ *
+ * 曾经这里用 y 优先【扫描序】整发 plain BOARD：玩家在同一行连下三颗子时，
+ * 扫描序出现 3 个连续同类型子 → 需要连续两个 PASS → 摆盘中止 → 引擎只
+ * 看到前一两个子。表现为「AI 不拦横线」「把子下在已有棋子上」（残局上
+ * 空着的格子在真实棋盘上已被占）。aivai 当年没测出来，是因为双方贴着
+ * 中心行棋，扫描序碰巧近似落子序。
+ *
+ * 一致性校验：重放 moves 必须与 board 完全一致、颜色严格交替、且轮到
+ * `player` 行棋。任何不符都返回 null——调用方改走内置 JS 引擎，
+ * 绝不把错误局面喂给引擎。
+ */
+export function buildYxBoardCmd(
+  board: GomokuBoard,
+  moves: GomokuHistoryMove[],
+  player: GomokuPlayer,
+): string | null {
+  const b: number[][] = Array.from({ length: 15 }, () => new Array<number>(15).fill(0));
+  let prev = 0;
+  for (const m of moves) {
+    if ((m.c !== 1 && m.c !== 2) || m.x < 0 || m.x > 14 || m.y < 0 || m.y > 14) return null;
+    if (b[m.y][m.x] !== 0) return null; // 同一格落两子
+    if (m.c === prev) return null; // 颜色必须严格交替（我方对局从不虚着）
+    b[m.y][m.x] = m.c;
+    prev = m.c;
+  }
+  for (let y = 0; y < 15; y++) {
+    for (let x = 0; x < 15; x++) {
+      if (board[y][x] !== b[y][x]) return null; // 与 2D 棋盘不一致
+    }
+  }
+  if (prev === player) return null; // 最后一手是 player 下的 → 还没轮到它
+  let block = 'YXBOARD';
+  for (const m of moves) block += ` ${m.x},${m.y},${m.c === player ? 1 : 2}`;
+  return block + ' DONE';
 }
 
 interface PvBlock {
@@ -306,6 +351,7 @@ export class RapfiEngine {
 
   /**
    * Search the best move for `player` on `board`.
+   * `moves` 是按真实落子顺序的完整棋谱——Rapfi 靠它重摆棋盘（见 buildYxBoardCmd）。
    * Falls through the caller-provided fallback when rapfi is unavailable.
    */
   async findMove(
@@ -314,11 +360,12 @@ export class RapfiEngine {
     difficulty: Difficulty,
     mode: GameMode,
     historyLength: number,
+    moves: GomokuHistoryMove[],
     fallback: () => SearchResult<GomokuMove>,
   ): Promise<SearchResult<GomokuMove>> {
     const task = this.chain.then(
-      () => this._search(board, player, difficulty, mode, historyLength, fallback),
-      () => this._search(board, player, difficulty, mode, historyLength, fallback),
+      () => this._search(board, player, difficulty, mode, historyLength, moves, fallback),
+      () => this._search(board, player, difficulty, mode, historyLength, moves, fallback),
     );
     this.chain = task.catch(() => undefined);
     return task;
@@ -330,6 +377,7 @@ export class RapfiEngine {
     difficulty: Difficulty,
     mode: GameMode,
     historyLength: number,
+    moves: GomokuHistoryMove[],
     fallback: () => SearchResult<GomokuMove>,
   ): Promise<SearchResult<GomokuMove>> {
     // ── Opening shortcuts (instant, keeps aivai varied) ──
@@ -370,6 +418,14 @@ export class RapfiEngine {
     const turnMs = Math.round(cfg.turnMs * jitter);
     const nbest = difficulty === 4 ? 5 : 1;
 
+    // 摆盘命令先行构建+校验：moves 与棋盘不符时绝不喂引擎错局，
+    // 直接降级内置 JS 引擎（它只看 2D 棋盘，不依赖棋谱顺序）。
+    const block = buildYxBoardCmd(board, moves, player);
+    if (!block) {
+      console.warn('[rapfi] 落子序列与棋盘不一致（含奇偶校验失败），本手改用内置 JS 引擎');
+      return fallback();
+    }
+
     const parser = new OutputParser();
     let settled = false;
     this.onLine = (line) => {
@@ -393,17 +449,10 @@ export class RapfiEngine {
       this.cmd('START 15');
       this.cmd('INFO TIME_LEFT 100000000');
 
-      // Replay the full position: SELF(1) = engine color stones, OPPO(2) = other.
-      // rapfi assigns colors by type and fixes move parity with auto-PASS, so
-      // scan order is irrelevant.
-      let block = 'BOARD';
-      for (let y = 0; y < 15; y++) {
-        for (let x = 0; x < 15; x++) {
-          const v = board[y][x];
-          if (v !== 0) block += ` ${x},${y},${v === player ? 1 : 2}`;
-        }
-      }
-      block += ' DONE';
+      // YXBOARD 只按落子序摆盘、不触发思考；思考由 YXNBEST 触发并带上
+      // multiPV。绝不能用 plain BOARD：它摆完盘立刻开始思考，thinking
+      // 标志置位后后续命令全部被引擎丢弃——YXNBEST 5（恶魔档多候选）
+      // 就这么被吞过，而且提前触发的思考用的是不带 multiPV 的配置。
       this.cmd(block);
       this.cmd('YXNBEST ' + nbest);
 
@@ -428,15 +477,19 @@ export class RapfiEngine {
       if (bi > 0) scores.unshift(...scores.splice(bi, 1));
       if (!scores.length) scores.push({ x: best.x, y: best.y, v: 0 });
 
-      const last = parser.blocks[parser.blocks.length - 1];
-      const bestV = last?.eval ?? 0;
+      // YXNBEST>1 时 blocks 末尾是最后一轮的 pv1..pvN；评估/深度/节点数
+      // 必须取「选中着法所在的块」，而不是最后一个块（那是 pvN 的评估）。
+      const bestKey = `${best.x},${best.y}`;
+      const bestBlock =
+        finals.find((b) => b.line[0] === bestKey) ?? finals[0] ?? parser.blocks[parser.blocks.length - 1] ?? null;
+      const bestV = bestBlock?.eval ?? 0;
       const mv: GomokuMove = { x: best.x, y: best.y, v: bestV };
       return {
         move: mv,
-        depth: last?.depth || 0,
-        nodes: last?.nodes || 0,
+        depth: bestBlock?.depth || 0,
+        nodes: bestBlock?.nodes || 0,
         ms: Math.round(now() - t0),
-        eval: last?.eval ?? 0,
+        eval: bestBlock?.eval ?? 0,
         scores,
         engine: this.engineTag(),
       };

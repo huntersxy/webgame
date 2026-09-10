@@ -195,6 +195,50 @@ async function run() {
   check('depth/nodes parsed from INFO', !!lastBlock && lastBlock.depth > 0 && lastBlock.nodes > 0, JSON.stringify(lastBlock));
   check('mate evals map to UI scale', !lastBlock || lastBlock.eval <= MATE_SCALE, JSON.stringify(lastBlock && lastBlock.eval));
 
+  // 4b) 战术正确性：对手（OPPO=2）横向活四，引擎（SELF=1）应手必须堵。
+  //     回归根因：引擎的 getPosition 按【落子顺序】重摆棋盘且禁止连续 PASS，
+  //     旧实现用扫描序发 plain BOARD——对手同行连下三子即触发摆盘中止，
+  //     引擎只看到前一两个子，表现为「AI 不拦横线」「下在已有棋子上」。
+  //     这里按真实行棋序（黑白交替）整发 YXBOARD，钉死「必堵活四」。
+  eng.resetMove();
+  setupCmds(eng.engine, 400, 50);
+  // 行棋序：黑(2)白(1)交替，黑=对手。黑在 row7 有 3,4,5,6 四连（活四），
+  // 白只有 7,9 / 8,10 两颗散子。现在轮白（引擎）走，不堵即输。
+  eng.engine.sendCommand('YXBOARD 3,7,2 7,9,1 4,7,2 8,10,1 5,7,2 9,10,1 6,7,2 DONE');
+  eng.engine.sendCommand('YXNBEST 1');
+  t0 = Date.now();
+  while (!eng.getMove() && Date.now() - t0 < 400 + 3000) await sleep(10);
+  const mvBlock = eng.getMove();
+  const blocked = !!mvBlock && ((mvBlock.x === 2 && mvBlock.y === 7) || (mvBlock.x === 7 && mvBlock.y === 7));
+  check('对手横向活四必须堵（「横着摆没人拦」回归）', blocked, JSON.stringify(mvBlock));
+
+  // 4c) 轮到引擎（SELF=白）时，应把自己的活三延成活四（赢棋着法），
+  //     而不是去碰对方的线 —— 验证 SELF/OPPO 类型映射没有被反着解读。
+  eng.resetMove();
+  setupCmds(eng.engine, 400, 50);
+  // 行棋序：黑(2)白(1)。白 row7 有 6,7,8 三连（活三），黑 row3 有 6,7,8 三连
+  // + 一颗散子；黑刚下完（4:3），轮白。正确着法：(5,7) 或 (9,7) 成活四。
+  eng.engine.sendCommand('YXBOARD 6,3,2 6,7,1 7,3,2 7,7,1 8,3,2 8,7,1 12,3,2 DONE');
+  eng.engine.sendCommand('YXNBEST 1');
+  t0 = Date.now();
+  while (!eng.getMove() && Date.now() - t0 < 400 + 3000) await sleep(10);
+  const mvAtk = eng.getMove();
+  const attacks = !!mvAtk && mvAtk.y === 7 && (mvAtk.x === 5 || mvAtk.x === 9);
+  check('己方活三延成活四（棋色映射正确、进攻优先）', attacks, JSON.stringify(mvAtk));
+
+  // 4d) YXNBEST 5 产出 multiPV：恶魔档的候选列表依赖它。
+  //     注意不能用 plain BOARD 触发思考——thinking 标志置位后 YXNBEST 会被
+  //     引擎静默丢弃，multiPV 永远是 1。
+  eng.resetMove();
+  const pMulti = new Parser();
+  eng.setOnLine((l) => pMulti.feed(l));
+  setupCmds(eng.engine, 800, 100);
+  eng.engine.sendCommand('YXBOARD 7,7,1 8,8,2 7,9,1 8,6,2 6,8,1 9,7,2 DONE');
+  eng.engine.sendCommand('YXNBEST 5');
+  t0 = Date.now();
+  while (!eng.getMove() && Date.now() - t0 < 800 + 4000) await sleep(10);
+  check('YXNBEST 5 产出多候选 PV 块', pMulti.blocks.length >= 5, `blocks=${pMulti.blocks.length}`);
+
   // ── TextDecoder 兼容补丁 ──
   // 启用 COOP/COEP 后引擎走多线程构建，engine-worker 会传 {shared:true, maximum}
   // 的 WebAssembly.Memory —— 其 buffer 是可增长的 SharedArrayBuffer，而 Chrome 的

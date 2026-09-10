@@ -22,9 +22,9 @@ self.onmessage = (e: MessageEvent<WorkerRequest>) => {
     case 'gomoku-search': {
       const board = req.board as GomokuBoard;
       const player = req.player as GomokuPlayer;
-      const { difficulty, mode, historyLength } = req;
+      const { difficulty, mode, historyLength, moves } = req;
       rapfi
-        .findMove(board, player, difficulty, mode, historyLength, () => ({
+        .findMove(board, player, difficulty, mode, historyLength, moves, () => ({
           ...gomokuSearch(board, player, difficulty, mode, historyLength),
           engine: 'js' as const,
         }))
@@ -42,9 +42,9 @@ self.onmessage = (e: MessageEvent<WorkerRequest>) => {
     case 'gomoku-hint': {
       const board = req.board as GomokuBoard;
       const player = req.player as GomokuPlayer;
-      const { mode, historyLength } = req;
+      const { mode, historyLength, moves } = req;
       rapfi
-        .findMove(board, player, 4, mode, historyLength, () => ({
+        .findMove(board, player, 4, mode, historyLength, moves, () => ({
           ...gomokuHint(board, player, mode, historyLength),
           engine: 'js' as const,
         }))

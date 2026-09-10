@@ -169,7 +169,10 @@ export class GomokuController {
     this._aiTimer = setTimeout(async () => {
       const aiPlayer = this.turn;
       const lesson = this.level === 4 ? checkLesson(cloneBoard(this.board)) : null;
-      const res = await this.ai.searchGomoku(cloneBoard(this.board), aiPlayer, this.level, this.mode, this.history.length);
+      // Rapfi 引擎按落子顺序重摆棋盘，必须把棋谱一并传过去（只给 2D 棋盘
+      // 无法还原顺序，引擎会因奇偶失配静默放弃摆盘——曾表现为不拦横线）。
+      const moves = this.history.map((h) => ({ x: h.x, y: h.y, c: h.c }));
+      const res = await this.ai.searchGomoku(cloneBoard(this.board), aiPlayer, this.level, this.mode, moves.length, moves);
       // 这段 await 期间局面可能已被重置（新开局 / 换执子 / 换模式都会走 newGame）。
       // 不作校验的话，为旧局面算出的着法会落到新棋盘上——甚至直接盖掉玩家
       // 刚落下的子（表现为「AI 下在我的棋子上」）。
@@ -290,7 +293,8 @@ export class GomokuController {
     if (this.over || this.thinking || this.godThinking) return;
     setStats(document.getElementById('g-think-stats'), '👉 恶魔正在附体算招… depth4全开，请稍候');
     setTimeout(async () => {
-      const res = await this.ai.hintGomoku(cloneBoard(this.board), this.turn, this.mode, this.history.length);
+      const moves = this.history.map((h) => ({ x: h.x, y: h.y, c: h.c }));
+      const res = await this.ai.hintGomoku(cloneBoard(this.board), this.turn, this.mode, moves.length, moves);
       const m = res.move;
       if (m) {
         const engineName = res.engine === 'rapfi-multi' ? '🧩Rapfi·多线程' : res.engine === 'rapfi-single' ? '🧩Rapfi·单线程' : res.engine === 'js' ? '内置引擎' : '';
@@ -333,7 +337,8 @@ export class GomokuController {
     this.godThinking = true;
     setTimeout(async () => {
       try {
-        const res = await this.ai.hintGomoku(cloneBoard(this.board), this.turn, this.mode, this.history.length);
+        const moves = this.history.map((h) => ({ x: h.x, y: h.y, c: h.c }));
+        const res = await this.ai.hintGomoku(cloneBoard(this.board), this.turn, this.mode, moves.length, moves);
         this.godMove = res.move;
         this.redraw();
       } finally { this.godThinking = false; }

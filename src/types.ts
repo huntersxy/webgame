@@ -31,6 +31,12 @@ export interface GomokuMove extends Pt {
   v?: number;
 }
 
+/** 按真实落子顺序记录的一手。Rapfi 引擎要求按行棋序重摆棋盘（见 rapfi.ts），
+ *  只传 2D 棋盘无法还原顺序。 */
+export interface GomokuHistoryMove extends Pt {
+  c: GomokuPlayer;
+}
+
 /** A Xiangqi move */
 export interface XqMove {
   fx: number;
@@ -107,8 +113,8 @@ export interface ThinkInfo {
 
 /** Worker request messages */
 export type WorkerRequest =
-  | { type: 'gomoku-search'; board: GomokuBoard; player: GomokuPlayer; difficulty: Difficulty; mode: GameMode; historyLength: number }
-  | { type: 'gomoku-hint'; board: GomokuBoard; player: GomokuPlayer; mode: GameMode; historyLength: number }
+  | { type: 'gomoku-search'; board: GomokuBoard; player: GomokuPlayer; difficulty: Difficulty; mode: GameMode; historyLength: number; moves: GomokuHistoryMove[] }
+  | { type: 'gomoku-hint'; board: GomokuBoard; player: GomokuPlayer; mode: GameMode; historyLength: number; moves: GomokuHistoryMove[] }
   | { type: 'xq-search'; board: XqBoard; side: XqSide; difficulty: Difficulty; mode: GameMode; historyLength: number }
   | { type: 'xq-hint'; board: XqBoard; side: XqSide; mode: GameMode; historyLength: number }
   | { type: 'junqi-search'; board: JqBoard; side: JqSide; difficulty: Difficulty; mode: GameMode; flip: boolean; historyLength: number }
