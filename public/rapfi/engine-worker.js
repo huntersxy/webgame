@@ -30,10 +30,14 @@ self.onmessage = function (e) {
     try {
       // SharedArrayBuffer only exists in cross-origin-isolated contexts;
       // the multi build needs it, otherwise fall back to single build.
-      const canThread =
+      const sabOk =
         typeof SharedArrayBuffer !== 'undefined' &&
         typeof self.crossOriginIsolated !== 'undefined' &&
         self.crossOriginIsolated;
+      // 客户端可以强制指定构建。用途：某个构建运行中挂掉后，重建时改传
+      // 另一个构建再试一次，而不是直接掉到内置 JS 引擎。
+      const want = msg.variant === 'single' || msg.variant === 'multi' ? msg.variant : 'auto';
+      const canThread = want === 'multi' ? sabOk : want === 'single' ? false : sabOk;
 
       // Cache-bust suffix propagated from the client (matches its ASSET_VERSION)
       const ver = typeof msg.version === 'string' && msg.version ? '?v=' + msg.version : '';

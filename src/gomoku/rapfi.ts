@@ -33,7 +33,7 @@ export const RAPFI_LEVELS: Record<Difficulty, { strength: number; turnMs: number
 type EngineMsg = { type: 'ready' | 'stdout' | 'stderr' | 'error' | 'exit'; data?: unknown };
 
 /** Bump when any file under public/rapfi/ changes to defeat browser caches. */
-const ASSET_VERSION = '20260910b';
+const ASSET_VERSION = '20260910c';
 
 /** Parse an rapfi EVAL token ("+M5", "-M3", plain integer) to UI scale. */
 function parseEval(tok: string): number {
@@ -121,6 +121,13 @@ export class RapfiEngine {
   /** 'multi' | 'single' once the engine has booted */
   variant: 'multi' | 'single' | null = null;
   private threads = 1;
+  /** 同一局里引擎连续失败后不再重试，直接走内置 JS 引擎 */
+  private disabled = false;
+  private searchFailures = 0;
+  /** 已经失败过的构建，重建时优先换另一个（多线程 → 单线程）*/
+  private failedVariants = new Set<'multi' | 'single'>();
+  /** 最近的引擎 stderr，失败时一并打印用于定位 */
+  private stderrTail: string[] = [];
   /** serialization so concurrent requests never interleave stdout */
   private chain: Promise<unknown> = Promise.resolve();
 
@@ -141,39 +148,56 @@ export class RapfiEngine {
         reject(err instanceof Error ? err : new Error(String(err)));
         return;
       }
-      const timer = setTimeout(() => reject(new Error('rapfi engine init timeout')), 60_000);
+      let settled = false;
+      const timer = setTimeout(() => finish(new Error('rapfi engine init timeout')), 60_000);
+      function finish(err?: Error): void {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        if (err) reject(err);
+        else resolve();
+      }
       w.onmessage = (e: MessageEvent<EngineMsg>) => {
         const msg = e.data;
         switch (msg.type) {
           case 'ready': {
-            clearTimeout(timer);
             const variant = typeof msg.data === 'string' ? msg.data : '';
             this.variant = variant.includes('multi') ? 'multi' : 'single';
             this.threads = this.variant === 'multi'
               ? Math.max(1, Math.min(4, (self.navigator?.hardwareConcurrency || 2) - 1))
               : 1;
-            resolve();
+            console.info(`[rapfi] 引擎就绪：${this.variant} 构建 · 线程 ${this.threads}`);
+            finish();
             break;
           }
           case 'stdout':
             this.onLine?.(String(msg.data));
             break;
+          case 'stderr':
+            this.noteStderr(String(msg.data));
+            break;
           case 'error':
-            clearTimeout(timer);
-            reject(new Error(String(msg.data)));
+            if (!settled) finish(new Error(String(msg.data)));
+            else this.markDead('引擎报错：' + String(msg.data));
             break;
           case 'exit':
-            // Engine died (stdin EOF or crash) — searches will fall back.
+            // stdin 队列读空或崩溃都会走到这里。启动阶段算失败；运行期必须
+            // 立刻标记死亡——否则 readyPromise 仍是已完成状态，之后每一手都
+            // 会把命令发给死引擎、白等满超时才回退到内置引擎。
+            if (!settled) finish(new Error('引擎在初始化阶段退出'));
+            else this.markDead('引擎中途退出（stdin 读空或崩溃）');
             break;
           default:
             break;
         }
       };
       w.onerror = (e) => {
-        clearTimeout(timer);
-        reject(new Error('rapfi worker error: ' + (e.message || 'unknown')));
+        const err = new Error('rapfi worker error: ' + (e.message || 'unknown'));
+        if (!settled) finish(err);
+        else this.markDead(err.message);
       };
-      w.postMessage({ type: 'init', version: ASSET_VERSION });
+      // variant 让客户端能指定构建：多线程挂掉后重建时改传 'single'
+      w.postMessage({ type: 'init', version: ASSET_VERSION, variant: this.nextVariant() });
       this.worker = w;
     });
   }
@@ -184,12 +208,47 @@ export class RapfiEngine {
    * through to the JS engine for that search.
    */
   private lastInitFail = 0;
+
+  /** 记下最近的引擎 stderr，失败时一并打印，便于定位根因 */
+  private noteStderr(line: string): void {
+    if (!line.trim()) return;
+    this.stderrTail.push(line);
+    if (this.stderrTail.length > 8) this.stderrTail.shift();
+  }
+
+  /**
+   * 标记引擎已不可用：清掉 readyPromise，让下一次搜索重建实例而不是把
+   * 命令继续发给死进程。同时记住是哪个构建挂的，重建时优先换另一个。
+   */
+  private markDead(why: string): void {
+    if (!this.readyPromise && !this.worker) return; // 已经处理过
+    const v = this.variant;
+    if (v) this.failedVariants.add(v);
+    console.warn(`[rapfi] 引擎停止（${v ?? '未知'} 构建）：${why}`);
+    if (this.stderrTail.length) {
+      console.warn('[rapfi] 引擎 stderr 末尾：\n' + this.stderrTail.join('\n'));
+    }
+    this.readyPromise = null;
+    this.variant = null;
+    this.worker?.terminate();
+    this.worker = null;
+  }
+
+  /** 重建时用哪个构建：多线程挂过、单线程没挂过，就换单线程 */
+  private nextVariant(): 'auto' | 'single' {
+    if (this.failedVariants.has('multi') && !this.failedVariants.has('single')) return 'single';
+    return 'auto';
+  }
+
   private ensureReady(): Promise<void> {
+    if (this.disabled) return Promise.reject(new Error('引擎已在本局停用'));
     if (this.readyPromise) return this.readyPromise;
     if (Date.now() - this.lastInitFail < 45_000) return Promise.reject(new Error('rapfi init cooldown'));
     this.readyPromise = this.startWorker().catch((err) => {
       this.readyPromise = null;
       this.lastInitFail = Date.now();
+      if (this.variant) this.failedVariants.add(this.variant);
+      this.variant = null;
       this.worker?.terminate();
       this.worker = null;
       throw err;
@@ -307,8 +366,10 @@ export class RapfiEngine {
       this.cmd(block);
       this.cmd('YXNBEST ' + nbest);
 
-      // Wait for the move; hard deadline as a safety net.
-      const deadline = now() + turnMs * 4 + 4000;
+      // 引擎自己按 TIMEOUT_TURN 收手，这里只留一块有限余量兜底。
+      // 余量给太大（原先 turnMs*4+4000）的代价是：引擎一旦已经死掉，
+      // 每一手都要白等满这个时间才回退到内置引擎。
+      const deadline = now() + turnMs + 4000;
       while (!parser.move && now() < deadline) await sleep(20);
 
       const best = parser.move;
@@ -339,7 +400,16 @@ export class RapfiEngine {
         engine: this.engineTag(),
       };
     } catch (err) {
-      console.warn('[rapfi] search failed, falling back to JS engine:', err);
+      this.searchFailures++;
+      console.warn(`[rapfi] 搜索失败（${this.variant ?? '未知'} 构建），回退内置引擎：`, err);
+      if (this.stderrTail.length) {
+        console.warn('[rapfi] 引擎 stderr 末尾：\n' + this.stderrTail.join('\n'));
+      }
+      this.markDead('搜索超时未产出着法');
+      if (this.searchFailures >= 2) {
+        this.disabled = true;
+        console.warn('[rapfi] 引擎连续失败，本局改用内置 JS 引擎（刷新页面可重试）');
+      }
       return fallback();
     } finally {
       this.onLine = null;
