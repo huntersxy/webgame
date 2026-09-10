@@ -57,6 +57,23 @@ export class TranspositionTable<M> {
     return undefined;
   }
 
+  /**
+   * Zero-allocation probe for hot search loops. Returns the entry's flag
+   * (0 EXACT | 1 LOWER | 2 UPPER) on a hash hit, or -1 on a miss. On a hit
+   * `out[0]=depth`, `out[1]=score`, `out[2]=move` (or -1 when absent).
+   * The caller owns the depth/bound checks, which lets it apply its own
+   * mate-score adjustment without allocating an entry object per node.
+   */
+  probeInto(hash: number, out: Int32Array): number {
+    const i = this.index(hash);
+    if (this.keys[i] !== (hash >>> 0)) return -1;
+    out[0] = this.depth[i];
+    out[1] = this.score[i];
+    const m = this.move[i];
+    out[2] = m === null || m === undefined ? -1 : (m as unknown as number);
+    return this.flag[i];
+  }
+
   probe(hash: number, depth: number, alpha: number, beta: number): number | null {
     const i = this.index(hash);
     if (this.keys[i] !== (hash >>> 0)) return null;

@@ -332,7 +332,7 @@ export class JunqiController {
     } else {
       text = `${an} 吃 ${dn}`;
     }
-    if (rec.revealedFlag) text += ` ·（${sideName(rec.revealedFlag.side)}军旗亮出）`;
+    for (const f of rec.revealedFlags) text += ` ·（${sideName(f.side)}军旗亮出）`;
 
     this.moveNo++;
     this.lastMove = { from, to };
@@ -395,7 +395,7 @@ export class JunqiController {
     toggleProgress(document.getElementById('jq-think-progress'), true);
     const cfg = JQ_LEVEL_CONFIG[this.level];
     setStats(document.getElementById('jq-think-stats'),
-      `⏳ <b>${sideName(side)}·${cfg.name}</b> 运算中… depth${cfg.depth}${this.style === 'flip' ? ' · 揭棋暗子按期望值评估' : ''}`);
+      `⏳ <b>${sideName(side)}·${cfg.name}</b> 运算中… depth${cfg.depth}${this.style === 'flip' ? ' · 揭棋：己方全知，对方暗子按编制先验' : ''}`);
     this.redraw();
     const delay = this.level === 4 ? 80 : 40;
     setTimeout(async () => {
@@ -421,8 +421,9 @@ export class JunqiController {
     const pv = (res.pv || []).map((x) => describeMove(this.board, x)).join(' → ') || describeMove(this.board, m);
     setStats(document.getElementById('jq-think-stats'),
       `✅ <b>${sideName(side)}·${name}</b> depth${res.depth} · 节点 <b>${res.nodes.toLocaleString()}</b> · ${res.ms}ms · 评估 <b>${ev}</b><br>主变：${pv}`);
+    // 根节点 PVS 下未过线的候选只拿到上界，标成 ≤ 以免看起来与最优着同分
     const top = (res.scores || []).slice(0, 4)
-      .map((s) => `${describeMove(this.board, s)}:${s.v >= JQ_MATE - 1000 ? '扛旗' : Math.round(s.v)}`)
+      .map((s) => `${describeMove(this.board, s)}:${s.v >= JQ_MATE - 1000 ? '扛旗' : `${s.ub ? '≤' : ''}${Math.round(s.v)}`}`)
       .join(' · ');
     appendLog(document.getElementById('jq-think-log'),
       `🧠 depth<b>${res.depth}</b> · 节点${res.nodes.toLocaleString()} · ${res.ms}ms · 评估${ev} · 选<b>${describeMove(this.board, m)}</b><br><span class="cand">${top}</span>`);

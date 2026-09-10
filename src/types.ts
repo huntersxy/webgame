@@ -49,6 +49,8 @@ export interface JqMove {
   to: number;
   /** Search value */
   v?: number;
+  /** 根节点 PVS 未过线时该分值只是上界，不能与精确分值等同展示 */
+  ub?: boolean;
 }
 
 /** Search result returned by the AI */

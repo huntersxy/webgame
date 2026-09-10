@@ -366,9 +366,9 @@ export interface JqMoveRec {
   attHidden1: boolean;
   defHidden0: boolean;
   defHidden1: boolean;
-  /** 司令阵亡导致的亮旗：被翻明的军旗与其节点 */
-  revealedFlag: Piece | null;
-  flagNode: number;
+  /** 司令阵亡导致的亮旗：被翻明的军旗与其节点（双方司令同归于尽时有两项） */
+  revealedFlags: Piece[];
+  flagNodes: number[];
 }
 
 /**
@@ -384,7 +384,7 @@ export function makeJqMove(board: Board, from: number, to: number): JqMoveRec {
     from, to, att, def, attOut: false, defOut: false, flag: false,
     attHidden0: !!att.hidden, attHidden1: !!att.hidden,
     defHidden0: !!def?.hidden, defHidden1: !!def?.hidden,
-    revealedFlag: null, flagNode: -1,
+    revealedFlags: [], flagNodes: [],
   };
   if (!def) { board[to] = att; return rec; } // 静默移动不翻明
   // 交战：双方同时翻明
@@ -395,17 +395,17 @@ export function makeJqMove(board: Board, from: number, to: number): JqMoveRec {
   if (r.a && r.d) { rec.attOut = true; rec.defOut = true; board[to] = null; }
   else if (r.a) { rec.attOut = true; board[to] = def; }
   else { rec.defOut = true; board[to] = att; }
-  // 司令阵亡 → 该方军旗亮出
-  let dead: Piece | null = null;
-  if (rec.defOut && rec.attOut) dead = def.type === '司令' ? def : att.type === '司令' ? att : null;
-  else if (rec.attOut) dead = att.type === '司令' ? att : null;
-  else if (rec.defOut) dead = def.type === '司令' ? def : null;
-  if (dead) {
-    const fn = board.findIndex((q) => q && q.side === dead!.side && q.type === '军旗');
+  // 司令阵亡 → 该方军旗亮出。交战双方同时结算，司令对司令同归于尽时
+  // 两面军旗都要亮，因此这里逐个收集而不是只取一枚。
+  const deadCmd: Piece[] = [];
+  if (rec.attOut && att.type === '司令') deadCmd.push(att);
+  if (rec.defOut && def.type === '司令') deadCmd.push(def);
+  for (const d of deadCmd) {
+    const fn = board.findIndex((q) => q && q.side === d.side && q.type === '军旗');
     if (fn >= 0 && board[fn]!.hidden) {
       board[fn]!.hidden = false;
-      rec.revealedFlag = board[fn]!;
-      rec.flagNode = fn;
+      rec.revealedFlags.push(board[fn]!);
+      rec.flagNodes.push(fn);
     }
   }
   return rec;
@@ -417,7 +417,7 @@ export function undoJqMove(board: Board, rec: JqMoveRec): void {
   board[rec.to] = rec.def;
   rec.att.hidden = rec.attHidden0 ? true : undefined;
   if (rec.def) rec.def.hidden = rec.defHidden0 ? true : undefined;
-  if (rec.revealedFlag) rec.revealedFlag.hidden = true;
+  for (const f of rec.revealedFlags) f.hidden = true;
 }
 
 export interface JqMove { from: number; to: number }

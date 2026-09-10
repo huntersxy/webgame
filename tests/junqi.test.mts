@@ -139,6 +139,35 @@ console.log('== 棋盘结构 ==');
   // 边列铁路贯穿全列（0→11 无缝）
   const railVert = (r: number, c: number) => ADJ[idx(r, c)].some((e) => e.to === idx(r + 1, c) && e.rail);
   check('边列铁路贯穿含河段', [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10].every((r) => railVert(r, 0) && railVert(r, 4)));
+  // 边数总账：横向 12×4=48、纵向 53（河中只连第 1/3/5 列）、行营斜线 32
+  {
+    let rail = 0, plain = 0;
+    const seen = new Set<string>();
+    for (let i = 0; i < 60; i++) {
+      for (const e of ADJ[i]) {
+        const key = i < e.to ? `${i}-${e.to}` : `${e.to}-${i}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        if (e.rail) rail++; else plain++;
+      }
+    }
+    check('边总数 133（横向 48 + 纵向 53 + 斜线 32）', rail + plain === 133, `rail=${rail} plain=${plain}`);
+    check('铁路 31 条（前线两行 8 + 左右边列 20 + 三座桥 3）', rail === 31, `rail=${rail}`);
+    check('公路 102 条', plain === 102, `plain=${plain}`);
+    // 铁路网必须连通，否则工兵无法全网机动
+    const start = idx(5, 0);
+    const vis = new Set<number>([start]);
+    const q = [start];
+    while (q.length) {
+      const n = q.shift()!;
+      for (const e of ADJ[n]) if (e.rail && !vis.has(e.to)) { vis.add(e.to); q.push(e.to); }
+    }
+    let railNodes = 0;
+    for (let i = 0; i < 60; i++) if (ADJ[i].some((e) => e.rail)) railNodes++;
+    check('铁路节点 30 且全网连通', railNodes === 30 && vis.size === 30, `节点=${railNodes} 连通=${vis.size}`);
+  }
+  // 每方 25 个可布子点（6 行 × 5 列 − 5 行营），与 25 枚编制吻合
+  check('可布子点共 50（每方 25）', [...Array(60).keys()].filter((i) => !isCamp(i)).length === 50);
 }
 
 // ── 战斗结算 ──
@@ -152,6 +181,15 @@ console.log('== 战斗 ==');
   check('工兵挖雷', (() => { const r = resolve(mk('r', '工兵'), mk('b', '地雷')); return !r.a && r.d; })());
   check('非工兵撞雷亡', (() => { const r = resolve(mk('r', '司令'), mk('b', '地雷')); return r.a && !r.d; })());
   check('扛旗', resolve(mk('r', '排长'), mk('b', '军旗')).flag === true);
+  check('工兵是最弱子（攻排长告负）', (() => { const r = resolve(mk('r', '工兵'), mk('b', '排长')); return r.a && !r.d; })());
+  check('大小顺序链完整（司令→…→工兵 逐级压制）', (() => {
+    const order: PType[] = ['司令', '军长', '师长', '旅长', '团长', '营长', '连长', '排长', '工兵'];
+    return order.every((t, k) => {
+      if (k + 1 >= order.length) return true;
+      const r = resolve(mk('r', t), mk('b', order[k + 1]));
+      return !r.a && r.d;
+    });
+  })());
 }
 
 // ── 不可动子 ──
@@ -295,23 +333,42 @@ console.log('== 揭棋 ==');
   bf[idx(5, 0)] = mk('b', '炸弹');
   bf[idx(11, 1)] = { ...mk('r', '军旗'), hidden: true };
   const recF = makeJqMove(bf, idx(6, 0), idx(5, 0)); // 司令撞炸弹同尽 → 红旗亮出
-  check('司令阵亡亮军旗', recF.revealedFlag !== null && recF.revealedFlag.side === 'r' && recF.revealedFlag.hidden === false && recF.flagNode === idx(11, 1));
+  check('司令阵亡亮军旗', recF.revealedFlags.length === 1 && recF.revealedFlags[0].side === 'r' && recF.revealedFlags[0].hidden === false && recF.flagNodes[0] === idx(11, 1));
+  // 司令对司令同归于尽：两面军旗都要亮
+  const bMut: Board = empty();
+  bMut[idx(11, 1)] = { ...mk('r', '军旗'), id: 11, hidden: true };
+  bMut[idx(0, 1)] = { ...mk('b', '军旗'), id: 12, hidden: true };
+  bMut[idx(5, 2)] = { ...mk('r', '司令'), id: 13, hidden: true };
+  bMut[idx(6, 2)] = { ...mk('b', '司令'), id: 14, hidden: true };
+  const recMut = makeJqMove(bMut, idx(5, 2), idx(6, 2));
+  check('双方司令同归于尽 → 两面军旗都亮',
+    recMut.attOut && recMut.defOut && recMut.revealedFlags.length === 2
+    && bMut[idx(11, 1)]!.hidden === false && bMut[idx(0, 1)]!.hidden === false,
+    `亮旗 ${recMut.revealedFlags.length}`);
+  undoJqMove(bMut, recMut);
+  check('同归于尽后 undo 两面军旗都还原',
+    bMut[idx(11, 1)]!.hidden === true && bMut[idx(0, 1)]!.hidden === true);
   undoJqMove(bf, recF);
   check('undo 还原军旗 hidden', bf[idx(11, 1)]!.hidden === true);
   // 和棋常量
   check('无吃子判和步数 = 120 / 总手数 = 500', DRAW_NO_CAPTURE === 120 && MAX_MOVES === 500);
-  // 揭棋评估：暗子按期望值计（不享受前进加分；明子正常计）
+  // 揭棋评估：轮走方始终知晓己方棋子，暗置不改变己方估值
   const bh = empty();
   bh[idx(11, 1)] = { ...mk('r', '司令'), hidden: true };
   bh[idx(0, 1)] = mk('b', '司令');
   const bo = empty();
   bo[idx(11, 1)] = mk('r', '司令');
   bo[idx(0, 1)] = mk('b', '司令');
-  const evHidden = evaluate(bh, true);
-  const evOpen = evaluate(bo, false);
-  // 红司令(11,1) adv=5 → +5×3×0.3=+4.5；蓝司令(0,1) 同；双方明司令抵消为 0
-  const expHidden = HIDDEN_VAL - (600 + 4.5);
-  check('揭棋暗子按期望值评估', evOpen === 0 && Math.abs(evHidden - expHidden) < 0.01, `hidden=${evHidden} open=${evOpen} exp=${expHidden}`);
+  // 红司令(11,1) adv=5 → +5×3×0.3=+4.5；蓝司令(0,1) 同；双方抵消为 0
+  check('揭棋轮走方知晓己方子力（己方暗置不影响估值）',
+    evaluate(bh, 'r') === evaluate(bo, 'r') && evaluate(bo, 'r') === 0,
+    `hidden=${evaluate(bh, 'r')} open=${evaluate(bo, 'r')}`);
+  // 对方暗子：子力按真值计（阵亡翻明是公开事件 ⇒ 双方剩余子力是公开信息），
+  // 但位置项不套用其真实兵种——旧实现整枚按 HIDDEN_VAL≈210 计，是主要偏差来源
+  const solo = empty();
+  solo[idx(5, 2)] = { ...mk('r', '司令'), hidden: true };
+  check('揭棋暗子不再按期望子力值低估（己方视角）', evaluate(solo, 'r') > 590, `v=${evaluate(solo, 'r')}`);
+  check('揭棋暗子不再按期望子力值低估（对方视角）', evaluate(solo, 'b') > 590, `v=${evaluate(solo, 'b')}`);
 }
 
 // ── AI 自对弈 ──

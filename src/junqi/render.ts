@@ -69,11 +69,6 @@ function fiveStar(ctx: CanvasRenderingContext2D, x: number, y: number, R: number
   ctx.closePath();
 }
 
-/** 三座桥（第 1/3/5 列跨河）的木板桥面 */
-function isBridgeEdge(a: number, b: number): boolean {
-  return rowOf(a) === 5 && rowOf(b) === 6 && colOf(a) === colOf(b) && (colOf(a) === 0 || colOf(a) === 2 || colOf(a) === 4);
-}
-
 /** 铁路：深色基线 + 浅色枕木（垂直于线路等距分布） */
 function drawRailwayFixed(ctx: CanvasRenderingContext2D, a: { x: number; y: number }, b: { x: number; y: number }): void {
   const dx = b.x - a.x;
