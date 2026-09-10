@@ -17,6 +17,41 @@
 /* global Rapfi */
 'use strict';
 
+/*
+ * TextDecoder 兼容补丁 —— 必须在本文件顶层、importScripts 之前装好，
+ * 因为 emscripten 胶水随后就会用它把 HEAPU8 里的字节解成 JS 字符串。
+ *
+ * 背景：启用 COOP/COEP 后页面进入 cross-origin isolated，引擎走多线程构建，
+ * 本文件的 init 分支会传一个 { shared: true, maximum: N } 的 WebAssembly.Memory
+ * ——它的 buffer 是一个「可增长的 SharedArrayBuffer」。而 TextDecoder.decode()
+ * 按规范拒绝可增长的底层缓冲，抛 TypeError:
+ *   "Failed to execute 'decode' on 'TextDecoder': The provided ArrayBuffer value
+ *    must not be resizable"
+ * 后果极具迷惑性：引擎能启动（ready）、命令也能收，但每一条输出在解码时都抛错，
+ * 客户端一个字都拿不到，最终表现为搜索超时 "rapfi produced no move"。
+ * 单线程构建不带共享内存，所以只在配了 COOP/COEP 的站点上复现。
+ *
+ * 修法：遇到可增长/可调整大小的底层缓冲时，先拷一份普通缓冲再交给原实现。
+ * 只在字符串转换这一层多一次小块拷贝，代价可忽略。
+ */
+(function () {
+  if (typeof TextDecoder === 'undefined') return;
+  var orig = TextDecoder.prototype.decode;
+  function risky(buf) {
+    return !!buf && (buf.resizable === true || buf.growable === true);
+  }
+  TextDecoder.prototype.decode = function (input, options) {
+    if (input && typeof input === 'object') {
+      var buf = ArrayBuffer.isView(input) ? input.buffer : input;
+      if (risky(buf)) {
+        var safe = ArrayBuffer.isView(input) ? new Uint8Array(input) : new Uint8Array(input.slice(0));
+        return orig.call(this, safe, options);
+      }
+    }
+    return orig.call(this, input, options);
+  };
+})();
+
 let instance = null;
 let exited = false;
 

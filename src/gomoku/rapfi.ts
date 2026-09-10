@@ -33,7 +33,7 @@ export const RAPFI_LEVELS: Record<Difficulty, { strength: number; turnMs: number
 type EngineMsg = { type: 'ready' | 'stdout' | 'stderr' | 'error' | 'exit'; data?: unknown };
 
 /** Bump when any file under public/rapfi/ changes to defeat browser caches. */
-const ASSET_VERSION = '20260910c';
+const ASSET_VERSION = '20260910d';
 
 /** Parse an rapfi EVAL token ("+M5", "-M3", plain integer) to UI scale. */
 function parseEval(tok: string): number {
@@ -158,6 +158,10 @@ export class RapfiEngine {
         else resolve();
       }
       w.onmessage = (e: MessageEvent<EngineMsg>) => {
+        // 已经换过 worker 的迟到消息必须丢弃：terminate() 只能阻止后续投递，
+        // 已在事件队列里的消息仍会送达。否则旧 worker 的 exit/error 会把刚建好的
+        // 新 worker 误判为死亡并 terminate 掉。
+        if (this.worker !== w) return;
         const msg = e.data;
         switch (msg.type) {
           case 'ready': {
@@ -192,6 +196,7 @@ export class RapfiEngine {
         }
       };
       w.onerror = (e) => {
+        if (this.worker !== w) return;
         const err = new Error('rapfi worker error: ' + (e.message || 'unknown'));
         if (!settled) finish(err);
         else this.markDead(err.message);

@@ -195,6 +195,47 @@ async function run() {
   check('depth/nodes parsed from INFO', !!lastBlock && lastBlock.depth > 0 && lastBlock.nodes > 0, JSON.stringify(lastBlock));
   check('mate evals map to UI scale', !lastBlock || lastBlock.eval <= MATE_SCALE, JSON.stringify(lastBlock && lastBlock.eval));
 
+  // ── TextDecoder 兼容补丁 ──
+  // 启用 COOP/COEP 后引擎走多线程构建，engine-worker 会传 {shared:true, maximum}
+  // 的 WebAssembly.Memory —— 其 buffer 是可增长的 SharedArrayBuffer，而 Chrome 的
+  // TextDecoder.decode 按规范拒绝可增长的底层缓冲。后果是引擎能启动、命令也收得到，
+  // 但每条输出解码时抛错，客户端一个字拿不到，表现为搜索超时 "produced no move"。
+  // 这里用模拟 Chrome 行为的解码器验证：不打补丁会抛，加载 engine-worker.js 后必须被挡掉。
+  // （本块会改写传入的 TextDecoder 原型，故放在所有真实引擎用例之后）
+  {
+    const vm = require('vm');
+    class ChromeLikeDecoder {
+      decode(input) {
+        const buf = input && typeof input === 'object' && input.buffer ? input.buffer : input;
+        if (buf && (buf.growable === true || buf.resizable === true)) {
+          throw new TypeError("Failed to execute 'decode' on 'TextDecoder': The provided ArrayBuffer value must not be resizable");
+        }
+        return 'ok';
+      }
+    }
+    const gsab = new SharedArrayBuffer(64, { maxByteLength: 128 });
+    const view = new Uint8Array(gsab, 0, 8);
+    let threwBefore = false;
+    try { new ChromeLikeDecoder().decode(view); } catch { threwBefore = true; }
+    check('可增长 SharedArrayBuffer 视图会被 TextDecoder 拒绝（模拟 Chrome 行为）',
+      threwBefore && gsab.growable === true, `growable=${gsab.growable}`);
+
+    const sandbox = {
+      console, TextDecoder: ChromeLikeDecoder, ArrayBuffer, Uint8Array, WebAssembly, setTimeout,
+      self: { postMessage() {}, crossOriginIsolated: true, importScripts() {} },
+    };
+    vm.createContext(sandbox);
+    vm.runInContext(fs.readFileSync(path.join(RAPFI_DIR, 'engine-worker.js'), 'utf8'), sandbox, { filename: 'engine-worker.js' });
+
+    let okAfter = true;
+    try { new ChromeLikeDecoder().decode(view); } catch { okAfter = false; }
+    check('engine-worker.js 的补丁挡掉可增长缓冲（多线程构建因此可正常解码输出）', okAfter);
+
+    let plainOk = true;
+    try { new ChromeLikeDecoder().decode(new Uint8Array(new ArrayBuffer(8))); } catch { plainOk = false; }
+    check('补丁不影响普通 ArrayBuffer 解码', plainOk);
+  }
+
   console.log(`\n${passed} passed, ${failed} failed`);
   process.exit(failed ? 1 : 0);
 }
