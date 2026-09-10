@@ -126,7 +126,12 @@ self.onmessage = function (e) {
         }
       }
 
-      self.Rapfi({
+      // emscripten 的文件包加载器会逐块回调 setStatus（形如
+      // "Downloading data... (1234/10131512)"），原先传的是空函数、进度全丢了。
+      // 这里解析出字节数发回主线程。解析失败就退回去读 Module.dataFileDownloads；
+      // 两者都拿不到时只是没有进度条，不影响加载。
+      let lastProgressAt = 0;
+      const rapfiCfg = {
         locateFile: (url) => {
           // Every build requests its own '<name>.data'; all variants share
           // the single package 'rapfi.data' in this directory (config.toml
@@ -138,8 +143,23 @@ self.onmessage = function (e) {
         onReceiveStdout: (o) => post({ type: 'stdout', data: o }),
         onReceiveStderr: (o) => post({ type: 'stderr', data: o }),
         onExit: (code) => { exited = true; post({ type: 'exit', data: code }); },
-        setStatus: () => {},
-      }).then(
+        setStatus: (msg) => {
+          let loaded = 0, total = 0;
+          const m = /\((\d+)\s*\/\s*(\d+)\)/.exec(String(msg || ''));
+          if (m) {
+            loaded = Number(m[1]); total = Number(m[2]);
+          } else {
+            const dl = rapfiCfg.dataFileDownloads;
+            if (dl) for (const k in dl) { loaded += dl[k].loaded || 0; total += dl[k].total || 0; }
+          }
+          if (!total) return;
+          const now = Date.now();
+          if (loaded < total && now - lastProgressAt < 120) return; // 节流，完成时立刻发
+          lastProgressAt = now;
+          post({ type: 'load-progress', data: { loaded, total } });
+        },
+      };
+      self.Rapfi(rapfiCfg).then(
         (inst) => {
           instance = inst;
           post({ type: 'ready', data: variant });

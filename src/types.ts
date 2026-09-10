@@ -121,4 +121,6 @@ export type WorkerRequest =
 export type WorkerResponse =
   | { type: 'search-result'; result: SearchResult<GomokuMove | XqMove | JqMove> }
   | { type: 'progress'; nodes: number }
-  | { type: 'warmup-done'; ok: boolean; variant?: 'multi' | 'single' };
+  | { type: 'warmup-done'; ok: boolean; variant?: 'multi' | 'single' }
+  /** 引擎数据包下载进度（worker 侧上报，主线程预取时通常一闪而过） */
+  | { type: 'load-progress'; loaded: number; total: number };

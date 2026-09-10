@@ -12,6 +12,8 @@ import { RapfiEngine } from '../gomoku/rapfi';
 /** Rapfi WASM engine (gomocup-level). Falls back to the bundled JS
  *  engine in gomoku/search.ts whenever the wasm fails to load. */
 const rapfi = new RapfiEngine();
+// 引擎自己的下载进度（主线程预取命中缓存时一般不会触发）
+rapfi.onLoadProgress = (loaded, total) => post({ type: 'load-progress', loaded, total });
 
 self.onmessage = (e: MessageEvent<WorkerRequest>) => {
   const req = e.data;

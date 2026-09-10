@@ -457,6 +457,18 @@ canvas { max-width: 100%; height: auto; border-radius: 10px; cursor: pointer; }
    置底 + !important 是因为 #jq-setup 这类元素的基础规则（.panel-block）
    与它同优先级，靠顺序裁决容易被后续同名规则翻掉。 */
 .hidden { display: none !important; }
+/* 引擎加载进度：贴在画布底部，和顶部「AI 思考中」药丸错开 */
+.engine-load {
+  position: absolute; bottom: 18px; left: 50%; transform: translateX(-50%);
+  width: min(320px, 86%);
+  background: rgba(28, 43, 51, .86); color: #fff;
+  border-radius: 12px; padding: 10px 13px; font-size: 12.5px;
+  pointer-events: none; z-index: 5;
+}
+.engine-load .el-head { display: flex; align-items: center; gap: 7px; }
+.engine-load .el-head b { margin-left: auto; font-variant-numeric: tabular-nums; opacity: .92; }
+.engine-load .el-bar { height: 5px; margin-top: 8px; border-radius: 99px; background: rgba(255,255,255,.22); overflow: hidden; }
+.engine-load .el-bar i { display: block; height: 100%; width: 0%; border-radius: 99px; background: linear-gradient(90deg, #12b89b, #6ee7c8); transition: width .18s ease-out; }
 .spinner { width: 14px; height: 14px; flex: none; border-radius: 50%; border: 2px solid rgba(255,255,255,.35); border-top-color: #fff; animation: spin .8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 

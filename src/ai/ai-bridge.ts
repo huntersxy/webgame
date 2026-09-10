@@ -3,11 +3,16 @@
  * ──────────────────────────────────────────────────────────── */
 
 import type { WorkerRequest, WorkerResponse, Difficulty, GameMode, SearchResult, GomokuBoard, GomokuPlayer, XqBoard, XqSide, GomokuMove, XqMove, JqMove, JqBoard, JqSide } from '../types';
+import { prefetchRapfiData } from '../gomoku/rapfi-assets';
+
+/** 数据包下载进度来源：主线程预取，或引擎自己的那次请求 */
+export type LoadPhase = 'prefetch' | 'engine';
 
 export class AIBridge {
   private worker: Worker | null = null;
   private pendingResolve: ((r: SearchResult<GomokuMove | XqMove | JqMove>) => void) | null = null;
   private warmupResolve: ((r: { ok: boolean; variant?: 'multi' | 'single' }) => void) | null = null;
+  private loadProgressCb: ((loaded: number, total: number, src: LoadPhase) => void) | null = null;
   private currentSeq = 0;
 
   constructor() {
@@ -25,6 +30,8 @@ export class AIBridge {
         } else if (msg.type === 'warmup-done') {
           this.warmupResolve?.({ ok: msg.ok, variant: msg.variant });
           this.warmupResolve = null;
+        } else if (msg.type === 'load-progress') {
+          this.loadProgressCb?.(msg.loaded, msg.total, 'engine');
         }
       };
       this.worker.onerror = (e) => {
@@ -44,7 +51,15 @@ export class AIBridge {
    * 提前唤醒 Rapfi 引擎（加载 wasm + NNUE 权重）。
    * 返回 ok=false 表示会走内置 JS 引擎兜底。
    */
-  warmUpGomoku(): Promise<{ ok: boolean; variant?: 'multi' | 'single' }> {
+  warmUpGomoku(
+    onProgress?: (loaded: number, total: number, src: LoadPhase) => void,
+  ): Promise<{ ok: boolean; variant?: 'multi' | 'single' }> {
+    this.loadProgressCb = onProgress ?? null;
+    // 主线程先把 10MB 数据包按「与 emscripten 完全相同的方式」预取一遍：
+    // 既拿到真实字节进度，又让引擎稍后那次 fetch 直接命中缓存。
+    // 失败无所谓——引擎自己还会再取一次，那时由 worker 侧上报进度。
+    void prefetchRapfiData((loaded, total) => this.loadProgressCb?.(loaded, total, 'prefetch'))
+      .catch(() => undefined);
     return new Promise((resolve) => {
       if (!this.worker) {
         resolve({ ok: false });

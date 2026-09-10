@@ -99,8 +99,9 @@ if (junqiCanvas && ai && audio) junqiCtrl = new JunqiController(junqiCanvas, ai,
 setupDemonAssets();
 
 // ── Rapfi 引擎预取 ──
-// 五子棋是站内主打，首次进对局要下载约 11MB（wasm + NNUE 权重）。
-// 首页闲置 3 秒后先在后台取好，玩家点进去时通常已就绪；
+// 五子棋是站内主打，首次进对局要下载约 10MB 的 NNUE 权重包。
+// 首页停留 1.2 秒后就在后台取好（顶栏会显示百分比），玩家点进对局时通常
+// 已经下完或下到一半——把这段下载藏在“决定玩什么”的时间里。
 // 开了省流量或走在 2G/慢速网络上则跳过，不替用户决定花这些流量。
 function prefetchGomokuEngine(): void {
   const conn = (navigator as unknown as { connection?: { saveData?: boolean; effectiveType?: string } }).connection;
@@ -108,7 +109,7 @@ function prefetchGomokuEngine(): void {
   if (conn?.effectiveType && /^(slow-)?2g$/.test(conn.effectiveType)) return;
   gomokuCtrl?.warmUp();
 }
-if (routeFromHash() === 'home') setTimeout(prefetchGomokuEngine, 3000);
+if (routeFromHash() === 'home') setTimeout(prefetchGomokuEngine, 1200);
 
 // ── Stats + initial route ──
 Stats.refresh();

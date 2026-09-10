@@ -47,6 +47,7 @@ export class GomokuController {
   private _engineLogged = false;
   private _warmed = false;
   private _warming = false;
+  private _loadShowTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(canvas: HTMLCanvasElement, ai: AIBridge, audio: AudioEngine) {
     this.canvas = canvas;
@@ -367,10 +368,22 @@ export class GomokuController {
   warmUp(): void {
     if (this._warmed || this._warming) return;
     this._warming = true;
-    this.setGlobalStatus('🧩 Rapfi 引擎预热中…（首次约 11MB，之后走浏览器缓存）');
-    void this.ai.warmUpGomoku().then(({ ok, variant }) => {
+    // 加载很快（已缓存）时不闪这一下，超过 300ms 才显示
+    this._loadShowTimer = setTimeout(() => this.showEngineLoad(true), 300);
+    this.setEngineLoad(0, 0, '引擎加载中…');
+    this.setGlobalStatus('🧩 Rapfi 引擎预热中…');
+    void this.ai.warmUpGomoku((loaded, total, src) => {
+      const mb = (n: number) => (n / 1048576).toFixed(1);
+      const pct = total ? Math.round((loaded / total) * 100) : 0;
+      this.setEngineLoad(pct, loaded, `引擎加载中… ${mb(loaded)}/${mb(total)} MB`);
+      if (src === 'prefetch' && total) {
+        this.setGlobalStatus(`🧩 Rapfi 引擎预热中… ${pct}%（${mb(loaded)}/${mb(total)} MB）`);
+      }
+    }).then(({ ok, variant }) => {
       this._warming = false;
       this._warmed = ok;
+      if (this._loadShowTimer !== null) { clearTimeout(this._loadShowTimer); this._loadShowTimer = null; }
+      this.showEngineLoad(false);
       if (ok) {
         this.setGlobalStatus('AI 就绪');
         appendLog(document.getElementById('g-think-log'),
@@ -380,6 +393,21 @@ export class GomokuController {
         this.setGlobalStatus('AI 就绪（内置引擎）');
       }
     });
+  }
+
+  /** 引擎加载进度条：只在画布可见时才有意义，收起来时就清掉百分比 */
+  private setEngineLoad(pct: number, loaded: number, text: string): void {
+    const bar = document.getElementById('g-engine-bar');
+    const pctEl = document.getElementById('g-engine-pct');
+    const stateEl = document.getElementById('g-engine-state');
+    if (bar) bar.style.width = `${pct}%`;
+    if (stateEl) stateEl.textContent = text;
+    if (pctEl) pctEl.textContent = loaded ? `${pct}%` : '';
+  }
+
+  private showEngineLoad(on: boolean): void {
+    document.getElementById('gomoku-engine-load')?.classList.toggle('hidden', !on);
+    if (on) this.setEngineLoad(0, 0, '引擎加载中…');
   }
 
   private hideResult(): void { document.getElementById('gomoku-result')?.classList.add('hidden'); }

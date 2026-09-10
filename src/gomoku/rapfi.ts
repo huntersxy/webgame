@@ -30,10 +30,15 @@ export const RAPFI_LEVELS: Record<Difficulty, { strength: number; turnMs: number
   4: { strength: 100, turnMs: 2800 },
 };
 
-type EngineMsg = { type: 'ready' | 'stdout' | 'stderr' | 'error' | 'exit'; data?: unknown };
+type EngineMsg = {
+  type: 'ready' | 'stdout' | 'stderr' | 'error' | 'exit' | 'load-progress';
+  data?: unknown;
+};
 
-/** Bump when any file under public/rapfi/ changes to defeat browser caches. */
-const ASSET_VERSION = '20260910e';
+import { RAPFI_ASSET_VERSION } from './rapfi-assets';
+
+/** 版本号定义在 rapfi-assets.ts（主线程预取与 worker 必须用同一个）。 */
+const ASSET_VERSION = RAPFI_ASSET_VERSION;
 
 /** Parse an rapfi EVAL token ("+M5", "-M3", plain integer) to UI scale. */
 function parseEval(tok: string): number {
@@ -180,6 +185,11 @@ export class RapfiEngine {
           case 'stderr':
             this.noteStderr(String(msg.data));
             break;
+          case 'load-progress': {
+            const d = msg.data as { loaded?: number; total?: number } | undefined;
+            if (d && d.total) this.onLoadProgress?.(d.loaded ?? 0, d.total);
+            break;
+          }
           case 'error':
             if (!settled) finish(new Error(String(msg.data)));
             else this.markDead('引擎报错：' + String(msg.data));
@@ -274,6 +284,9 @@ export class RapfiEngine {
   get isReady(): boolean {
     return this.variant !== null;
   }
+
+  /** 引擎侧上报的数据包下载进度（有预取时通常一闪而过） */
+  onLoadProgress: ((loaded: number, total: number) => void) | null = null;
 
   private cmd(c: string): void {
     this.worker?.postMessage({ type: 'cmd', data: c });
