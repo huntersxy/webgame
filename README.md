@@ -107,12 +107,20 @@ server {
 }
 ```
 
-引擎资源另有两条值得配的（首屏那 11MB 能不能只下这一次，就看这里）：
+### 缓存与压缩（首屏那 11MB 只下这一次）
+
+先看实测：`rapfi.data` 10.13MB → gzip 后 9.68MB，**只有 4%**（里面 NNUE 权重本来就是 lz4 压过的，基本压不动）；两个 wasm 各 1.2MB → 约 0.36MB，**能省 70%**。所以**收益主要来自缓存，不是压缩**——不显式声明缓存时，`/rapfi/*.data` 与 `*.wasm` 没有任何 `Cache-Control`，浏览器和 CDN 都不缓存，每次访问都要重走那 11MB。
 
 ```nginx
+    # 压缩：wasm 受益极大，data 几乎无收益（不必为它单独折腾）
+    gzip on;
+    gzip_vary on;
+    gzip_comp_level 6;
+    gzip_min_length 1024;
+    gzip_types application/wasm application/javascript text/css application/json image/svg+xml;
+
     # 引擎资源 URL 带 ?v= 版本号（见 src/gomoku/rapfi.ts 的 ASSET_VERSION），
-    # 可以放心长缓存。不显式声明的话，FTP 部署会刷新文件 mtime，回访浏览器
-    # 每次都要重新校验、mtime 一变就重下整个 11MB。
+    # 可以放心长缓存。这是最关键的一条。
     # 注意：location 内一旦出现 add_header，server 级的 add_header 就不再继承，
     # 所以上面那两条 COOP/COEP 必须在这里重复一遍。
     location ~* ^/rapfi/ {
@@ -122,14 +130,28 @@ server {
         add_header Cross-Origin-Embedder-Policy "require-corp" always;
     }
 
-    # gzip 默认只压 text/html：把引擎资源也纳入，rapfi.data 有 10MB 且是
-    # 二进制，压完能省掉一大截首屏下载时间
-    gzip on;
-    gzip_types application/wasm application/octet-stream application/javascript text/css application/json;
-    gzip_min_length 1024;
+    # 构建产物文件名带内容哈希（index-XXXXXXXX.js/css），同样可以长缓存
+    location ~* ^/assets/ {
+        expires 1y;
+        add_header Cache-Control "public, immutable" always;
+        add_header Cross-Origin-Opener-Policy "same-origin" always;
+        add_header Cross-Origin-Embedder-Policy "require-corp" always;
+    }
+
+    # 入口 HTML 反过来必须不缓存：否则部署后它可能还指着已被删除的旧哈希文件，
+    # 页面直接白屏。no-cache 是「每次校验」而不是「不缓存」。
+    location = /index.html {
+        add_header Cache-Control "no-cache" always;
+        add_header Cross-Origin-Opener-Policy "same-origin" always;
+        add_header Cross-Origin-Embedder-Policy "require-corp" always;
+    }
 ```
 
 改了 `public/rapfi/` 下任何文件后，记得同步把 `src/gomoku/rapfi.ts` 里的 `ASSET_VERSION` 加一版，否则长缓存会让老访客一直用旧引擎。
+
+若站点前面挂了 CDN（如 EdgeOne），需确认它遵循源站 `Cache-Control`、没有强制对 `/rapfi/` 不缓存；`curl -sI <url>` 连请两次看 `Age`/缓存状态是否转为命中即可验证。
+
+真要再砍首屏体积，唯一的杠杆是换更小的 NNUE 权重包（`rapfi.data` 的主体），压缩和缓存都帮不上这 10MB 本身。
 
 注意：COEP `require-corp` 会要求页面所有跨域子资源自带 CORP/CORS 头——本项目全部资源自包含，不受影响；若以后引入 CDN 字体/脚本，记得加 `crossorigin` 属性。配置后用 `curl -sI https://game.xiey.work/ | grep -i cross-origin` 验证响应头穿透 CDN。
 
