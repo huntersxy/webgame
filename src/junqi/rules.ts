@@ -18,8 +18,9 @@
  *  胜负：扛旗 / 对方无子可动判胜；连续 DRAW_NO_CAPTURE 步无吃子
  *    或总计 MAX_MOVES 步判和。
  *  揭棋（暗棋）：hidden = 对对方暗置。己方棋子自己全程可见；
- *    交战（吃子）时双方同时翻明，静默移动不翻明——攻方胜则
- *    亮牌驻守，攻方亡则守方保持明牌。走法按真实兵种生成
+ *    静默移动不翻明；交战时主动方获胜则己方保持暗置（可继续藏身份），
+ *    防守方子力翻明（若仍存活则明牌驻守）；主动方阵亡或双方同归时
+ *    双方都翻明后再结算离场。走法按真实兵种生成
  *    （暗工兵拐弯即自曝身份，是揭棋的信息博弈之一）。
  * ──────────────────────────────────────────────────────────── */
 
@@ -387,14 +388,24 @@ export function makeJqMove(board: Board, from: number, to: number): JqMoveRec {
     revealedFlags: [], flagNodes: [],
   };
   if (!def) { board[to] = att; return rec; } // 静默移动不翻明
-  // 交战：双方同时翻明
-  if (def.hidden) { def.hidden = false; rec.defHidden1 = false; }
-  if (att.hidden) { att.hidden = false; rec.attHidden1 = false; }
+  // 交战：先结算胜负，再决定翻明——主动方获胜则攻方不亮
   const r = resolve(att, def);
-  if (r.flag) { rec.flag = true; rec.defOut = true; board[to] = att; return rec; }
-  if (r.a && r.d) { rec.attOut = true; rec.defOut = true; board[to] = null; }
-  else if (r.a) { rec.attOut = true; board[to] = def; }
-  else { rec.defOut = true; board[to] = att; }
+  if (r.flag) {
+    // 扛旗：防守方军旗公开离场；攻方（主动胜）保持原明暗
+    if (def.hidden) { def.hidden = false; rec.defHidden1 = false; }
+    rec.flag = true; rec.defOut = true; board[to] = att; return rec;
+  }
+  if (r.a) {
+    // 主动方阵亡：攻方翻明离场；守方若存活则明牌驻守
+    if (att.hidden) { att.hidden = false; rec.attHidden1 = false; }
+    if (def.hidden) { def.hidden = false; rec.defHidden1 = false; }
+    if (r.d) { rec.attOut = true; rec.defOut = true; board[to] = null; }
+    else { rec.attOut = true; board[to] = def; }
+  } else {
+    // 主动方获胜（resolve 下必为 r.d）：攻方不翻明；守方翻明离场
+    if (def.hidden) { def.hidden = false; rec.defHidden1 = false; }
+    rec.defOut = true; board[to] = att;
+  }
   // 司令阵亡 → 该方军旗亮出。交战双方同时结算，司令对司令同归于尽时
   // 两面军旗都要亮，因此这里逐个收集而不是只取一枚。
   const deadCmd: Piece[] = [];

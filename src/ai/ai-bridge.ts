@@ -4,6 +4,7 @@
 
 import type { WorkerRequest, WorkerResponse, Difficulty, GameMode, SearchResult, GomokuBoard, GomokuPlayer, GomokuHistoryMove, XqBoard, XqSide, GomokuMove, XqMove, JqMove, JqBoard, JqSide } from '../types';
 import { prefetchRapfiData } from '../gomoku/rapfi-assets';
+import { prefetchPikafishData } from '../xiangqi/pikafish-assets';
 
 /** 数据包下载进度来源：主线程预取，或引擎自己的那次请求 */
 export type LoadPhase = 'prefetch' | 'engine';
@@ -18,7 +19,8 @@ export class AIBridge {
    *  promise 永不 settle，后发的那个冒领前者的结果。 */
   private pending = new Map<number, (r: SearchResult<GomokuMove | XqMove | JqMove>) => void>();
   private nextId = 0;
-  private warmupResolve: ((r: { ok: boolean; variant?: 'multi' | 'single' }) => void) | null = null;
+  /** 预热结果按项目分开挂起：两个引擎（Rapfi / Pikafish）各自预热，互不冒领。 */
+  private warmupResolvers = new Map<'gomoku' | 'xq', (r: { ok: boolean; variant?: 'multi' | 'single' }) => void>();
   private loadProgressCb: ((loaded: number, total: number, src: LoadPhase) => void) | null = null;
 
   constructor() {
@@ -39,8 +41,12 @@ export class AIBridge {
             resolve(msg.result);
           }
         } else if (msg.type === 'warmup-done') {
-          this.warmupResolve?.({ ok: msg.ok, variant: msg.variant });
-          this.warmupResolve = null;
+          const key = msg.game ?? 'gomoku';
+          const settle = this.warmupResolvers.get(key);
+          if (settle) {
+            this.warmupResolvers.delete(key);
+            settle({ ok: msg.ok, variant: msg.variant });
+          }
         } else if (msg.type === 'load-progress') {
           this.loadProgressCb?.(msg.loaded, msg.total, 'engine');
         }
@@ -55,26 +61,50 @@ export class AIBridge {
   }
 
   /**
-   * 提前唤醒 Rapfi 引擎（加载 wasm + NNUE 权重）。
-   * 返回 ok=false 表示会走内置 JS 引擎兜底。
+   * 预热统一入口。
+   * @param game     'gomoku' | 'xq'，用于把结果配回对应的调用方
+   * @param prefetch 主线程预取函数（与引擎内部取数据包的方式一致，命中同一缓存）
    */
-  warmUpGomoku(
+  private warmUp(
+    game: 'gomoku' | 'xq',
+    req: WorkerRequest,
+    prefetch: ((cb: (loaded: number, total: number) => void) => Promise<void>) | null,
     onProgress?: (loaded: number, total: number, src: LoadPhase) => void,
   ): Promise<{ ok: boolean; variant?: 'multi' | 'single' }> {
     this.loadProgressCb = onProgress ?? null;
-    // 主线程先把 10MB 数据包按「与 emscripten 完全相同的方式」预取一遍：
-    // 既拿到真实字节进度，又让引擎稍后那次 fetch 直接命中缓存。
-    // 失败无所谓——引擎自己还会再取一次，那时由 worker 侧上报进度。
-    void prefetchRapfiData((loaded, total) => this.loadProgressCb?.(loaded, total, 'prefetch'))
-      .catch(() => undefined);
+    // 主线程先按「与引擎内部完全相同的方式」预取数据包：既拿到真实字节进度，
+    // 又让引擎稍后那次 fetch 直接命中缓存。失败无所谓——引擎自己还会再取一次。
+    if (prefetch) {
+      void prefetch((loaded, total) => this.loadProgressCb?.(loaded, total, 'prefetch')).catch(() => undefined);
+    }
     return new Promise((resolve) => {
       if (!this.worker) {
         resolve({ ok: false });
         return;
       }
-      this.warmupResolve = resolve;
-      this.worker.postMessage({ type: 'gomoku-warmup' });
+      this.warmupResolvers.set(game, resolve);
+      this.worker.postMessage(req);
     });
+  }
+
+  /**
+   * 提前唤醒 Rapfi 引擎（加载 wasm + mix9svq 权重，约 10MB）。
+   * 返回 ok=false 表示会走内置 JS 引擎兜底。
+   */
+  warmUpGomoku(
+    onProgress?: (loaded: number, total: number, src: LoadPhase) => void,
+  ): Promise<{ ok: boolean; variant?: 'multi' | 'single' }> {
+    return this.warmUp('gomoku', { type: 'gomoku-warmup' }, prefetchRapfiData, onProgress);
+  }
+
+  /**
+   * 提前唤醒 Pikafish 引擎（加载 wasm + NNUE 权重，约 48MB）。
+   * 返回 ok=false 表示会走内置 JS 引擎兜底。
+   */
+  warmUpXq(
+    onProgress?: (loaded: number, total: number, src: LoadPhase) => void,
+  ): Promise<{ ok: boolean; variant?: 'multi' | 'single' }> {
+    return this.warmUp('xq', { type: 'xq-warmup' }, prefetchPikafishData, onProgress);
   }
 
   private send(req: WorkerRequest): Promise<SearchResult<GomokuMove | XqMove | JqMove>> {
@@ -94,6 +124,8 @@ export class AIBridge {
   private failAllPending(): void {
     for (const resolve of this.pending.values()) resolve(EMPTY_RESULT);
     this.pending.clear();
+    for (const settle of this.warmupResolvers.values()) settle({ ok: false });
+    this.warmupResolvers.clear();
   }
 
   searchGomoku(
@@ -142,6 +174,7 @@ export class AIBridge {
     difficulty: Difficulty,
     mode: GameMode,
     historyLength: number,
+    forceJs = false,
   ): Promise<SearchResult<XqMove>> {
     return this.send({
       type: 'xq-search',
@@ -150,6 +183,7 @@ export class AIBridge {
       difficulty,
       mode,
       historyLength,
+      forceJs,
     }) as Promise<SearchResult<XqMove>>;
   }
 
@@ -158,6 +192,7 @@ export class AIBridge {
     side: XqSide,
     mode: GameMode,
     historyLength: number,
+    forceJs = false,
   ): Promise<SearchResult<XqMove>> {
     return this.send({
       type: 'xq-hint',
@@ -165,6 +200,7 @@ export class AIBridge {
       side,
       mode,
       historyLength,
+      forceJs,
     }) as Promise<SearchResult<XqMove>>;
   }
 

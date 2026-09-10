@@ -17,6 +17,21 @@ interface XqHistoryEntry extends XqMove {
   prevCheck: boolean;
 }
 
+/* ── 引擎偏好持久化 ──
+ * Pikafish 的 NNUE 权重有 48MB。玩家一旦选了「内置 JS·简单」，就说明他不要
+ * 这个重对手——把这份选择记下来，下次进象棋页直接不下载，省掉这 48MB。
+ * 想换回来只需在 UI 上点「自动·高难」，那时才会真正开始加载。 */
+const ENGINE_PREF_KEY = 'xq.enginePref.v1';
+
+function loadEnginePref(): 'auto' | 'js' {
+  try { return localStorage.getItem(ENGINE_PREF_KEY) === 'js' ? 'js' : 'auto'; }
+  catch { return 'auto'; } // 无痕模式等场景下 localStorage 不可用
+}
+
+function saveEnginePref(v: 'auto' | 'js'): void {
+  try { localStorage.setItem(ENGINE_PREF_KEY, v); } catch { /* noop */ }
+}
+
 function moveStr(m: XqMove | null): string {
   if (!m) return '—';
   const pn = PIECE_NAME[typeOf(m.piece || 'p') ?? 'p']?.[0] ?? '?';
@@ -62,6 +77,18 @@ export class XiangqiController {
   private _animFrame: number | null = null;
   private _down: { x: number; y: number } | null = null;
 
+  /** 玩家选的引擎：auto = 优先 Pikafish、不可用则回退内置 JS；js = 只用内置 JS。
+   *  恶魔档不受它影响——恶魔固定走 Pikafish（见 forceJs）。 */
+  private enginePref: 'auto' | 'js' = loadEnginePref();
+  /** Pikafish 是否可用：null = 还在加载/未知，true = 就绪，false = 加载失败 */
+  private _engineReady: boolean | null = null;
+  private _warmed = false;
+  private _warming = false;
+  private _engineLogged = false;
+  private _loadShowTimer: ReturnType<typeof setTimeout> | null = null;
+  /** 恶魔档退回内置引擎只提示一次 */
+  private _fallbackWarned = false;
+
   constructor(canvas: HTMLCanvasElement, ai: AIBridge, audio: AudioEngine) {
     this.canvas = canvas;
     this.ai = ai;
@@ -69,6 +96,9 @@ export class XiangqiController {
     this.wireEvents();
     this.newGame();
     this.startAnimLoop();
+    this.syncEngineUI();
+    // 注意：不在这里 warmUp()——象棋面板可能一直没被打开过，
+    // 会和五子棋的 Rapfi 抢带宽。由 main.ts 在切到象棋页时触发。
   }
 
   private get state(): XqRenderState {
@@ -86,6 +116,114 @@ export class XiangqiController {
       god: this.god,
       godMove: this.godMove,
     };
+  }
+
+  /** 是否强制使用内置 JS 引擎（不加载、不等待 Pikafish）。恶魔档固定走 Pikafish。 */
+  private get forceJs(): boolean {
+    return this.level !== 4 && this.enginePref === 'js';
+  }
+
+  /**
+   * 刷新「引擎」区块与恶魔档的可用性。
+   * 恶魔档只能与 Pikafish 对局，所以引擎没就绪（加载中/加载失败）时
+   * 直接把「😈 恶魔」按钮禁用掉，而不是让它降级成内置引擎偷偷开赛。
+   */
+  private syncEngineUI(): void {
+    const demonForced = this.level === 4;                 // 恶魔档固定 Pikafish，不可切换
+    this.paintSeg('x-engine', demonForced ? 'auto' : this.enginePref);
+    document.getElementById('x-engine')?.querySelectorAll<HTMLButtonElement>('button')
+      .forEach((b) => { b.disabled = demonForced; });
+
+    const note = document.getElementById('x-engine-note');
+    if (note) note.textContent = this.engineNote(demonForced);
+
+    const demonBtn = document.querySelector<HTMLButtonElement>('#x-level button[data-v="4"]');
+    if (demonBtn) {
+      const ready = this._engineReady === true;
+      demonBtn.disabled = !ready;
+      demonBtn.title = ready
+        ? '恶魔档：Pikafish 引擎满火力搜索'
+        : this._engineReady === false
+          ? 'Pikafish 引擎加载失败，恶魔模式不可用（刷新页面可重试）'
+          : 'Pikafish 引擎加载中…加载完成后可挑战恶魔';
+    }
+  }
+
+  private engineNote(demonForced: boolean): string {
+    if (demonForced) return '恶魔档固定使用 Pikafish 引擎（高难 · 满火力搜索），不可切换。';
+    if (this.enginePref === 'js') return '当前使用内置 JS 引擎（简单 · 已记住此选择，下次不再下载 Pikafish 权重）。';
+    if (this._engineReady === true) return '自动：使用 Pikafish 引擎（高难 · WASM）。';
+    if (this._engineReady === false) return '自动：Pikafish 加载失败，已回退内置 JS 引擎（简单）。';
+    return '自动：优先 Pikafish（高难）；加载完成前先用内置 JS 引擎（简单）应手。';
+  }
+
+  /** 程序化设置分段控件的选中项（不触发回调）。 */
+  private paintSeg(id: string, value: string): void {
+    const el = document.getElementById(id);
+    el?.querySelectorAll<HTMLButtonElement>('button').forEach((b) => {
+      b.classList.toggle('on', b.dataset.v === value);
+    });
+  }
+
+  /**
+   * 预热 Pikafish 引擎。进入象棋页面时调用：首次需下载 wasm + NNUE 权重
+   * （约 48MB），提前加载可以让玩家走完前几手后就能接上引擎，而不是卡在
+   * 「AI 深算中」干等下载。加载期间照常下棋（走内置 JS 引擎应手）。
+   */
+  warmUp(): void {
+    if (this._warmed || this._warming) return;
+    // 玩家明确选了「内置 JS·简单」：不加载、不下载那 48MB 权重。
+    // 想换回来点一下「自动·高难」即可（syncEngineUI 之后会再次触发预热）。
+    if (this.enginePref === 'js') {
+      this._engineReady = false;
+      this.syncEngineUI();
+      return;
+    }
+    this._warming = true;
+    // 加载很快（已缓存）时不闪这一下，超过 300ms 才显示
+    this._loadShowTimer = setTimeout(() => this.showEngineLoad(true), 300);
+    this.setEngineLoad(0, 0, '引擎加载中…');
+    this.setGlobalStatus('🧩 Pikafish 引擎预热中…');
+    void this.ai.warmUpXq((loaded, total, src) => {
+      const mb = (n: number) => (n / 1048576).toFixed(1);
+      const pct = total ? Math.round((loaded / total) * 100) : 0;
+      this.setEngineLoad(pct, loaded, `引擎加载中… ${mb(loaded)}/${mb(total)} MB`);
+      if (src === 'prefetch' && total) {
+        this.setGlobalStatus(`🧩 Pikafish 引擎预热中… ${pct}%（${mb(loaded)}/${mb(total)} MB）`);
+      }
+    }).then(({ ok }) => {
+      this._warming = false;
+      this._warmed = ok;
+      this._engineReady = ok;
+      if (this._loadShowTimer !== null) { clearTimeout(this._loadShowTimer); this._loadShowTimer = null; }
+      this.showEngineLoad(false);
+      if (ok) {
+        this.setGlobalStatus('AI 就绪');
+        appendLog(document.getElementById('x-think-log'),
+          '🧩 <b>Pikafish 引擎已预加载</b>（NNUE 神经网络）· 走子无需等待');
+        this._engineLogged = true;
+      } else {
+        this.setGlobalStatus('AI 就绪（内置引擎）');
+        appendLog(document.getElementById('x-think-log'),
+          '⚠️ <b>Pikafish 引擎加载失败</b>，已回退内置 JS 引擎；<b>恶魔模式暂不可用</b>（刷新页面可重试）。');
+      }
+      this.syncEngineUI();
+    });
+  }
+
+  /** 引擎加载进度条 */
+  private setEngineLoad(pct: number, loaded: number, text: string): void {
+    const bar = document.getElementById('x-engine-bar');
+    const pctEl = document.getElementById('x-engine-pct');
+    const stateEl = document.getElementById('x-engine-state');
+    if (bar) bar.style.width = `${pct}%`;
+    if (stateEl) stateEl.textContent = text;
+    if (pctEl) pctEl.textContent = loaded ? `${pct}%` : '';
+  }
+
+  private showEngineLoad(on: boolean): void {
+    document.getElementById('xiangqi-engine-load')?.classList.toggle('hidden', !on);
+    if (on) this.setEngineLoad(0, 0, '引擎加载中…');
   }
 
   private startAnimLoop(): void {
@@ -192,7 +330,7 @@ export class XiangqiController {
     const seq = ++this._searchSeq;
     this._aiTimer = setTimeout(async () => {
       const aiSide = this.turn;
-      const res = await this.ai.searchXq(this.board.map((r) => [...r]), aiSide, this.level, this.mode, this.hist.length);
+      const res = await this.ai.searchXq(this.board.map((r) => [...r]), aiSide, this.level, this.mode, this.hist.length, this.forceJs);
       // 局面在这期间被重置（重新摆棋 / 换执子 / 换模式）→ 旧结果作废
       if (seq !== this._searchSeq) return;
       const m = res.move;
@@ -207,8 +345,19 @@ export class XiangqiController {
       const pvStr = (res.pv || []).slice(0, 4).map(moveStr).join(' → ') || moveStr(m);
       const topStr = (res.scores || []).slice(0, 5).map((s, i) => `#${i + 1}${moveStr(s)}:${s.v >= MATE - 1000 ? '杀' : Math.round(s.v)}`).join('<br>');
       const boost = res.boosted ? ` <span style="color:#ff6b6b">·劣势加深→depth${res.depth}</span>` : '';
-      setStats(document.getElementById('x-think-stats'), `✅ <b>${who}·${cfg.name}</b> depth${res.depth}+Q${res.qd ?? cfg.qd} · 节点 <b>${res.nodes.toLocaleString()}</b> · ${res.ms}ms · 评估 <b>${ev}</b>${boost}<br>主变：${pvStr}`);
-      appendLog(document.getElementById('x-think-log'), `🧠 depth<b>${res.depth}+Q${res.qd ?? cfg.qd}</b> · 节点${res.nodes.toLocaleString()} · ${res.ms}ms · 评估${ev} · 选<b>${moveStr(m)}</b>${res.boosted ? ' · <span style="color:#ff6b6b">劣势加深</span>' : ''}<br><span class="cand">主变 ${pvStr}</span><br><span class="cand">${topStr}</span>`);
+      // 引擎来源标注 + 首次接入播报（与五子棋面板一致）
+      const engineName = res.engine === 'pikafish' ? ' · 🧩Pikafish' : res.engine === 'js' ? ' · 内置引擎' : '';
+      if (res.engine === 'pikafish' && !this._engineLogged) {
+        appendLog(document.getElementById('x-think-log'), '🧩 <b>Pikafish WASM 引擎已接入</b>（NNUE 神经网络评估）');
+        this._engineLogged = true;
+      }
+      // 恶魔档只该与 Pikafish 对局：它不可用而退回内置引擎时必须让玩家知道
+      if (this.level === 4 && res.engine === 'js' && !this._fallbackWarned) {
+        this._fallbackWarned = true;
+        appendLog(document.getElementById('x-think-log'), '⚠️ <b>Pikafish 引擎不可用</b>，本局恶魔档已临时改用内置 JS 引擎应手（刷新页面可重试加载）。');
+      }
+      setStats(document.getElementById('x-think-stats'), `✅ <b>${who}·${cfg.name}</b> depth${res.depth}${res.engine === 'pikafish' ? '' : `+Q${res.qd ?? cfg.qd}`} · 节点 <b>${res.nodes.toLocaleString()}</b> · ${res.ms}ms · 评估 <b>${ev}</b>${engineName}${boost}<br>主变：${pvStr}`);
+      appendLog(document.getElementById('x-think-log'), `🧠 depth<b>${res.depth}</b> · 节点${res.nodes.toLocaleString()} · ${res.ms}ms · 评估${ev} · 选<b>${moveStr(m)}</b>${engineName}${res.boosted ? ' · <span style="color:#ff6b6b">劣势加深</span>' : ''}<br><span class="cand">主变 ${pvStr}</span><br><span class="cand">${topStr}</span>`);
 
       this.pushMove(m);
       this.afterMove(m);
@@ -267,7 +416,7 @@ export class XiangqiController {
     setStats(document.getElementById('x-think-stats'), '👉 恶魔正在附体算招… depth4+Q3全开，请稍候');
     setTimeout(async () => {
       try {
-        const res = await this.ai.hintXq(this.board.map((r) => [...r]), this.turn, this.mode, this.hist.length);
+        const res = await this.ai.hintXq(this.board.map((r) => [...r]), this.turn, this.mode, this.hist.length, this.forceJs);
         // 这手算的是「走子/悔棋/重开之前」的局面就丢弃，别把提示画到新局面
         if (seq !== this._posSeq) return;
         const m = res.move;
@@ -327,7 +476,7 @@ export class XiangqiController {
     const seq = this._posSeq;
     setTimeout(async () => {
       try {
-        const res = await this.ai.hintXq(this.board.map((r) => [...r]), this.turn, this.mode, this.hist.length);
+        const res = await this.ai.hintXq(this.board.map((r) => [...r]), this.turn, this.mode, this.hist.length, this.forceJs);
         // 结果算的是旧局面、或期间已经送神，就丢弃（脏标记会在 finally 里补算）
         if (!this.god || seq !== this._posSeq) return;
         this.godMove = res.move;
@@ -414,12 +563,30 @@ export class XiangqiController {
     this.seg('x-mode', (v) => { this.mode = v as GameMode; if (v === 'aivai') appendLog(document.getElementById('x-think-log'), '🤖 <b>AI互搏观战开始</b>，红黑双方都用当前难度恶战到底'); this.newGame(); });
     this.seg('x-color', (v) => { this.human = v as XqSide; this.newGame(); });
     this.seg('x-level', (v) => {
+      // 恶魔档只能与 Pikafish 对局：引擎没就绪就不放行（按钮已禁用，这里再兜一层）
+      if (v === '4' && this._engineReady !== true) {
+        this.paintSeg('x-level', String(this.level));
+        appendLog(document.getElementById('x-think-log'), '🚫 <b>恶魔模式不可用</b>：Pikafish 引擎尚未就绪。');
+        return;
+      }
       this.level = +v as Difficulty;
       applyDemonTheme('x', this.level, this.audio);
       const cfg = LEVEL_CONFIG[this.level];
       setStats(document.getElementById('x-think-stats'), `难度切换 → <b>${cfg.name}</b> · depth${cfg.depth}+Q${cfg.qd}`);
       appendLog(document.getElementById('x-think-log'), `⚙️ 难度切换 → <b>${cfg.name}</b> depth${cfg.depth}+Q${cfg.qd}${this.level === 4 ? ' · <span style="color:#ff6b6b">恶魔全开，不求你能赢</span>' : ''}`);
+      this.syncEngineUI();
       this.updatePanel();
+    });
+
+    this.seg('x-engine', (v) => {
+      this.enginePref = v === 'js' ? 'js' : 'auto';
+      saveEnginePref(this.enginePref); // 记住选择：选「简单」下次就不再下这 48MB
+      appendLog(document.getElementById('x-think-log'), this.enginePref === 'js'
+        ? '🔧 引擎切换 → <b>内置 JS 引擎（简单）</b>（不再加载、不再等待 Pikafish）'
+        : '🔧 引擎切换 → <b>自动（Pikafish·高难）</b>（不可用时回退内置引擎·简单）');
+      this.syncEngineUI();
+      // 从「内置 JS」切回「自动」时才真正开始加载 Pikafish
+      if (this.enginePref === 'auto') this.warmUp();
     });
 
     const xv = document.getElementById('x-viz') as HTMLInputElement | null;

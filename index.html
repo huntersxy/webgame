@@ -282,9 +282,9 @@
             </div>
           </div>
           <label class="row"><span>引擎</span>
-            <div class="seg" id="g-engine"><button data-v="auto" class="on">自动</button><button data-v="js">内置 JS</button></div>
+            <div class="seg" id="g-engine"><button data-v="auto" class="on" title="优先 Rapfi 引擎（高难）；Rapfi 未就绪时先用内置 JS（简单）应手">自动·高难</button><button data-v="js" title="内置 JS 引擎（简单）；不加载、不等待 Rapfi">内置 JS·简单</button></div>
           </label>
-          <div class="engine-note" id="g-engine-note">自动：优先 Rapfi；加载完成前先用内置 JS 引擎应手。</div>
+          <div class="engine-note" id="g-engine-note">自动：优先 Rapfi（高难）；加载完成前先用内置 JS 引擎（简单）应手。</div>
         </div>
         <div class="panel-block">
           <div class="btn-grid">
@@ -375,6 +375,16 @@
           <h2>中国象棋 <small>XIANGQI · 楚河汉界</small></h2>
           <div id="xiangqi-turn" class="turn-pill red">轮到 红方 走棋</div>
         </div>
+        <!-- 引擎加载进度：放在棋盘外面（棋盘上方），不遮挡落子区域 -->
+        <div id="xiangqi-engine-load" class="engine-load hidden">
+          <div class="el-head">
+            <span class="el-dot"></span>
+            <span id="x-engine-state">引擎加载中…</span>
+            <b id="x-engine-pct"></b>
+          </div>
+          <div class="el-bar"><i id="x-engine-bar"></i></div>
+          <p class="el-tip">加载期间<b>可以照常走棋</b>——这几手先用内置引擎应付，加载完成后自动换成 Pikafish。</p>
+        </div>
         <div class="canvas-holder slim">
           <canvas id="xiangqi-canvas" width="560" height="620"></canvas>
           <div id="xiangqi-thinking" class="thinking hidden"><div class="spinner"></div>AI 深算中…</div>
@@ -394,6 +404,10 @@
           <label class="row"><span>难度</span>
             <div class="seg col4" id="x-level"><button data-v="1">简单</button><button data-v="2" class="on">普通</button><button data-v="3">困难</button><button data-v="4" class="demon">😈 恶魔</button></div>
           </label>
+          <label class="row"><span>引擎</span>
+            <div class="seg" id="x-engine"><button data-v="auto" class="on" title="优先 Pikafish 引擎（高难）；Pikafish 未就绪时先用内置 JS（简单）应手">自动·高难</button><button data-v="js" title="内置 JS 引擎（简单）；不加载、不等待 Pikafish">内置 JS·简单</button></div>
+          </label>
+          <div class="engine-note" id="x-engine-note">自动：优先 Pikafish（高难）；加载完成前先用内置 JS 引擎（简单）应手。</div>
           <div class="demon-warn hidden" id="x-demon-warn">恶魔模式：深算 + 杀棋延伸 + 全宽度搜索，只求最强。</div>
           <div class="demon-profile hidden" id="x-demon-profile">
             <img class="demon-avatar" id="x-demon-avatar" alt="褚赢" />
@@ -518,7 +532,7 @@
           <div class="think-progress hidden" id="jq-think-progress"><i></i></div>
           <div class="thinklog" id="jq-think-log"><div class="empty">对局时自动输出深度 / 节点 / 评估 / 主变</div></div>
         </div>
-        <details class="rules" open><summary>规则速查</summary><p>每方 25 枚：<b>司令&gt;军长&gt;师长&gt;旅长&gt;团长&gt;营长&gt;连长&gt;排长&gt;工兵</b>，大吃小、同级同归于尽。<b>炸弹</b>与任何子互炸；<b>地雷</b>只有工兵能挖，其余撞上自亡；<b>军旗</b>不可移动，被扛即负。<b>行营</b>（圆圈）内的子不可被攻击；<b>大本营</b>（方框）里的子对局中不可再移动（仍可被吃）；<b>铁路</b>（双线枕木）上普通子直线滑行、工兵可任意拐弯；公路与行营斜线每次一步。布阵约束：军旗入大本营、地雷限后两排、炸弹不进第一排、行营留空。<b>司令阵亡</b>则该方军旗亮出。无子可动者判负；连续 120 步无吃子或总 500 手判和。</p><p><b>揭棋（暗棋）玩法</b>：双方棋子对对方暗置，自己始终可见己方；静默移动不翻明，<b>交战双方同时翻明</b>——胜者亮牌驻守，亡者曝光入殓；暗工兵拐弯走法会自曝身份，这是揭棋的信息博弈之一。人机模式下明棋 / 揭棋都支持自定义摆阵（也可随机布阵）。</p></details>
+        <details class="rules" open><summary>规则速查</summary><p>每方 25 枚：<b>司令&gt;军长&gt;师长&gt;旅长&gt;团长&gt;营长&gt;连长&gt;排长&gt;工兵</b>，大吃小、同级同归于尽。<b>炸弹</b>与任何子互炸；<b>地雷</b>只有工兵能挖，其余撞上自亡；<b>军旗</b>不可移动，被扛即负。<b>行营</b>（圆圈）内的子不可被攻击；<b>大本营</b>（方框）里的子对局中不可再移动（仍可被吃）；<b>铁路</b>（双线枕木）上普通子直线滑行、工兵可任意拐弯；公路与行营斜线每次一步。布阵约束：军旗入大本营、地雷限后两排、炸弹不进第一排、行营留空。<b>司令阵亡</b>则该方军旗亮出。无子可动者判负；连续 120 步无吃子或总 500 手判和。</p><p><b>揭棋（暗棋）玩法</b>：双方棋子对对方暗置，自己始终可见己方；静默移动不翻明；交战时<b>攻方获胜则攻方不亮</b>、守方翻明，攻方阵亡则双方都翻明；暗工兵拐弯走法会自曝身份，这是揭棋的信息博弈之一。人机模式下明棋 / 揭棋都支持自定义摆阵（也可随机布阵）。</p></details>
       </aside>
     </div>
   </section>

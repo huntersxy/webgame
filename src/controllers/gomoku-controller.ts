@@ -121,11 +121,11 @@ export class GomokuController {
   }
 
   private engineNote(demonForced: boolean): string {
-    if (demonForced) return '恶魔档固定使用 Rapfi 引擎（满火力搜索），不可切换。';
-    if (this.enginePref === 'js') return '当前使用内置 JS 引擎（不加载、不等待 Rapfi）。';
-    if (this._rapfiReady === true) return '自动：使用 Rapfi 引擎（WASM）。';
-    if (this._rapfiReady === false) return '自动：Rapfi 加载失败，已回退内置 JS 引擎。';
-    return '自动：优先 Rapfi；加载完成前先用内置 JS 引擎应手。';
+    if (demonForced) return '恶魔档固定使用 Rapfi 引擎（高难 · 满火力搜索），不可切换。';
+    if (this.enginePref === 'js') return '当前使用内置 JS 引擎（简单 · 不加载、不等待 Rapfi）。';
+    if (this._rapfiReady === true) return '自动：使用 Rapfi 引擎（高难 · WASM）。';
+    if (this._rapfiReady === false) return '自动：Rapfi 加载失败，已回退内置 JS 引擎（简单）。';
+    return '自动：优先 Rapfi（高难）；加载完成前先用内置 JS 引擎（简单）应手。';
   }
 
   /** 「神在思考」提示 + 按钮态 + 进度条：让玩家知道在算、大概等多久。 */
@@ -591,8 +591,8 @@ export class GomokuController {
     this.segWire('g-engine', (v) => {
       this.enginePref = v === 'js' ? 'js' : 'auto';
       appendLog(document.getElementById('g-think-log'), this.enginePref === 'js'
-        ? '🔧 引擎切换 → <b>内置 JS 引擎</b>（不再加载、不再等待 Rapfi）'
-        : '🔧 引擎切换 → <b>自动</b>（优先 Rapfi，不可用时回退内置引擎）');
+        ? '🔧 引擎切换 → <b>内置 JS 引擎（简单）</b>（不再加载、不再等待 Rapfi）'
+        : '🔧 引擎切换 → <b>自动（Rapfi·高难）</b>（不可用时回退内置引擎·简单）');
       this.syncEngineUI();
     });
 

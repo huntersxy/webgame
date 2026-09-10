@@ -73,8 +73,8 @@ export interface SearchResult<M> {
   opening?: boolean;
   book?: boolean;
   qd?: number;
-  /** Which engine produced this result: rapfi WASM variant or the bundled JS engine */
-  engine?: 'rapfi-multi' | 'rapfi-single' | 'js';
+  /** Which engine produced this result: rapfi WASM variant, pikafish WASM, or the bundled JS engine */
+  engine?: 'rapfi-multi' | 'rapfi-single' | 'pikafish' | 'js';
 }
 
 /** Difficulty levels */
@@ -117,12 +117,14 @@ export interface ThinkInfo {
 export type WorkerRequest = (
   | { type: 'gomoku-search'; board: GomokuBoard; player: GomokuPlayer; difficulty: Difficulty; mode: GameMode; historyLength: number; moves: GomokuHistoryMove[]; forceJs?: boolean }
   | { type: 'gomoku-hint'; board: GomokuBoard; player: GomokuPlayer; mode: GameMode; historyLength: number; moves: GomokuHistoryMove[]; forceJs?: boolean }
-  | { type: 'xq-search'; board: XqBoard; side: XqSide; difficulty: Difficulty; mode: GameMode; historyLength: number }
-  | { type: 'xq-hint'; board: XqBoard; side: XqSide; mode: GameMode; historyLength: number }
+  | { type: 'xq-search'; board: XqBoard; side: XqSide; difficulty: Difficulty; mode: GameMode; historyLength: number; forceJs?: boolean }
+  | { type: 'xq-hint'; board: XqBoard; side: XqSide; mode: GameMode; historyLength: number; forceJs?: boolean }
   | { type: 'junqi-search'; board: JqBoard; side: JqSide; difficulty: Difficulty; mode: GameMode; flip: boolean; historyLength: number }
   | { type: 'junqi-hint'; board: JqBoard; side: JqSide; mode: GameMode; flip: boolean; historyLength: number }
   /** 提前唤醒 Rapfi 引擎，把首次 ~11MB 加载挪到玩家思考首手的时间里 */
   | { type: 'gomoku-warmup' }
+  /** 提前唤醒 Pikafish 引擎（wasm + 约 48MB NNUE 权重） */
+  | { type: 'xq-warmup' }
   | { type: 'cancel' }
 ) & { id?: number };
 
@@ -130,6 +132,7 @@ export type WorkerRequest = (
 export type WorkerResponse =
   | { type: 'search-result'; id?: number; result: SearchResult<GomokuMove | XqMove | JqMove> }
   | { type: 'progress'; nodes: number }
-  | { type: 'warmup-done'; ok: boolean; variant?: 'multi' | 'single' }
+  /** 预热结果。game 用于区分是哪个项目的引擎（两个引擎各自预热）。 */
+  | { type: 'warmup-done'; ok: boolean; variant?: 'multi' | 'single'; game?: 'gomoku' | 'xq' }
   /** 引擎数据包下载进度（worker 侧上报，主线程预取时通常一闪而过） */
   | { type: 'load-progress'; loaded: number; total: number };

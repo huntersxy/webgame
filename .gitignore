@@ -4,3 +4,9 @@ dist/
 *.local
 .vite/
 /.workbuddy
+
+# Pikafish 权重包（pikafish.data，约 48MB）：不入库。
+# 生产环境托管到 OSS/CDN，用 VITE_PIKAFISH_DATA_BASE 指定基址；
+# 本地开发把 build 产物留在 public/pikafish/ 下即可（同源加载）。
+# 引擎外壳 pikafish.js / pikafish.wasm（共约 670KB）要提交。
+public/pikafish/pikafish.data

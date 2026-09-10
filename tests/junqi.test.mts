@@ -309,17 +309,36 @@ console.log('== 揭棋 ==');
   b[idx(0, 0)] = { ...mk('r', '工兵'), hidden: true };
   const mv = legalMoves(b, idx(0, 0));
   check('揭棋暗置工兵走法不变（可拐弯）', mv.includes(idx(5, 4)) && mv.includes(idx(11, 0)), `${mv.length} 落点`);
-  // 交战翻明：双方同时翻明，undo 完整还原
+  // 攻方胜：守方翻明，攻方不亮；undo 还原
   const bc = empty();
   const att = { ...mk('r', '师长'), hidden: true };
   const def = { ...mk('b', '连长'), hidden: true };
   bc[idx(6, 0)] = att;   // (6,0)-(5,0) 为桥（铁路）
   bc[idx(5, 0)] = def;
   const recC = makeJqMove(bc, idx(6, 0), idx(5, 0));
-  check('交战双方同时翻明', !att.hidden && !def.hidden && recC.attHidden1 === false && recC.defHidden1 === false);
+  check('攻方获胜时攻方不翻明', !!att.hidden && recC.attHidden1 === true);
+  check('攻方获胜时守方翻明', !def.hidden && recC.defHidden1 === false);
   check('吃子结果正确', !recC.attOut && recC.defOut);
   undoJqMove(bc, recC);
   check('undo 还原翻明位', att.hidden === true && def.hidden === true);
+  // 攻方败：攻方翻明，守方存活则明牌驻守
+  const bd = empty();
+  const att2 = { ...mk('r', '排长'), hidden: true };
+  const def2 = { ...mk('b', '司令'), hidden: true };
+  bd[idx(6, 0)] = att2;
+  bd[idx(5, 0)] = def2;
+  const recD = makeJqMove(bd, idx(6, 0), idx(5, 0));
+  check('攻方阵亡时双方都翻明', !att2.hidden && !def2.hidden && recD.attOut && !recD.defOut);
+  undoJqMove(bd, recD);
+  check('攻方败 undo 还原翻明位', att2.hidden === true && def2.hidden === true);
+  // 同归：双方都翻明（子力离场）
+  const bm = empty();
+  const att3 = { ...mk('r', '团长'), hidden: true };
+  const def3 = { ...mk('b', '团长'), hidden: true };
+  bm[idx(6, 0)] = att3;
+  bm[idx(5, 0)] = def3;
+  const recM = makeJqMove(bm, idx(6, 0), idx(5, 0));
+  check('同归时双方都翻明且离场', !att3.hidden && !def3.hidden && recM.attOut && recM.defOut && !bm[idx(5, 0)]);
   // 静默移动不翻明
   const bq = empty();
   const mover = { ...mk('r', '师长'), hidden: true };

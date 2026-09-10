@@ -295,10 +295,11 @@ export function makeFast(sq: Uint8Array, hid: Uint8Array, mv: number, ply: numbe
     hid[to] = REC[o + REC_ATT_H];
     return 0;
   }
-  // 交战：双方同时翻明
-  hid[to] = 0;
+  // 交战：主动方获胜则攻方不亮；阵亡方翻明
   const r = RES[att * 26 + def];
   if (r & WIN_FLAG) {
+    // 扛旗：守方军旗明置离场；攻方（主动胜）保持原明暗驻落点
+    hid[to] = REC[o + REC_ATT_H];
     sq[to] = att;
     REC[o + REC_FLAGS] = WIN_FLAG;
     return WIN_FLAG;
@@ -306,9 +307,22 @@ export function makeFast(sq: Uint8Array, hid: Uint8Array, mv: number, ply: numbe
   const aOut = r & A_OUT;
   const dOut = r & D_OUT;
   let flags: number;
-  if (aOut && dOut) { sq[to] = 0; flags = A_OUT | D_OUT; }
-  else if (aOut) { sq[to] = def; flags = A_OUT; }
-  else { sq[to] = att; flags = D_OUT; }
+  if (aOut && dOut) {
+    // 同归：双方都已翻明（但盘上子都离场，hid/to 清空）
+    hid[to] = 0;
+    sq[to] = 0;
+    flags = A_OUT | D_OUT;
+  } else if (aOut) {
+    // 攻方阵亡：攻方翻明离场，守方明牌驻守
+    hid[to] = 0;
+    sq[to] = def;
+    flags = A_OUT;
+  } else {
+    // 攻方获胜：守方翻明离场，攻方保持原明暗
+    hid[to] = REC[o + REC_ATT_H];
+    sq[to] = att;
+    flags = D_OUT;
+  }
 
   // 司令阵亡 → 该方军旗亮出。交战同步结算，司令对司令同归于尽时
   // 两面军旗都要亮，故按「阵亡司令所属方」收集，最多两个节点。

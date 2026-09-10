@@ -12,7 +12,8 @@
     "test:engine": "esbuild tests/engine.test.mts --bundle --platform=node --format=esm --outfile=.tmp/engine.test.mjs --log-level=warning && node .tmp/engine.test.mjs",
     "test:junqi": "esbuild tests/junqi.test.mts --bundle --platform=node --format=esm --outfile=.tmp/junqi.test.mjs --log-level=warning && node .tmp/junqi.test.mjs",
     "test:rapfi": "node tests/rapfi.test.cjs",
-    "test": "npm run test:engine && npm run test:junqi && npm run test:rapfi"
+    "test:xqfen": "esbuild tests/xqfen.test.mts --bundle --platform=node --format=esm --outfile=.tmp/xqfen.test.mjs --log-level=warning && node .tmp/xqfen.test.mjs",
+    "test": "npm run test:engine && npm run test:junqi && npm run test:rapfi && npm run test:xqfen"
   },
   "devDependencies": {
     "typescript": "^5.7.0",
