@@ -243,18 +243,19 @@
           <h2>五子棋 <small>GOMOKU · 15×15</small></h2>
           <div id="gomoku-turn" class="turn-pill">轮到 黑方 落子</div>
         </div>
-        <div class="canvas-holder">
-          <canvas id="gomoku-canvas" width="620" height="620"></canvas>
-          <div id="gomoku-thinking" class="thinking hidden"><div class="spinner"></div>AI 思考中…</div>
-          <!-- 引擎数据包约 10MB，首次进对局时给一条可见的进度，别让人干等 -->
+          <!-- 引擎加载进度：放在棋盘外面（棋盘上方），不遮挡落子区域 -->
           <div id="gomoku-engine-load" class="engine-load hidden">
             <div class="el-head">
-              <span class="spinner"></span>
+              <span class="el-dot"></span>
               <span id="g-engine-state">引擎加载中…</span>
               <b id="g-engine-pct"></b>
             </div>
             <div class="el-bar"><i id="g-engine-bar"></i></div>
+            <p class="el-tip">加载期间<b>可以照常下棋</b>——这几手先用内置引擎应付，加载完成后自动换成 Rapfi。</p>
           </div>
+        <div class="canvas-holder">
+          <canvas id="gomoku-canvas" width="620" height="620"></canvas>
+          <div id="gomoku-thinking" class="thinking hidden"><div class="spinner"></div>AI 思考中…</div>
         </div>
         <div id="gomoku-result" class="result-banner hidden"></div>
       </div>

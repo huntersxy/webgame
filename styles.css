@@ -457,19 +457,23 @@ canvas { max-width: 100%; height: auto; border-radius: 10px; cursor: pointer; }
    置底 + !important 是因为 #jq-setup 这类元素的基础规则（.panel-block）
    与它同优先级，靠顺序裁决容易被后续同名规则翻掉。 */
 .hidden { display: none !important; }
-/* 引擎加载进度：贴在画布顶部，向下错开「AI 思考中」药丸。
-   不要贴底部——棋盘在多数屏幕上首屏只看到上半截，底部会被折在屏幕外。 */
+/* 引擎加载进度：放在棋盘外面（棋盘上方），不遮挡落子区域。
+   别贴画布底部——棋盘在多数屏幕上首屏只露上半截，贴底会被折到屏幕外。 */
 .engine-load {
-  position: absolute; top: 60px; left: 50%; transform: translateX(-50%);
-  width: min(320px, 86%);
-  background: rgba(28, 43, 51, .86); color: #fff;
-  border-radius: 12px; padding: 10px 13px; font-size: 12.5px;
-  pointer-events: none; z-index: 5;
+  margin: 0 0 14px;
+  padding: 12px 14px;
+  border: 1px solid #cdeee5;
+  border-radius: var(--radius-sm);
+  background: var(--accent-soft);
 }
-.engine-load .el-head { display: flex; align-items: center; gap: 7px; }
-.engine-load .el-head b { margin-left: auto; font-variant-numeric: tabular-nums; opacity: .92; }
-.engine-load .el-bar { height: 5px; margin-top: 8px; border-radius: 99px; background: rgba(255,255,255,.22); overflow: hidden; }
-.engine-load .el-bar i { display: block; height: 100%; width: 0%; border-radius: 99px; background: linear-gradient(90deg, #12b89b, #6ee7c8); transition: width .18s ease-out; }
+.engine-load .el-head { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--accent-ink); }
+.engine-load .el-head b { margin-left: auto; font-variant-numeric: tabular-nums; }
+.engine-load .el-dot { width: 8px; height: 8px; flex: none; border-radius: 50%; background: var(--accent); animation: el-pulse 1s ease-in-out infinite; }
+@keyframes el-pulse { 0%, 100% { opacity: .3; } 50% { opacity: 1; } }
+.engine-load .el-bar { height: 5px; margin-top: 9px; border-radius: 99px; background: #cdeee5; overflow: hidden; }
+.engine-load .el-bar i { display: block; height: 100%; width: 0%; border-radius: 99px; background: linear-gradient(90deg, var(--accent), #6ee7c8); transition: width .18s ease-out; }
+.engine-load .el-tip { margin: 9px 0 0; font-size: 12px; line-height: 1.6; color: var(--muted); }
+.engine-load .el-tip b { color: var(--accent-ink); }
 .spinner { width: 14px; height: 14px; flex: none; border-radius: 50%; border: 2px solid rgba(255,255,255,.35); border-top-color: #fff; animation: spin .8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
