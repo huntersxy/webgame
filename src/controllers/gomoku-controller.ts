@@ -45,6 +45,8 @@ export class GomokuController {
   private _down: { x: number; y: number } | null = null;
   private _openingWarned = false;
   private _engineLogged = false;
+  private _warmed = false;
+  private _warming = false;
 
   constructor(canvas: HTMLCanvasElement, ai: AIBridge, audio: AudioEngine) {
     this.canvas = canvas;
@@ -356,6 +358,30 @@ export class GomokuController {
   }
 
   private showThinking(on: boolean): void { document.getElementById('gomoku-thinking')?.classList.toggle('hidden', !on); }
+
+  /**
+   * 预热 Rapfi 引擎。进入五子棋页面时调用：首次需下载 wasm + NNUE 权重
+   * （约 11MB），提前加载可以让玩家落下首子后立刻看到 AI 应手，而不是
+   * 卡在「AI 思考中」等下载。开局两手的应手本来就不经过引擎。
+   */
+  warmUp(): void {
+    if (this._warmed || this._warming) return;
+    this._warming = true;
+    this.setGlobalStatus('🧩 Rapfi 引擎预热中…（首次约 11MB，之后走浏览器缓存）');
+    void this.ai.warmUpGomoku().then(({ ok, variant }) => {
+      this._warming = false;
+      this._warmed = ok;
+      if (ok) {
+        this.setGlobalStatus('AI 就绪');
+        appendLog(document.getElementById('g-think-log'),
+          `🧩 <b>Rapfi 引擎已预加载</b>（${variant === 'multi' ? '多线程构建' : '单线程构建'}）· 落子无需等待`);
+        this._engineLogged = true; // 避免首次搜索时重复播报
+      } else {
+        this.setGlobalStatus('AI 就绪（内置引擎）');
+      }
+    });
+  }
+
   private hideResult(): void { document.getElementById('gomoku-result')?.classList.add('hidden'); }
   private setGlobalStatus(t: string): void { (window as any).setGlobalStatus?.(t); }
 

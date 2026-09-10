@@ -113,9 +113,12 @@ export type WorkerRequest =
   | { type: 'xq-hint'; board: XqBoard; side: XqSide; mode: GameMode; historyLength: number }
   | { type: 'junqi-search'; board: JqBoard; side: JqSide; difficulty: Difficulty; mode: GameMode; flip: boolean; historyLength: number }
   | { type: 'junqi-hint'; board: JqBoard; side: JqSide; mode: GameMode; flip: boolean; historyLength: number }
+  /** 提前唤醒 Rapfi 引擎，把首次 ~11MB 加载挪到玩家思考首手的时间里 */
+  | { type: 'gomoku-warmup' }
   | { type: 'cancel' };
 
 /** Worker response messages */
 export type WorkerResponse =
   | { type: 'search-result'; result: SearchResult<GomokuMove | XqMove | JqMove> }
-  | { type: 'progress'; nodes: number };
+  | { type: 'progress'; nodes: number }
+  | { type: 'warmup-done'; ok: boolean; variant?: 'multi' | 'single' };

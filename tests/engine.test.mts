@@ -232,5 +232,39 @@ console.log('== strength sanity ==');
   check('white contests the black cluster', Math.abs(m.x - 9) <= 3 && Math.abs(m.y - 9) <= 3, JSON.stringify(m));
 }
 
+// ── 7) Rapfi 客户端：开局两手必须不依赖引擎加载 ──
+// 回归：这两个应手是写死的定式着法，此前 ensureReady() 排在它们之前，
+// 导致玩家落下第一个子后，要等整个 wasm + NNUE（约 11MB）下载实例化完
+// 才见到本可瞬间返回的应手。Node 下没有 Worker，若仍依赖引擎，
+// ensureReady() 必然失败并走 fallback——所以断言 fallback 一次都没被调用。
+console.log('== rapfi opening shortcuts ==');
+{
+  const { RapfiEngine } = await import('../src/gomoku/rapfi');
+  const eng = new RapfiEngine();
+  let fallbackUsed = 0;
+  const fallback = (): any => {
+    fallbackUsed++;
+    return { move: { x: -1, y: -1, v: 0 }, depth: 0, nodes: 0, ms: 0, eval: 0, scores: [] };
+  };
+
+  const r0 = await eng.findMove(empty(), 1, 2, 'ai', 0, fallback);
+  check('空盘首手走定式天元，且不触发引擎加载',
+    fallbackUsed === 0 && r0.opening === true && r0.move?.x === 7 && r0.move?.y === 7, JSON.stringify(r0.move));
+
+  const b1 = empty();
+  put(b1, [[7, 7, 1]]);
+  const r1 = await eng.findMove(clone(b1), 2, 2, 'ai', 1, fallback);
+  const near = !!r1.move && Math.abs(r1.move.x - 7) <= 2 && Math.abs(r1.move.y - 7) <= 2;
+  check('首子后的应手走定式，且不触发引擎加载（「下第一个子卡很久」的路径）',
+    fallbackUsed === 0 && r1.opening === true && near, `${JSON.stringify(r1.move)} fallback=${fallbackUsed}`);
+
+  // 第三手起才真正要引擎；Node 无 Worker，应干净降级到内置引擎
+  const b2 = empty();
+  put(b2, [[7, 7, 1], [8, 8, 2]]);
+  const r2 = await eng.findMove(clone(b2), 1, 2, 'ai', 2, fallback);
+  check('第三手起才调用引擎（无 Worker 时降级到内置引擎）',
+    fallbackUsed === 1 && r2.move?.x === -1, `fallback=${fallbackUsed}`);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

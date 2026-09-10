@@ -54,7 +54,7 @@ function applyView(name: ViewName): void {
   });
   Object.entries(views).forEach(([k, el]) => el?.classList.toggle('active', k === name));
   window.scrollTo({ top: 0, behavior: 'smooth' });
-  if (name === 'gomoku' && gomokuCtrl) gomokuCtrl.redraw();
+  if (name === 'gomoku' && gomokuCtrl) { gomokuCtrl.redraw(); gomokuCtrl.warmUp(); }
   if (name === 'campaign' && campaignCtrl) campaignCtrl.redraw();
   if (name === 'xiangqi' && xiangqiCtrl) xiangqiCtrl.redraw();
   if (name === 'tornado' && tornadoCtrl) tornadoCtrl.redraw();
@@ -97,6 +97,18 @@ if (junqiCanvas && ai && audio) junqiCtrl = new JunqiController(junqiCanvas, ai,
 
 // ── Demon assets (avatar) ──
 setupDemonAssets();
+
+// ── Rapfi 引擎预取 ──
+// 五子棋是站内主打，首次进对局要下载约 11MB（wasm + NNUE 权重）。
+// 首页闲置 3 秒后先在后台取好，玩家点进去时通常已就绪；
+// 开了省流量或走在 2G/慢速网络上则跳过，不替用户决定花这些流量。
+function prefetchGomokuEngine(): void {
+  const conn = (navigator as unknown as { connection?: { saveData?: boolean; effectiveType?: string } }).connection;
+  if (conn?.saveData) return;
+  if (conn?.effectiveType && /^(slow-)?2g$/.test(conn.effectiveType)) return;
+  gomokuCtrl?.warmUp();
+}
+if (routeFromHash() === 'home') setTimeout(prefetchGomokuEngine, 3000);
 
 // ── Stats + initial route ──
 Stats.refresh();

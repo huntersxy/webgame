@@ -197,6 +197,20 @@ export class RapfiEngine {
     return this.readyPromise;
   }
 
+  /**
+   * 预热：提前开始加载 wasm 与 NNUE 权重（首次约 11MB）。
+   * 进入对局页面时调用，把首次加载挪到玩家思考首手的时间里，
+   * 之后所有搜索都会命中同一个已就绪的实例。
+   */
+  warmUp(): Promise<void> {
+    return this.ensureReady();
+  }
+
+  /** 引擎是否已实例化完成（UI 可据此提示） */
+  get isReady(): boolean {
+    return this.variant !== null;
+  }
+
   private cmd(c: string): void {
     this.worker?.postMessage({ type: 'cmd', data: c });
   }
@@ -229,13 +243,11 @@ export class RapfiEngine {
     historyLength: number,
     fallback: () => SearchResult<GomokuMove>,
   ): Promise<SearchResult<GomokuMove>> {
-    try {
-      await this.ensureReady();
-    } catch {
-      return fallback();
-    }
-
     // ── Opening shortcuts (instant, keeps aivai varied) ──
+    // 开局两手是固定应手，与引擎无关，所以必须排在 ensureReady() 之前。
+    // 否则玩家落下第一个子后，要等整个 wasm + NNUE 权重（约 11MB）下载并
+    // 实例化完，才见到本可瞬间给出的应手——这正是「下第一个子加载很久」。
+    // 引擎改由进入对局页面时的 warmUp() 提前加载，把这段时间藏进玩家思考里。
     if (historyLength === 0) {
       const mv = { x: 7, y: 7, v: 0 };
       return { move: mv, depth: 1, nodes: 1, ms: 0, eval: 0, scores: [mv], opening: true, engine: this.engineTag() };
@@ -243,6 +255,12 @@ export class RapfiEngine {
     if (historyLength === 1) {
       const mv = nearFirstReply(board, player);
       return { move: mv, depth: 1, nodes: 1, ms: 0, eval: 0, scores: [mv], opening: true, engine: this.engineTag() };
+    }
+
+    try {
+      await this.ensureReady();
+    } catch {
+      return fallback();
     }
 
     const t0 = now();

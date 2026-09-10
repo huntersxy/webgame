@@ -107,6 +107,30 @@ server {
 }
 ```
 
+引擎资源另有两条值得配的（首屏那 11MB 能不能只下这一次，就看这里）：
+
+```nginx
+    # 引擎资源 URL 带 ?v= 版本号（见 src/gomoku/rapfi.ts 的 ASSET_VERSION），
+    # 可以放心长缓存。不显式声明的话，FTP 部署会刷新文件 mtime，回访浏览器
+    # 每次都要重新校验、mtime 一变就重下整个 11MB。
+    # 注意：location 内一旦出现 add_header，server 级的 add_header 就不再继承，
+    # 所以上面那两条 COOP/COEP 必须在这里重复一遍。
+    location ~* ^/rapfi/ {
+        expires 1y;
+        add_header Cache-Control "public, immutable" always;
+        add_header Cross-Origin-Opener-Policy "same-origin" always;
+        add_header Cross-Origin-Embedder-Policy "require-corp" always;
+    }
+
+    # gzip 默认只压 text/html：把引擎资源也纳入，rapfi.data 有 10MB 且是
+    # 二进制，压完能省掉一大截首屏下载时间
+    gzip on;
+    gzip_types application/wasm application/octet-stream application/javascript text/css application/json;
+    gzip_min_length 1024;
+```
+
+改了 `public/rapfi/` 下任何文件后，记得同步把 `src/gomoku/rapfi.ts` 里的 `ASSET_VERSION` 加一版，否则长缓存会让老访客一直用旧引擎。
+
 注意：COEP `require-corp` 会要求页面所有跨域子资源自带 CORP/CORS 头——本项目全部资源自包含，不受影响；若以后引入 CDN 字体/脚本，记得加 `crossorigin` 属性。配置后用 `curl -sI https://game.xiey.work/ | grep -i cross-origin` 验证响应头穿透 CDN。
 
 ## 🧱 项目结构

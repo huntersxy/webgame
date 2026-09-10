@@ -29,6 +29,14 @@ self.onmessage = (e: MessageEvent<WorkerRequest>) => {
         .then((result) => post({ type: 'search-result', result: result as any }));
       break;
     }
+    case 'gomoku-warmup': {
+      // 只加载、不搜索：进入对局页面即调用，把 11MB 首次下载藏进玩家思考时间
+      rapfi.warmUp().then(
+        () => post({ type: 'warmup-done', ok: true, variant: rapfi.variant ?? undefined }),
+        () => post({ type: 'warmup-done', ok: false }),
+      );
+      break;
+    }
     case 'gomoku-hint': {
       const board = req.board as GomokuBoard;
       const player = req.player as GomokuPlayer;

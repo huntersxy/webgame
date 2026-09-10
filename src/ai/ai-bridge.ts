@@ -7,6 +7,7 @@ import type { WorkerRequest, WorkerResponse, Difficulty, GameMode, SearchResult,
 export class AIBridge {
   private worker: Worker | null = null;
   private pendingResolve: ((r: SearchResult<GomokuMove | XqMove | JqMove>) => void) | null = null;
+  private warmupResolve: ((r: { ok: boolean; variant?: 'multi' | 'single' }) => void) | null = null;
   private currentSeq = 0;
 
   constructor() {
@@ -21,6 +22,9 @@ export class AIBridge {
         if (msg.type === 'search-result' && this.pendingResolve) {
           this.pendingResolve(msg.result);
           this.pendingResolve = null;
+        } else if (msg.type === 'warmup-done') {
+          this.warmupResolve?.({ ok: msg.ok, variant: msg.variant });
+          this.warmupResolve = null;
         }
       };
       this.worker.onerror = (e) => {
@@ -34,6 +38,21 @@ export class AIBridge {
     } catch (err) {
       console.error('Failed to create AI worker:', err);
     }
+  }
+
+  /**
+   * 提前唤醒 Rapfi 引擎（加载 wasm + NNUE 权重）。
+   * 返回 ok=false 表示会走内置 JS 引擎兜底。
+   */
+  warmUpGomoku(): Promise<{ ok: boolean; variant?: 'multi' | 'single' }> {
+    return new Promise((resolve) => {
+      if (!this.worker) {
+        resolve({ ok: false });
+        return;
+      }
+      this.warmupResolve = resolve;
+      this.worker.postMessage({ type: 'gomoku-warmup' });
+    });
   }
 
   private send(req: WorkerRequest): Promise<SearchResult<GomokuMove | XqMove | JqMove>> {
