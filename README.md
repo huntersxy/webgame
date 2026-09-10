@@ -124,16 +124,16 @@ server {
     # 注意：location 内一旦出现 add_header，server 级的 add_header 就不再继承，
     # 所以上面那两条 COOP/COEP 必须在这里重复一遍。
     location ~* ^/rapfi/ {
-        expires 1y;
-        add_header Cache-Control "public, immutable" always;
+        # 不要同时写 expires：它会再产生一个 Cache-Control: max-age=...，
+        # 两个 Cache-Control 头容易让 CDN/浏览器行为不一致，只留一条。
+        add_header Cache-Control "public, max-age=31536000, immutable" always;
         add_header Cross-Origin-Opener-Policy "same-origin" always;
         add_header Cross-Origin-Embedder-Policy "require-corp" always;
     }
 
     # 构建产物文件名带内容哈希（index-XXXXXXXX.js/css），同样可以长缓存
     location ~* ^/assets/ {
-        expires 1y;
-        add_header Cache-Control "public, immutable" always;
+        add_header Cache-Control "public, max-age=31536000, immutable" always;
         add_header Cross-Origin-Opener-Policy "same-origin" always;
         add_header Cross-Origin-Embedder-Policy "require-corp" always;
     }
