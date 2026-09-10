@@ -35,8 +35,11 @@ self.onmessage = function (e) {
         typeof self.crossOriginIsolated !== 'undefined' &&
         self.crossOriginIsolated;
 
+      // Cache-bust suffix propagated from the client (matches its ASSET_VERSION)
+      const ver = typeof msg.version === 'string' && msg.version ? '?v=' + msg.version : '';
+
       const variant = canThread ? 'rapfi-multi.js' : 'rapfi-single.js';
-      self.importScripts(variant);
+      self.importScripts(variant + ver);
       self.__rapfiVariant = variant;
 
       let wasmMemory;
@@ -65,7 +68,7 @@ self.onmessage = function (e) {
           // the single package 'rapfi.data' in this directory (config.toml
           // + mix9svq NNUE weights + classical model tables).
           if (/\.data$/.test(url)) url = 'rapfi.data';
-          return url; // resolved against this worker's URL (same dir)
+          return url + ver; // resolved against this worker's URL (same dir)
         },
         wasmMemory: wasmMemory,
         onReceiveStdout: (o) => post({ type: 'stdout', data: o }),

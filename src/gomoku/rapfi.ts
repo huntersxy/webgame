@@ -32,6 +32,9 @@ export const RAPFI_LEVELS: Record<Difficulty, { strength: number; turnMs: number
 
 type EngineMsg = { type: 'ready' | 'stdout' | 'stderr' | 'error' | 'exit'; data?: unknown };
 
+/** Bump when any file under public/rapfi/ changes to defeat browser caches. */
+const ASSET_VERSION = '20260910b';
+
 /** Parse an rapfi EVAL token ("+M5", "-M3", plain integer) to UI scale. */
 function parseEval(tok: string): number {
   const m = /^([+-]?)M(\d+)$/i.exec(tok.trim());
@@ -128,14 +131,17 @@ export class RapfiEngine {
         // public/rapfi/ files are served verbatim from the site root. Build
         // the URL from BASE_URL instead of `new URL(x, import.meta.url)` so
         // Vite does NOT bundle this classic worker (its importScripts
-        // resolves relative to its own /rapfi/ location).
+        // resolves relative to its own /rapfi/ location). The ?v= busts
+        // browser heuristically-cached copies after an engine update.
         const base = import.meta.env.BASE_URL || '/';
-        w = new Worker(new URL(base + 'rapfi/engine-worker.js', self.location.href).href);
+        w = new Worker(
+          new URL(base + 'rapfi/engine-worker.js?v=' + ASSET_VERSION, self.location.href).href,
+        );
       } catch (err) {
         reject(err instanceof Error ? err : new Error(String(err)));
         return;
       }
-      const timer = setTimeout(() => reject(new Error('rapfi engine init timeout')), 30_000);
+      const timer = setTimeout(() => reject(new Error('rapfi engine init timeout')), 60_000);
       w.onmessage = (e: MessageEvent<EngineMsg>) => {
         const msg = e.data;
         switch (msg.type) {
@@ -167,21 +173,27 @@ export class RapfiEngine {
         clearTimeout(timer);
         reject(new Error('rapfi worker error: ' + (e.message || 'unknown')));
       };
-      w.postMessage({ type: 'init' });
+      w.postMessage({ type: 'init', version: ASSET_VERSION });
       this.worker = w;
     });
   }
 
-  /** Lazy init; rejects permanently on failure (caller falls back). */
+  /**
+   * Lazy init. A failed attempt is retried at most once every 60s (a slow
+   * 10MB data fetch on a cold CDN edge may fail early), otherwise falls
+   * through to the JS engine for that search.
+   */
+  private lastInitFail = 0;
   private ensureReady(): Promise<void> {
-    if (!this.readyPromise) {
-      this.readyPromise = this.startWorker().catch((err) => {
-        this.readyPromise = null;
-        this.worker?.terminate();
-        this.worker = null;
-        throw err;
-      });
-    }
+    if (this.readyPromise) return this.readyPromise;
+    if (Date.now() - this.lastInitFail < 45_000) return Promise.reject(new Error('rapfi init cooldown'));
+    this.readyPromise = this.startWorker().catch((err) => {
+      this.readyPromise = null;
+      this.lastInitFail = Date.now();
+      this.worker?.terminate();
+      this.worker = null;
+      throw err;
+    });
     return this.readyPromise;
   }
 
