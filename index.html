@@ -34,46 +34,59 @@
 <main>
   <!-- ═══════════ 首页 · 游戏平台 ═══════════ -->
   <section id="view-home" class="view active">
-    <div class="hero">
-      <span class="floaty f1">🐟</span>
-      <span class="floaty f2">🫧</span>
-      <span class="floaty f3">🐠</span>
-      <div class="hero-text">
-        <p class="eyebrow">免注册 · 无广告 · 离线可玩</p>
-        <h1>欢迎跳进小鱼池，<br><em>随手开一局。</em></h1>
-        <p class="sub">汐兮雨的小鱼池是一个轻量的网页游戏平台——棋类对决、休闲小游戏都在池子里游。全部本地运行：AI 在你的浏览器里计算，不上传、不限速、即开即玩。</p>
-        <div class="hero-actions">
-          <button class="btn primary big" data-goto="tornado">🌪️ 卷走全世界</button>
-          <button class="btn plain big" data-goto="gomoku">来一盘五子棋</button>
+    <div class="home-layout">
+      <aside class="hero home-side">
+        <span class="floaty f1">🐟</span>
+        <span class="floaty f2">🫧</span>
+        <span class="floaty f3">🐠</span>
+        <div class="hero-text">
+          <p class="eyebrow">免注册 · 无广告 · 离线可玩</p>
+          <h1>欢迎跳进小鱼池，<br><em>随手开一局。</em></h1>
+          <p class="sub">轻量网页游戏平台：棋类对决、休闲小游戏都在池子里游。全部本地运行——AI 在你的浏览器里计算，不上传、不限速、即开即玩。</p>
+          <div class="hero-actions">
+            <button class="btn primary big" data-goto="tornado">🌪️ 卷走全世界</button>
+            <button class="btn plain big" data-goto="gomoku">来一盘五子棋</button>
+          </div>
+          <div class="stats">
+            <div><b id="stat-games">0</b><i>累计对局</i></div>
+            <div><b id="stat-wins">0</b><i>你的胜场</i></div>
+            <div><b>4</b><i>已上线游戏</i></div>
+          </div>
         </div>
-        <div class="stats">
-          <div><b id="stat-games">0</b><i>累计对局</i></div>
-          <div><b id="stat-wins">0</b><i>你的胜场</i></div>
-          <div><b>4</b><i>已上线游戏</i></div>
+        <div class="hero-art" aria-hidden="true">
+          <div class="board-card">
+            <div class="mini-grid"></div>
+            <span class="mstone b" style="left:30.7%;top:47.3%"></span>
+            <span class="mstone w" style="left:47.3%;top:47.3%"></span>
+            <span class="mstone b" style="left:64%;top:47.3%"></span>
+            <span class="mstone w" style="left:47.3%;top:64%"></span>
+            <span class="mstone b win" style="left:80.7%;top:47.3%"></span>
+          </div>
         </div>
-      </div>
-      <div class="hero-art" aria-hidden="true">
-        <div class="board-card">
-          <div class="mini-grid"></div>
-          <span class="mstone b" style="left:30%;top:28%"></span>
-          <span class="mstone w" style="left:44%;top:36%"></span>
-          <span class="mstone b" style="left:58%;top:44%"></span>
-          <span class="mstone w" style="left:52%;top:58%"></span>
-          <span class="mstone b win" style="left:70%;top:36%"></span>
+        <div class="why">
+          <div class="why-item"><b>⚡ 即开即玩</b><span>无需下载与注册，浏览器打开就是一盘好棋。</span></div>
+          <div class="why-item"><b>🔒 完全本地</b><span>AI 在 Web Worker 中离线计算，断网也能下。</span></div>
+          <div class="why-item"><b>🧠 硬核引擎</b><span>五子棋接入 Gomocup 级 Rapfi 引擎（WASM），支持多线程加速。</span></div>
+          <div class="why-item"><b>🎮 不止棋类</b><span>休闲小游戏持续上新，平台不局限于棋盘对弈。</span></div>
         </div>
-      </div>
-    </div>
-
-    <h2 class="sec-title">游戏库 <small>GAME LIBRARY</small></h2>
-    <div class="game-grid">
+      </aside>
+      <div class="home-main">
+        <h2 class="sec-title">游戏库 <small>GAME LIBRARY</small></h2>
+        <div class="game-grid">
       <article class="game-card">
         <div class="game-thumb tornado-thumb">
-          <span class="tt big" style="left:46%;top:52%">🌪️</span>
-          <span class="tt" style="left:20%;top:26%">🗑️</span>
-          <span class="tt" style="left:74%;top:22%">🏠</span>
-          <span class="tt" style="left:80%;top:66%">🏢</span>
-          <span class="tt" style="left:16%;top:70%">🚲</span>
-          <span class="tt" style="left:62%;top:78%">🌳</span>
+          <span class="tt-cloud c1"></span>
+          <span class="tt-cloud c2"></span>
+          <div class="tt-orbit">
+            <span class="orb" style="--ang:10deg"><i>🗑️</i></span>
+            <span class="orb" style="--ang:100deg"><i>🚲</i></span>
+            <span class="orb" style="--ang:190deg"><i>🌳</i></span>
+            <span class="orb" style="--ang:280deg"><i>🏠</i></span>
+          </div>
+          <span class="tt big">🌪️</span>
+          <div class="tt-ground">
+            <i>🏢</i><i>🏫</i><i>🏠</i><i>🏬</i>
+          </div>
         </div>
         <div class="game-body">
           <h3>龙卷风成长记 <span class="chip hot">NEW</span></h3>
@@ -89,14 +102,14 @@
       <article class="game-card">
         <div class="game-thumb gomoku-thumb">
           <div class="grid-lines"></div>
-          <span class="t-stone s1" style="left:22%;top:30%"></span>
-          <span class="t-stone s2" style="left:40%;top:38%"></span>
-          <span class="t-stone s1" style="left:58%;top:46%"></span>
-          <span class="t-stone s1" style="left:76%;top:54%"></span>
+          <span class="t-stone s1" style="left:27.2%;top:50%"></span>
+          <span class="t-stone s2" style="left:42.4%;top:67%"></span>
+          <span class="t-stone s1" style="left:57.6%;top:50%"></span>
+          <span class="t-stone s1 win" style="left:72.8%;top:50%"></span>
         </div>
         <div class="game-body">
           <h3>五子棋 <span class="chip new">AI 重制</span></h3>
-          <p>15×15 标准棋盘。全新引擎：增量评估 + 迭代加深 α-β + VCF 杀棋搜索，恶魔级 3 秒烧脑算力。</p>
+          <p>15×15 标准棋盘。Gomocup 级 Rapfi 引擎（WASM 加速，四档棋力），恶魔级全火力算招。</p>
           <div class="tags"><span>人机对战</span><span>双人同乐</span><span>AI 互搏</span><span>战役闯关</span></div>
           <div class="game-foot">
             <span class="price">免费</span>
@@ -107,10 +120,13 @@
 
       <article class="game-card">
         <div class="game-thumb xiangqi-thumb">
-          <span class="t-piece" style="left:20%;top:24%">俥</span>
-          <span class="t-piece" style="left:44%;top:40%">傌</span>
-          <span class="t-piece dark" style="left:68%;top:56%">炮</span>
-          <span class="t-piece dark" style="left:36%;top:68%">帥</span>
+          <div class="xq-board">
+            <b class="xq-river">楚 河 <i>·</i> 漢 界</b>
+            <span class="t-piece red" style="left:12.5%;top:11.1%">俥</span>
+            <span class="t-piece red" style="left:50%;top:33.3%">傌</span>
+            <span class="t-piece dark" style="left:87.5%;top:77.8%">炮</span>
+            <span class="t-piece dark" style="left:25%;top:77.8%">將</span>
+          </div>
         </div>
         <div class="game-body">
           <h3>中国象棋</h3>
@@ -125,10 +141,13 @@
 
       <article class="game-card">
         <div class="game-thumb junqi-thumb">
-          <span class="t-piece red" style="left:24%;top:30%">指</span>
-          <span class="t-piece blue" style="left:56%;top:44%">排</span>
-          <span class="t-piece red" style="left:74%;top:24%">炸</span>
-          <span class="t-piece blue" style="left:36%;top:70%">旗</span>
+          <div class="j-rail top"></div>
+          <span class="j-tile blue face" style="left:26%;top:22%">★</span>
+          <span class="j-tile blue" style="left:72%;top:24%;transform:translate(-50%,-50%) rotate(4deg)">工兵</span>
+          <div class="j-river"><i></i><i></i><i></i></div>
+          <span class="j-tile red" style="left:66%;top:66%;transform:translate(-50%,-50%) rotate(-3deg)">司令</span>
+          <span class="j-tile red" style="left:24%;top:70%">炸弹</span>
+          <div class="j-rail bottom"></div>
         </div>
         <div class="game-body">
           <h3>军棋 <span class="chip hot">NEW</span></h3>
@@ -142,7 +161,11 @@
       </article>
 
       <article class="game-card coming">
-        <div class="game-thumb soon-thumb"><span>?</span></div>
+        <div class="game-thumb soon-thumb">
+          <span class="sparkle s1">✦</span>
+          <span class="sparkle s2">✦</span>
+          <span>?</span>
+        </div>
         <div class="game-body">
           <h3>新游戏 · 筹备中</h3>
           <p>棋类之外更多品类正在路上：围棋入门、跳棋、黑白棋、贪吃蛇…… 敬请期待。</p>
@@ -154,13 +177,8 @@
         </div>
       </article>
     </div>
-
-    <div class="why">
-      <div class="why-item"><b>⚡ 即开即玩</b><span>无需下载与注册，浏览器打开就是一盘好棋。</span></div>
-      <div class="why-item"><b>🔒 完全本地</b><span>AI 在 Web Worker 中离线计算，断网也能下。</span></div>
-      <div class="why-item"><b>🧠 硬核引擎</b><span>五子棋引擎采用迭代加深 α-β + 置换表 + VCF 战术搜索。</span></div>
-      <div class="why-item"><b>🎮 不止棋类</b><span>休闲小游戏持续上新，平台不局限于棋盘对弈。</span></div>
-    </div>
+      </div><!-- /home-main -->
+    </div><!-- /home-layout -->
   </section>
 
   <!-- ═══════════ 龙卷风成长记 ═══════════ -->
@@ -243,7 +261,7 @@
           <label class="row"><span>难度</span>
             <div class="seg col4" id="g-level"><button data-v="1">简单</button><button data-v="2" class="on">普通</button><button data-v="3">困难</button><button data-v="4" class="demon">😈 恶魔</button></div>
           </label>
-          <div class="demon-warn hidden" id="g-demon-warn">恶魔模式：时间预算拉满、VCF 必杀搜索全开，不保证你能赢。</div>
+          <div class="demon-warn hidden" id="g-demon-warn">恶魔模式：Rapfi 引擎全火力搜索，不保证你能赢。</div>
           <div class="demon-profile hidden" id="g-demon-profile">
             <img class="demon-avatar" id="g-demon-avatar" alt="褚赢" />
             <div class="demon-info">
@@ -280,7 +298,7 @@
           <div class="think-progress hidden" id="g-think-progress"><i></i></div>
           <div class="thinklog" id="g-think-log"><div class="empty">人机对战时自动输出深度 / 节点 / 评估 / 候选</div></div>
         </div>
-        <details class="rules"><summary>规则说明</summary><p>黑白轮流落子，横、竖、斜任一方向先连成五子者胜。支持悔棋与提示；恶魔级会使用 VCF（连续冲四）搜索发现远程杀棋。</p></details>
+          <details class="rules"><summary>规则说明</summary><p>黑白轮流落子，横、竖、斜任一方向先连成五子者胜。支持悔棋与提示；四档难度对应引擎棋力与思考时间，恶魔级满火力搜索。</p></details>
       </aside>
     </div>
   </section>
@@ -443,7 +461,7 @@
         </div>
         <div class="panel-block" id="jq-setup">
           <h3>自定义摆阵</h3>
-          <p class="setup-tip">点击下方兵种再点棋盘放置；点击已放的子可取回。<b>军旗</b>须入大本营，<b>地雷</b>限后两排，<b>炸弹</b>不进第一排，行营留空。</p>
+          <p class="setup-tip">点击下方兵种再点棋盘放置；点击已放的子可取回。<b>军旗</b>须入大本营，<b>地雷</b>限后两排，<b>炸弹</b>不进第一排，行营留空。放进大本营的棋子对局中不能再移动。</p>
           <div class="jq-tray" id="jq-tray"></div>
           <div class="btn-grid">
             <button id="jq-random" class="btn plain">🎲 随机布阵</button>
@@ -485,7 +503,7 @@
           <div class="think-progress hidden" id="jq-think-progress"><i></i></div>
           <div class="thinklog" id="jq-think-log"><div class="empty">对局时自动输出深度 / 节点 / 评估 / 主变</div></div>
         </div>
-        <details class="rules" open><summary>规则速查</summary><p>每方 25 枚：<b>司令&gt;军长&gt;师长&gt;旅长&gt;团长&gt;营长&gt;连长&gt;排长&gt;工兵</b>，大吃小、同级同归于尽。<b>炸弹</b>与任何子互炸；<b>地雷</b>只有工兵能挖，其余撞上自亡；<b>军旗</b>不可移动，被扛即负。<b>行营</b>（圆圈）内的子不可被攻击；<b>铁路</b>（双线）上普通子直线滑行、工兵可任意拐弯；公路与行营斜线每次一步。布阵约束：军旗入大本营、地雷限后两排、炸弹不进第一排、行营留空。无子可动者判负，240 手判和。</p><p><b>揭棋（暗棋）玩法</b>：双方棋子对对方暗置，自己始终可见己方；己方棋子攻击对方暗子时守方翻明，攻方不翻明——吃子后继续潜伏，攻方阵亡则守方保持明牌。人机模式下明棋 / 揭棋都支持自定义摆阵（也可随机布阵）。</p></details>
+        <details class="rules" open><summary>规则速查</summary><p>每方 25 枚：<b>司令&gt;军长&gt;师长&gt;旅长&gt;团长&gt;营长&gt;连长&gt;排长&gt;工兵</b>，大吃小、同级同归于尽。<b>炸弹</b>与任何子互炸；<b>地雷</b>只有工兵能挖，其余撞上自亡；<b>军旗</b>不可移动，被扛即负。<b>行营</b>（圆圈）内的子不可被攻击；<b>大本营</b>（方框）里的子对局中不可再移动（仍可被吃）；<b>铁路</b>（双线枕木）上普通子直线滑行、工兵可任意拐弯；公路与行营斜线每次一步。布阵约束：军旗入大本营、地雷限后两排、炸弹不进第一排、行营留空。<b>司令阵亡</b>则该方军旗亮出。无子可动者判负；连续 120 步无吃子或总 500 手判和。</p><p><b>揭棋（暗棋）玩法</b>：双方棋子对对方暗置，自己始终可见己方；静默移动不翻明，<b>交战双方同时翻明</b>——胜者亮牌驻守，亡者曝光入殓；暗工兵拐弯走法会自曝身份，这是揭棋的信息博弈之一。人机模式下明棋 / 揭棋都支持自定义摆阵（也可随机布阵）。</p></details>
       </aside>
     </div>
   </section>

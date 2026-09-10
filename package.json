@@ -11,7 +11,8 @@
     "typecheck": "tsc --noEmit",
     "test:engine": "esbuild tests/engine.test.mts --bundle --platform=node --format=esm --outfile=.tmp/engine.test.mjs --log-level=warning && node .tmp/engine.test.mjs",
     "test:junqi": "esbuild tests/junqi.test.mts --bundle --platform=node --format=esm --outfile=.tmp/junqi.test.mjs --log-level=warning && node .tmp/junqi.test.mjs",
-    "test": "npm run test:engine && npm run test:junqi"
+    "test:rapfi": "node tests/rapfi.test.cjs",
+    "test": "npm run test:engine && npm run test:junqi && npm run test:rapfi"
   },
   "devDependencies": {
     "typescript": "^5.7.0",

@@ -2,7 +2,7 @@
 import {
   randomBoard, randomLayout, legalMoves, allJqMoves, resolve, hasAnyMove, isCamp, isHQ, sideOfNode, ADJ,
   idx, rowOf, colOf, canMoveType, validateLayout, layoutComplete, autofillLayout,
-  makeJqMove, undoJqMove, ownHalf,
+  makeJqMove, undoJqMove, ownHalf, DRAW_NO_CAPTURE, MAX_MOVES,
   type Board, type Piece, type Side, type PType,
 } from '../src/junqi/rules';
 import { findBestMove, evaluate, HIDDEN_VAL } from '../src/junqi/ai';
@@ -114,13 +114,23 @@ console.log('== 棋盘结构 ==');
   check('行营为标准梅花形（每方 5 个）', allCamps.every(isCamp) && [...Array(60).keys()].filter(isCamp).length === 10);
   // 行营不在大本营行、不在前线行
   check('行营不在前线/大本营排', allCamps.every((i) => rowOf(i) !== 5 && rowOf(i) !== 6 && rowOf(i) !== 0 && rowOf(i) !== 11));
-  // 每方 12 条斜线：行营菱形四角各有 2 条斜线，中心有 4 条
+  // 每方 16 条斜线：行营菱形四角各 4 条斜线（含边列节点 (3,0)/(3,4) 入营），中心 4 条
   const deg = (i: number) => ADJ[i].length;
   check('行营中心 (3,2)/(8,2) 有 8 条邻边（4 斜 + 4 直）', deg(idx(3, 2)) === 8 && deg(idx(8, 2)) === 8);
-  check('行营四角各有 7 条邻边（3 斜 + 4 直）', [[2, 1], [2, 3], [4, 1], [4, 3]].every(([r, c]) => deg(idx(r, c)) === 7) && [[7, 1], [7, 3], [9, 1], [9, 3]].every(([r, c]) => deg(idx(r, c)) === 7));
+  check('行营四角各有 8 条邻边（4 斜 + 4 直）', [[2, 1], [2, 3], [4, 1], [4, 3]].every(([r, c]) => deg(idx(r, c)) === 8) && [[7, 1], [7, 3], [9, 1], [9, 3]].every(([r, c]) => deg(idx(r, c)) === 8));
+  {
+    // 斜线 = 非铁路且行/列同时变化的边；双向计数 64 = 每方 16 条
+    let diag = 0;
+    ADJ.forEach((edges, i) => edges.forEach((e) => {
+      if (!e.rail && rowOf(i) !== rowOf(e.to) && colOf(i) !== colOf(e.to)) diag++;
+    }));
+    check('每方斜线恰 16 条（双向计数 64）', diag === 64, `diag=${diag}`);
+  }
   // 前线角 (5,0) 应有斜线通 (4,1)；(1,0) 应有斜线通 (2,1)
   const hasEdge = (a: number, bb: number) => ADJ[a].some((e) => e.to === bb && !e.rail);
   check('前线与第 1 排都有斜线入行营', hasEdge(idx(5, 0), idx(4, 1)) && hasEdge(idx(1, 0), idx(2, 1)) && hasEdge(idx(6, 4), idx(7, 3)) && hasEdge(idx(10, 4), idx(9, 3)));
+  // 边列节点 (3,0) 经斜线通向两营（行营逃逸线 / 边路入营）
+  check('第 3 排边列节点双向斜线入营', hasEdge(idx(2, 1), idx(3, 0)) && hasEdge(idx(4, 1), idx(3, 0)) && hasEdge(idx(2, 3), idx(3, 4)) && hasEdge(idx(4, 3), idx(3, 4)));
   // 三座桥在第 1/3/5 列（0 起：0/2/4），其余列不能过河
   const cross = (c: number, rail: boolean) => ADJ[idx(5, c)].some((e) => e.to === idx(6, c) && e.rail === rail);
   const anyCross = (c: number) => ADJ[idx(5, c)].some((e) => e.to === idx(6, c));
@@ -147,6 +157,22 @@ console.log('== 战斗 ==');
 // ── 不可动子 ──
 {
   check('地雷/军旗不可动', !canMoveType('地雷') && !canMoveType('军旗') && canMoveType('工兵'));
+}
+
+// ── 大本营驻子不可动 ──
+console.log('== 大本营 ==');
+{
+  const b = empty();
+  b[idx(11, 3)] = mk('r', '师长'); // 非军旗驻大本营 (11,3)
+  check('大本营驻子不可移动', legalMoves(b, idx(11, 3)).length === 0);
+  b[idx(10, 3)] = mk('b', '排长');
+  check('大本营驻子仍可被吃', legalMoves(b, idx(10, 3)).includes(idx(11, 3)));
+  // 只有旗与雷时仍判无子可动（大本营驻子等同）
+  const b2 = empty();
+  b2[idx(11, 1)] = mk('r', '军旗');
+  b2[idx(11, 3)] = mk('r', '司令'); // 驻大本营，动不了
+  b2[idx(0, 2)] = mk('b', '司令');
+  check('只剩大本营驻子判无子可动', !hasAnyMove(b2, 'r') && hasAnyMove(b2, 'b'));
 }
 
 // ── 无子可动判定 ──
@@ -245,6 +271,35 @@ console.log('== 揭棋 ==');
   b[idx(0, 0)] = { ...mk('r', '工兵'), hidden: true };
   const mv = legalMoves(b, idx(0, 0));
   check('揭棋暗置工兵走法不变（可拐弯）', mv.includes(idx(5, 4)) && mv.includes(idx(11, 0)), `${mv.length} 落点`);
+  // 交战翻明：双方同时翻明，undo 完整还原
+  const bc = empty();
+  const att = { ...mk('r', '师长'), hidden: true };
+  const def = { ...mk('b', '连长'), hidden: true };
+  bc[idx(6, 0)] = att;   // (6,0)-(5,0) 为桥（铁路）
+  bc[idx(5, 0)] = def;
+  const recC = makeJqMove(bc, idx(6, 0), idx(5, 0));
+  check('交战双方同时翻明', !att.hidden && !def.hidden && recC.attHidden1 === false && recC.defHidden1 === false);
+  check('吃子结果正确', !recC.attOut && recC.defOut);
+  undoJqMove(bc, recC);
+  check('undo 还原翻明位', att.hidden === true && def.hidden === true);
+  // 静默移动不翻明
+  const bq = empty();
+  const mover = { ...mk('r', '师长'), hidden: true };
+  bq[idx(6, 0)] = mover;
+  makeJqMove(bq, idx(6, 0), idx(6, 1)); // 前线铁路安静走一步
+  check('静默移动不翻明', mover.hidden === true);
+  // 司令阵亡 → 军旗亮出，undo 还原
+  const bf = empty();
+  const cmd = { ...mk('r', '司令'), hidden: true };
+  bf[idx(6, 0)] = cmd;
+  bf[idx(5, 0)] = mk('b', '炸弹');
+  bf[idx(11, 1)] = { ...mk('r', '军旗'), hidden: true };
+  const recF = makeJqMove(bf, idx(6, 0), idx(5, 0)); // 司令撞炸弹同尽 → 红旗亮出
+  check('司令阵亡亮军旗', recF.revealedFlag !== null && recF.revealedFlag.side === 'r' && recF.revealedFlag.hidden === false && recF.flagNode === idx(11, 1));
+  undoJqMove(bf, recF);
+  check('undo 还原军旗 hidden', bf[idx(11, 1)]!.hidden === true);
+  // 和棋常量
+  check('无吃子判和步数 = 120 / 总手数 = 500', DRAW_NO_CAPTURE === 120 && MAX_MOVES === 500);
   // 揭棋评估：暗子按期望值计（不享受前进加分；明子正常计）
   const bh = empty();
   bh[idx(11, 1)] = { ...mk('r', '司令'), hidden: true };
@@ -254,8 +309,8 @@ console.log('== 揭棋 ==');
   bo[idx(0, 1)] = mk('b', '司令');
   const evHidden = evaluate(bh, true);
   const evOpen = evaluate(bo, false);
-  // 红司令(11,1) adv=5 → +15；蓝司令(0,1) adv=5 → +15；双方明司令抵消为 0
-  const expHidden = HIDDEN_VAL - (600 + 15);
+  // 红司令(11,1) adv=5 → +5×3×0.3=+4.5；蓝司令(0,1) 同；双方明司令抵消为 0
+  const expHidden = HIDDEN_VAL - (600 + 4.5);
   check('揭棋暗子按期望值评估', evOpen === 0 && Math.abs(evHidden - expHidden) < 0.01, `hidden=${evHidden} open=${evOpen} exp=${expHidden}`);
 }
 

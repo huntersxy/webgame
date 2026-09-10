@@ -4,18 +4,23 @@
  *  棋盘：12 行 × 5 列节点，双方各 6 行。
  *    • 行营（每方 5 个，以己方第 3 排中心为心的梅花形）：
  *      内有子不可被攻击，布阵时必须为空
- *    • 大本营（每方 2 个，底线）：军旗必须置于其一
+ *    • 大本营（每方 2 个，底线）：军旗必须置于其一；
+ *      任何棋子一旦驻入大本营，对局中不可再移动（仍可被吃）
  *    • 铁路：双方前线行 + 左右边列 + 三座桥，普通子直线滑行，
  *      工兵可在铁路网内任意拐弯
- *    • 公路：其余连线（含 12 条行营斜线），一步
+ *    • 公路：其余连线（含每方 16 条行营斜线），一步
  *    • 河流：仅第 1/3/5 列（两端铁路与中路）三座桥可渡
  *  兵种（每方 25 枚）：司令1 军长1 师长2 旅长2 团长2 营长2
  *    连长3 排长3 工兵3 炸弹2 地雷3 军旗1
  *  吃子：大吃小，同级同归于尽；炸弹与任何子互炸；
  *    地雷只有工兵能挖，其余撞雷自亡；触军旗即扛旗获胜。
+ *  司令阵亡：该方军旗立即亮出（对双方可见）。
+ *  胜负：扛旗 / 对方无子可动判胜；连续 DRAW_NO_CAPTURE 步无吃子
+ *    或总计 MAX_MOVES 步判和。
  *  揭棋（暗棋）：hidden = 对对方暗置。己方棋子自己全程可见；
- *    攻击对方暗子时守方翻明；攻方无论胜负都不翻明（攻方胜则
- *    保持暗置继续潜伏，攻方亡则守方保持明牌）。
+ *    交战（吃子）时双方同时翻明，静默移动不翻明——攻方胜则
+ *    亮牌驻守，攻方亡则守方保持明牌。走法按真实兵种生成
+ *    （暗工兵拐弯即自曝身份，是揭棋的信息博弈之一）。
  * ──────────────────────────────────────────────────────────── */
 
 export const COLS = 5;
@@ -45,6 +50,10 @@ export const isHQ = (i: number): boolean => HQS.b.includes(i) || HQS.r.includes(
 export const sideOfNode = (i: number): Side => (rowOf(i) <= 5 ? 'b' : 'r');
 export const ownHalf = (i: number, s: Side): boolean => (s === 'b' ? rowOf(i) <= 5 : rowOf(i) >= 6);
 
+/** 和棋判定：连续无吃子步数 / 总手数上限 */
+export const DRAW_NO_CAPTURE = 120;
+export const MAX_MOVES = 500;
+
 /** 邻接表：rail=true 铁路 */
 interface Edge { to: number; rail: boolean }
 export const ADJ: Edge[][] = (() => {
@@ -64,17 +73,23 @@ export const ADJ: Edge[][] = (() => {
       add(idx(r, c), idx(r + 1, c), c === 0 || c === 4);
     }
   }
-  // 行营斜线（公路）：每方 12 条，从第 1 排一直连到前线，
+  // 行营斜线（公路）：每方 16 条——四个角营各连 4 条对角线，
+  // 中营连 4 个角营；边列节点 (3,0)/(3,4) 也经斜线通向相邻两营，
+  // 为行营子力提供通往边路铁路的逃逸线。
   // 蓝方以 (3,2) 行营为中心的梅花链，红方以 (8,2) 为中心镜像
   add(idx(1, 0), idx(2, 1), false); add(idx(1, 2), idx(2, 1), false);
   add(idx(1, 2), idx(2, 3), false); add(idx(1, 4), idx(2, 3), false);
   add(idx(2, 1), idx(3, 2), false); add(idx(2, 3), idx(3, 2), false);
+  add(idx(2, 1), idx(3, 0), false); add(idx(2, 3), idx(3, 4), false);
+  add(idx(3, 0), idx(4, 1), false); add(idx(3, 4), idx(4, 3), false);
   add(idx(3, 2), idx(4, 1), false); add(idx(3, 2), idx(4, 3), false);
   add(idx(4, 1), idx(5, 0), false); add(idx(4, 1), idx(5, 2), false);
   add(idx(4, 3), idx(5, 2), false); add(idx(4, 3), idx(5, 4), false);
   add(idx(10, 0), idx(9, 1), false); add(idx(10, 2), idx(9, 1), false);
   add(idx(10, 2), idx(9, 3), false); add(idx(10, 4), idx(9, 3), false);
   add(idx(9, 1), idx(8, 2), false); add(idx(9, 3), idx(8, 2), false);
+  add(idx(9, 1), idx(8, 0), false); add(idx(9, 3), idx(8, 4), false);
+  add(idx(8, 0), idx(7, 1), false); add(idx(8, 4), idx(7, 3), false);
   add(idx(8, 2), idx(7, 1), false); add(idx(8, 2), idx(7, 3), false);
   add(idx(7, 1), idx(6, 0), false); add(idx(7, 1), idx(6, 2), false);
   add(idx(7, 3), idx(6, 2), false); add(idx(7, 3), idx(6, 4), false);
@@ -122,6 +137,7 @@ function destOk(board: Board, i: number, me: Side): boolean {
 export function legalMoves(board: Board, from: number): number[] {
   const p = board[from];
   if (!p || !canMoveType(p.type)) return [];
+  if (isHQ(from)) return []; // 驻入大本营的棋子不可再移动（仍可被吃）
   const out = new Set<number>();
   const fr = rowOf(from);
   const fc = colOf(from);
@@ -335,7 +351,7 @@ export function randomBoard(): Board {
   return board;
 }
 
-/* ── 可逆走子（搜索用） ────────────────────────────────────── */
+/* ── 可逆走子（搜索与对局共用，含揭棋翻明与司令亮旗） ─────── */
 
 export interface JqMoveRec {
   from: number;
@@ -345,28 +361,63 @@ export interface JqMoveRec {
   attOut: boolean;
   defOut: boolean;
   flag: boolean;
+  /** 翻明前/后的 hidden 状态（哈希与撤销都要用） */
+  attHidden0: boolean;
+  attHidden1: boolean;
+  defHidden0: boolean;
+  defHidden1: boolean;
+  /** 司令阵亡导致的亮旗：被翻明的军旗与其节点 */
+  revealedFlag: Piece | null;
+  flagNode: number;
 }
 
-/** 在 board 上执行 from→to 并返回可撤销记录（不处理暗子翻明） */
+/**
+ * 在 board 上执行 from→to 并返回可撤销记录。
+ * 揭棋翻明与司令亮旗都在此统一处理，保证搜索树与真实对局
+ * 的信息状态完全一致。
+ */
 export function makeJqMove(board: Board, from: number, to: number): JqMoveRec {
   const att = board[from]!;
   const def = board[to] ?? null;
   board[from] = null;
-  const rec: JqMoveRec = { from, to, att, def, attOut: false, defOut: false, flag: false };
-  if (!def) { board[to] = att; return rec; }
+  const rec: JqMoveRec = {
+    from, to, att, def, attOut: false, defOut: false, flag: false,
+    attHidden0: !!att.hidden, attHidden1: !!att.hidden,
+    defHidden0: !!def?.hidden, defHidden1: !!def?.hidden,
+    revealedFlag: null, flagNode: -1,
+  };
+  if (!def) { board[to] = att; return rec; } // 静默移动不翻明
+  // 交战：双方同时翻明
+  if (def.hidden) { def.hidden = false; rec.defHidden1 = false; }
+  if (att.hidden) { att.hidden = false; rec.attHidden1 = false; }
   const r = resolve(att, def);
   if (r.flag) { rec.flag = true; rec.defOut = true; board[to] = att; return rec; }
-  if (r.a && r.d) { rec.attOut = true; rec.defOut = true; board[to] = null; return rec; }
-  if (r.a) { rec.attOut = true; board[to] = def; return rec; }
-  rec.defOut = true;
-  board[to] = att;
+  if (r.a && r.d) { rec.attOut = true; rec.defOut = true; board[to] = null; }
+  else if (r.a) { rec.attOut = true; board[to] = def; }
+  else { rec.defOut = true; board[to] = att; }
+  // 司令阵亡 → 该方军旗亮出
+  let dead: Piece | null = null;
+  if (rec.defOut && rec.attOut) dead = def.type === '司令' ? def : att.type === '司令' ? att : null;
+  else if (rec.attOut) dead = att.type === '司令' ? att : null;
+  else if (rec.defOut) dead = def.type === '司令' ? def : null;
+  if (dead) {
+    const fn = board.findIndex((q) => q && q.side === dead!.side && q.type === '军旗');
+    if (fn >= 0 && board[fn]!.hidden) {
+      board[fn]!.hidden = false;
+      rec.revealedFlag = board[fn]!;
+      rec.flagNode = fn;
+    }
+  }
   return rec;
 }
 
-/** 撤销 makeJqMove */
+/** 撤销 makeJqMove（含翻明/亮旗回滚） */
 export function undoJqMove(board: Board, rec: JqMoveRec): void {
   board[rec.from] = rec.att;
   board[rec.to] = rec.def;
+  rec.att.hidden = rec.attHidden0 ? true : undefined;
+  if (rec.def) rec.def.hidden = rec.defHidden0 ? true : undefined;
+  if (rec.revealedFlag) rec.revealedFlag.hidden = true;
 }
 
 export interface JqMove { from: number; to: number }

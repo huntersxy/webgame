@@ -1,16 +1,19 @@
 /* ────────────────────────────────────────────────────────────
- *  junqi/ai.ts — 军棋 AI：评估 + Alpha-Beta + 置换表 + 杀手着
+ *  junqi/ai.ts — 军棋 AI：动态评估 + Alpha-Beta(PVS) + 置换表 + 杀手着
  *
  *  与五子棋 / 象棋共用 core 里的 Zobrist 与置换表。
  *  揭棋（暗棋）近似：hidden = 对对方暗置。走法按真实兵种生成
- *  （保证合法），评估对所有暗子使用期望子力值 —— AI 不依赖暗子
- *  的具体身份做决策（对称近似，不利用己方暗子信息）。
+ *  （保证合法），评估对所有暗子统一使用期望子力值——AI 不依赖
+ *  暗子身份做决策（对称近似，保证 negamax 一致性）；交战翻明
+ *  与司令亮旗在 make/undo 中统一处理，搜索树信息状态与真实
+ *  对局完全一致，翻明后的子力摆动自然进入评估。
+ *  各档位均迭代加深（复用置换表），带节点/时间预算。
  * ──────────────────────────────────────────────────────────── */
 
 import type { Difficulty, GameMode, SearchResult } from '../types';
 import {
   COLS, ROWS, PIECE_COUNTS, canMoveType, allJqMoves, makeJqMove, undoJqMove,
-  rowOf, colOf, other, isCamp, type Board, type Side, type PType, type JqMove,
+  rowOf, colOf, other, isCamp, ADJ, type Board, type Side, type PType, type JqMove, type JqMoveRec,
 } from './rules';
 import { Zobrist } from '../core/zobrist';
 import { TranspositionTable } from '../core/transposition';
@@ -18,16 +21,22 @@ import { TranspositionTable } from '../core/transposition';
 export const JQ_LEVEL_CONFIG: Record<Difficulty, { name: string; depth: number }> = {
   1: { name: '简单', depth: 1 },
   2: { name: '普通', depth: 2 },
-  3: { name: '困难', depth: 3 },
-  4: { name: '😈恶魔', depth: 6 },
+  3: { name: '困难', depth: 4 },
+  4: { name: '😈恶魔', depth: 8 },
 };
 
 export const JQ_MATE = 1_000_000;
 
-/** 子力价值 */
+/** 基础子力价值 */
 export const VALUE: Record<PType, number> = {
   司令: 600, 军长: 520, 师长: 440, 旅长: 360, 团长: 300, 营长: 250,
   连长: 200, 排长: 150, 工兵: 230, 炸弹: 330, 地雷: 260, 军旗: 0,
+};
+
+/** 前进意愿权重：中低子积极抢占要点，司令/炸弹/工兵保持纵深 */
+const ADV_W: Record<PType, number> = {
+  司令: 0.3, 军长: 0.5, 师长: 0.8, 旅长: 0.9, 团长: 1, 营长: 1,
+  连长: 1, 排长: 1, 工兵: 0.4, 炸弹: 0.3, 地雷: 0, 军旗: 0,
 };
 
 /** 揭棋暗子的期望子力值（25 枚编制的平均值）——对双方未知的子统一按期望计 */
@@ -68,15 +77,18 @@ function boardHash(board: Board, turn: Side): number {
   return h >>> 0;
 }
 
-/** 走子后增量维护哈希（att/def 的 hidden 位按翻明规则更新） */
-function deltaHash(h: number, rec: ReturnType<typeof makeJqMove>): number {
+/** 走子后增量维护哈希：hidden 位按 make/undo 的翻明记录同步 */
+function deltaHash(h: number, rec: JqMoveRec): number {
   let nh = h;
-  nh ^= zkey(rec.from, rec.att.type, !!rec.att.hidden);
-  if (!rec.attOut) nh ^= zkey(rec.to, rec.att.type, false); // 走子即翻明
+  nh ^= zkey(rec.from, rec.att.type, rec.attHidden0);
+  if (!rec.attOut) nh ^= zkey(rec.to, rec.att.type, rec.attHidden1);
   if (rec.def) {
-    const dOld = zkey(rec.to, rec.def.type, !!rec.def.hidden);
-    nh ^= dOld;
-    if (!rec.defOut) nh ^= zkey(rec.to, rec.def.type, false); // 交战守方翻明
+    nh ^= zkey(rec.to, rec.def.type, rec.defHidden0);
+    if (!rec.defOut) nh ^= zkey(rec.to, rec.def.type, rec.defHidden1);
+  }
+  if (rec.revealedFlag && rec.flagNode >= 0) {
+    nh ^= zkey(rec.flagNode, rec.revealedFlag.type, true);
+    nh ^= zkey(rec.flagNode, rec.revealedFlag.type, false);
   }
   return nh >>> 0;
 }
@@ -85,24 +97,63 @@ function dist(a: number, b: number): number {
   return Math.abs(rowOf(a) - rowOf(b)) + Math.abs(colOf(a) - colOf(b));
 }
 
-/** 静态评估（红方视角）。flip=揭棋：暗子按期望值计 */
+/** 静态评估（红方视角）。flip=揭棋：双方暗子统一按期望值计 */
 export function evaluate(board: Board, flip: boolean): number {
   let score = 0;
-  let rFlag = -1;
-  let bFlag = -1;
+  let rFlag = -1, bFlag = -1;
+  let rMines = 0, bMines = 0;
+  let rBomb = 0, bBomb = 0;      // 明置炸弹存活数
+  let rCmd = -1, bCmd = -1;      // 明置司令位置
+  let rBigDead = true, bBigDead = true; // 敌方司令/军长是否全灭（红视角下 bBigDead）
+
   for (let i = 0; i < board.length; i++) {
     const p = board[i];
     if (!p) continue;
     let v = p.hidden ? HIDDEN_VAL : VALUE[p.type];
     if (!p.hidden && canMoveType(p.type)) {
       const adv = p.side === 'r' ? rowOf(i) - 6 : 5 - rowOf(i);
-      v += adv * 3;
-      if (isCamp(i)) v += 6;
+      v += adv * 3 * ADV_W[p.type];
+      if (isCamp(i)) v += p.type === '司令' ? 10 : 6;
     }
     score += p.side === 'r' ? v : -v;
     if (p.type === '军旗') { if (p.side === 'r') rFlag = i; else bFlag = i; }
+    if (p.hidden) continue;
+    if (p.type === '地雷') { if (p.side === 'r') rMines++; else bMines++; }
+    else if (p.type === '炸弹') { if (p.side === 'r') rBomb++; else bBomb++; }
+    else if (p.type === '司令') { if (p.side === 'r') rCmd = i; else bCmd = i; }
+    if (p.type === '司令' || p.type === '军长') {
+      if (p.side === 'r') rBigDead = false; else bBigDead = false;
+    }
   }
-  // 挖旗威胁：敌方已翻明的工兵/炸弹逼近己方军旗 → 压力
+
+  // 动态权重：敌方明雷越多，己方工兵越值钱；敌方大子尽墨则炸弹贬值
+  for (let i = 0; i < board.length; i++) {
+    const p = board[i];
+    if (!p || p.hidden) continue;
+    const red = p.side === 'r';
+    if (p.type === '工兵') {
+      const mines = red ? bMines : rMines;
+      if (mines) score += (red ? 1 : -1) * mines * 30;
+    } else if (p.type === '炸弹') {
+      const bigAlive = red ? !bBigDead : !rBigDead;
+      score += (red ? 1 : -1) * (bigAlive ? 40 : -40);
+    }
+  }
+  // 司令暴露惩罚：敌方仍有明置炸弹而己方司令孤军深入
+  if (rCmd >= 0 && bBomb > 0 && rowOf(rCmd) <= 5) score -= (6 - rowOf(rCmd)) * 5;
+  if (bCmd >= 0 && rBomb > 0 && rowOf(bCmd) >= 6) score += (rowOf(bCmd) - 5) * 5;
+
+  // 旗区：守备加成（己方可动子护旗）与威胁（敌子逼近己旗）
+  const guard = (flag: number, own: Side): number => {
+    if (flag < 0) return 0;
+    let g = 0;
+    for (const e of ADJ[flag]) {
+      const q = board[e.to];
+      if (!q || q.side !== own || q.hidden || !canMoveType(q.type)) continue;
+      g += 9;
+    }
+    return Math.min(g, 27);
+  };
   const threat = (flag: number, enemy: Side): number => {
     if (flag < 0) return 0;
     let t = 0;
@@ -110,17 +161,19 @@ export function evaluate(board: Board, flip: boolean): number {
       const p = board[i];
       if (!p || p.side !== enemy || p.hidden) continue;
       const d = dist(i, flag);
-      if (p.type === '工兵') t += Math.max(0, 42 - d * 7);
-      else if (p.type === '炸弹') t += Math.max(0, 24 - d * 5);
+      if (p.type === '工兵') t += Math.max(0, 50 - d * 9);
+      else if (p.type === '炸弹') t += Math.max(0, 28 - d * 6);
+      else if (p.type === '司令' || p.type === '军长') t += Math.max(0, 18 - d * 3);
     }
     return t;
   };
+  score += guard(rFlag, 'r') - guard(bFlag, 'b');
   score -= threat(rFlag, 'b');
   score += threat(bFlag, 'r');
   return score;
 }
 
-/** 走法排序分：吃大子优先，避撞明雷；空步向前 */
+/** 走法排序分：吃大子优先，避撞明雷，入营与弱子推进加分（确定性） */
 function orderScore(board: Board, m: JqMove): number {
   const def = board[m.to];
   const att = board[m.from]!;
@@ -131,14 +184,16 @@ function orderScore(board: Board, m: JqMove): number {
     return 8000 + dv * 10 - VALUE[att.type];
   }
   const adv = att.side === 'r' ? rowOf(m.to) - rowOf(m.from) : rowOf(m.from) - rowOf(m.to);
-  let s = adv * 8;
-  // 工兵沿铁路机动（去挖雷）加一点分
-  if (att.type === '工兵') s += 6;
+  let s = adv * 8 * ADV_W[att.type];
+  if (isCamp(m.to)) s += 30; // 入行营受保护
+  if (att.type === '工兵') s += 6; // 工兵沿铁路机动（去挖雷）
   return s;
 }
 
-function orderMoves(board: Board, moves: JqMove[]): JqMove[] {
-  for (const m of moves) (m as JqMove & { ord?: number }).ord = orderScore(board, m) + Math.random();
+function orderMoves(board: Board, moves: JqMove[], jitter = false): JqMove[] {
+  for (const m of moves) {
+    (m as JqMove & { ord?: number }).ord = orderScore(board, m) + (jitter ? Math.random() : 0);
+  }
   moves.sort((a, b) => (b as JqMove & { ord: number }).ord - (a as JqMove & { ord: number }).ord);
   return moves;
 }
@@ -152,7 +207,7 @@ function quiesce(
   board: Board, alpha: number, beta: number, turn: Side, qd: number, ply: number, ctx: Ctx, hash: number,
 ): number {
   ctx.nodes++;
-  const nodeCap = ctx.level === 4 ? 1_200_000 : 150_000;
+  const nodeCap = ctx.level === 4 ? 1_200_000 : ctx.level === 3 ? 500_000 : 150_000;
   if (ctx.nodes > nodeCap) return (turn === 'r' ? 1 : -1) * evaluate(board, ctx.flip);
   if (ctx.deadline && typeof performance !== 'undefined' && performance.now() > ctx.deadline) {
     ctx.hitDeadline = true;
@@ -181,7 +236,7 @@ function alphaBeta(
   pv: JqMove[], ctx: Ctx, hash: number,
 ): number {
   ctx.nodes++;
-  const nodeCap = ctx.level === 4 ? 1_400_000 : 150_000;
+  const nodeCap = ctx.level === 4 ? 1_500_000 : ctx.level === 3 ? 500_000 : 150_000;
   if (ctx.nodes > nodeCap) return (turn === 'r' ? 1 : -1) * evaluate(board, ctx.flip);
   if (ctx.deadline && typeof performance !== 'undefined' && performance.now() > ctx.deadline) {
     ctx.hitDeadline = true;
@@ -216,14 +271,24 @@ function alphaBeta(
   let best = -Infinity;
   let bestM = list[0];
   const origAlpha = alpha;
+  let first = true;
 
   for (const m of list) {
     const rec = makeJqMove(board, m.from, m.to);
     const childPV: JqMove[] = [];
     let v: number;
     if (rec.flag) v = JQ_MATE - ply;
-    else v = -alphaBeta(board, depth - 1, -beta, -alpha, other(turn), ply + 1, childPV, ctx, deltaHash(hash, rec));
+    else if (first) {
+      v = -alphaBeta(board, depth - 1, -beta, -alpha, other(turn), ply + 1, childPV, ctx, deltaHash(hash, rec));
+    } else {
+      // PVS：零窗试探，fail-high 再全窗重搜
+      v = -alphaBeta(board, depth - 1, -alpha - 1, -alpha, other(turn), ply + 1, [], ctx, deltaHash(hash, rec));
+      if (v > alpha && v < beta) {
+        v = -alphaBeta(board, depth - 1, -beta, -alpha, other(turn), ply + 1, childPV, ctx, deltaHash(hash, rec));
+      }
+    }
     undoJqMove(board, rec);
+    first = false;
 
     if (v > best) {
       best = v;
@@ -250,7 +315,7 @@ function moveText(board: Board, m: JqMove): string {
   return `${nm}${cap}(${rowOf(m.from) + 1},${colOf(m.from) + 1})`;
 }
 
-/** 主搜索入口 */
+/** 主搜索入口：全难度迭代加深，按档位给节点/时间预算 */
 export function findBestMove(
   board: Board,
   side: Side,
@@ -266,23 +331,28 @@ export function findBestMove(
   tt.clear();
   killers.fill(null);
 
-  const TIME_BUDGET_MS = demon ? (mode === 'aivai' ? 2400 : 2800) : 0;
+  const TIME_BUDGET_MS = demon ? (mode === 'aivai' ? 2200 : 2600) : 0;
   const ctx: Ctx = {
     nodes: 0, level: difficulty, mode, flip,
     deadline: TIME_BUDGET_MS ? (typeof performance !== 'undefined' ? performance.now() + TIME_BUDGET_MS : 0) : undefined,
   };
 
-  const allMoves = orderMoves(board, allJqMoves(board, side));
+  const allMoves = orderMoves(board, allJqMoves(board, side), true); // 根节点加微量抖动增多样性
   if (allMoves.length === 0) {
     return { move: null, depth: 0, nodes: 0, ms: 0, eval: 0, scores: [] };
   }
 
   const rootHash = boardHash(board, side);
 
-  /** 定深全根搜索（复用 TT） */
-  const runAtDepth = (depth: number) => {
+  /**
+   * 定深全根搜索（复用 TT）。
+   * pvs=true 时根着用零窗试探 + fail-high 全窗重搜（深度大时省节点），
+   * 此时未过线的候选分值是上界（仅影响展示排序，不影响选着）。
+   */
+  const runAtDepth = (depth: number, pvs: boolean) => {
     let best = allMoves[0];
     let bestV = -Infinity;
+    let rootAlpha = -Infinity;
     const bestPV: JqMove[] = [];
     const scored: Array<JqMove & { v: number }> = [];
     for (const m of allMoves) {
@@ -290,11 +360,21 @@ export function findBestMove(
       const pv: JqMove[] = [];
       let v: number;
       if (rec.flag) v = JQ_MATE;
-      else v = -alphaBeta(board, depth - 1, -Infinity, Infinity, other(side), 1, pv, ctx, deltaHash(rootHash, rec));
+      else if (!pvs || rootAlpha === -Infinity) {
+        v = -alphaBeta(board, depth - 1, -Infinity, Infinity, other(side), 1, pv, ctx, deltaHash(rootHash, rec));
+      } else {
+        v = -alphaBeta(board, depth - 1, -rootAlpha - 1, -rootAlpha, other(side), 1, [], ctx, deltaHash(rootHash, rec));
+        if (v > rootAlpha) {
+          const pv2: JqMove[] = [];
+          v = -alphaBeta(board, depth - 1, -Infinity, Infinity, other(side), 1, pv2, ctx, deltaHash(rootHash, rec));
+          pv.push(...pv2);
+        }
+      }
       undoJqMove(board, rec);
       if (!demon) v += Math.random() * (difficulty === 1 ? 140 : difficulty === 2 ? 40 : 10);
       scored.push({ ...m, v });
       if (v > bestV) { bestV = v; best = m; bestPV.length = 0; bestPV.push(m, ...pv); }
+      if (v > rootAlpha) rootAlpha = v;
     }
     scored.sort((a, b) => b.v - a.v);
     return { best, bestV, bestPV, scored };
@@ -309,22 +389,18 @@ export function findBestMove(
   }
 
   let res: ReturnType<typeof runAtDepth>;
-  let searchDepth = cfg.depth;
+  let searchDepth = 1;
 
-  if (demon) {
-    // 迭代加深：预算内能到多深就到多深；超时的残局结果不采纳
-    res = runAtDepth(2);
-    searchDepth = 2;
-    for (let d = 3; d <= cfg.depth; d++) {
-      if (pastDeadline()) break;
-      ctx.hitDeadline = false;
-      const r = runAtDepth(d);
-      if (ctx.hitDeadline) break;
-      res = r;
-      searchDepth = d;
-    }
-  } else {
-    res = runAtDepth(searchDepth);
+  // 迭代加深：预算内能到多深就到多深；超时的残局结果不采纳。
+  // 恶魔档开启根节点 PVS 省节点；低档全窗保证候选分值精确
+  res = runAtDepth(searchDepth, false);
+  for (let d = 2; d <= cfg.depth; d++) {
+    if (pastDeadline()) break;
+    ctx.hitDeadline = false;
+    const r = runAtDepth(d, demon);
+    if (ctx.hitDeadline) break;
+    res = r;
+    searchDepth = d;
   }
 
   const t1 = typeof performance !== 'undefined' ? performance.now() : Date.now();

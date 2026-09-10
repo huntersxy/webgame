@@ -7,6 +7,11 @@ import type { WorkerRequest, WorkerResponse, GomokuBoard, XqBoard, GomokuPlayer,
 import { findBestMove as gomokuSearch, findHintMove as gomokuHint } from '../gomoku/search';
 import { findBestMove as xqSearch, findHintMove as xqHint } from '../xiangqi/search';
 import { findBestMove as jqSearch, findHintMove as jqHint } from '../junqi/ai';
+import { RapfiEngine } from '../gomoku/rapfi';
+
+/** Rapfi WASM engine (gomocup-level). Falls back to the bundled JS
+ *  engine in gomoku/search.ts whenever the wasm fails to load. */
+const rapfi = new RapfiEngine();
 
 self.onmessage = (e: MessageEvent<WorkerRequest>) => {
   const req = e.data;
@@ -14,16 +19,24 @@ self.onmessage = (e: MessageEvent<WorkerRequest>) => {
   switch (req.type) {
     case 'gomoku-search': {
       const board = req.board as GomokuBoard;
-      const result = gomokuSearch(board, req.player as GomokuPlayer, req.difficulty, req.mode, req.historyLength);
-      const res: WorkerResponse = { type: 'search-result', result: result as any };
-      (self as unknown as Worker).postMessage(res);
+      const player = req.player as GomokuPlayer;
+      const { difficulty, mode, historyLength } = req;
+      rapfi
+        .findMove(board, player, difficulty, mode, historyLength, () =>
+          gomokuSearch(board, player, difficulty, mode, historyLength),
+        )
+        .then((result) => post({ type: 'search-result', result: result as any }));
       break;
     }
     case 'gomoku-hint': {
       const board = req.board as GomokuBoard;
-      const result = gomokuHint(board, req.player as GomokuPlayer, req.mode, req.historyLength);
-      const res: WorkerResponse = { type: 'search-result', result: result as any };
-      (self as unknown as Worker).postMessage(res);
+      const player = req.player as GomokuPlayer;
+      const { mode, historyLength } = req;
+      rapfi
+        .findMove(board, player, 4, mode, historyLength, () =>
+          gomokuHint(board, player, mode, historyLength),
+        )
+        .then((result) => post({ type: 'search-result', result: result as any }));
       break;
     }
     case 'xq-search': {
@@ -60,3 +73,7 @@ self.onmessage = (e: MessageEvent<WorkerRequest>) => {
       break;
   }
 };
+
+function post(res: WorkerResponse): void {
+  (self as unknown as Worker).postMessage(res);
+}

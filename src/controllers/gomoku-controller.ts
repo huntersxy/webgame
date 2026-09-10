@@ -106,7 +106,7 @@ export class GomokuController {
     this.redraw();
     const cfg = LEVEL_CONFIG[this.level];
     const modeName = this.mode === 'aivai' ? '🤖AI互搏观战' : (this.mode === 'pvp' ? '双人对战' : '人机对战');
-    setStats(document.getElementById('g-think-stats'), `新对局 · ${modeName} · 难度 <b>${cfg.name}</b> · depth${cfg.depth} / 宽度${cfg.limit} · 等待行棋…`);
+    setStats(document.getElementById('g-think-stats'), `新对局 · ${modeName} · 难度 <b>${cfg.name}</b> · 等待行棋…`);
     if (this.god) this.startGodTimer();
     if (this.mode === 'ai' && this.human === 2) this.aiMove();
     else if (this.mode === 'aivai') this.aiMove();
@@ -139,9 +139,9 @@ export class GomokuController {
     this.showThinking(true);
     toggleProgress(document.getElementById('g-think-progress'), true);
     const cfg = LEVEL_CONFIG[this.level];
-    this.setGlobalStatus(`AI 思考中…(${cfg.name} depth${cfg.depth})`);
+    this.setGlobalStatus(`AI 思考中…(${cfg.name})`);
     this.redraw();
-    setStats(document.getElementById('g-think-stats'), `⏳ <b>${cfg.name}</b> 运算中… depth${cfg.depth} / 宽度${cfg.limit} · 正在展开候选…`);
+    setStats(document.getElementById('g-think-stats'), `⏳ <b>${cfg.name}</b> 运算中… 正在展开候选…`);
     const delay = this.level === 4 ? 60 : (this.level === 3 ? 40 : 20);
     this._aiTimer = setTimeout(async () => {
       const aiPlayer = this.turn;
@@ -383,8 +383,8 @@ export class GomokuController {
       this.level = +v as Difficulty;
       applyDemonTheme('g', this.level, this.audio);
       const cfg = LEVEL_CONFIG[this.level];
-      setStats(document.getElementById('g-think-stats'), `难度切换 → <b>${cfg.name}</b> · depth${cfg.depth} / 宽度${cfg.limit}`);
-      appendLog(document.getElementById('g-think-log'), `⚙️ 难度切换 → <b>${cfg.name}</b> depth${cfg.depth} 宽${cfg.limit}${this.level === 4 ? ' · <span style="color:#ff6b6b">恶魔全开，不留情面</span>' : ''}`);
+      setStats(document.getElementById('g-think-stats'), `难度切换 → <b>${cfg.name}</b> · 棋力档 ${cfg.depth <= 2 ? '低' : cfg.depth >= 30 ? '满' : '中'}`);
+      appendLog(document.getElementById('g-think-log'), `⚙️ 难度切换 → <b>${cfg.name}</b>${this.level === 4 ? ' · <span style="color:#ff6b6b">恶魔全开，不留情面</span>' : ''}`);
       this.updatePanel();
     });
 
