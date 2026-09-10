@@ -44,6 +44,8 @@ export class GomokuController {
   private _animFrame: number | null = null;
   private _down: { x: number; y: number } | null = null;
   private _openingWarned = false;
+  /** 搜索代次：每次重置局面 +1，用于作废「重置前发出、重置后才返回」的旧结果 */
+  private _searchSeq = 0;
   private _engineLogged = false;
   private _warmed = false;
   private _warming = false;
@@ -93,6 +95,7 @@ export class GomokuController {
 
   newGame(): void {
     resetGomokuWarmDepth(); // new game → drop any warm-start adaptive depth
+    this._searchSeq++; // 在途搜索的结果作废（clearTimeout 拦不住已经 await 出去的那次）
     if (this._aiTimer) { clearTimeout(this._aiTimer); this._aiTimer = null; }
     if (this._godTimer) { clearInterval(this._godTimer); this._godTimer = null; }
     this.board = createBoard();
@@ -117,6 +120,19 @@ export class GomokuController {
     if (this.mode === 'ai' && this.human === 2) this.aiMove();
     else if (this.mode === 'aivai') this.aiMove();
     else this.refreshGod();
+  }
+
+  /** 兜底：从给定点向外找第一个空点（引擎返回非法着法时用；棋盘满则返回 null） */
+  private firstEmptyNear(x: number, y: number): GomokuMove | null {
+    for (let r = 0; r <= 14; r++) {
+      for (let dy = -r; dy <= r; dy++) {
+        for (let dx = -r; dx <= r; dx++) {
+          const nx = x + dx, ny = y + dy;
+          if (inBounds(nx, ny) && this.board[ny][nx] === 0) return { x: nx, y: ny, v: 0 };
+        }
+      }
+    }
+    return null;
   }
 
   private place(x: number, y: number): boolean {
@@ -149,10 +165,15 @@ export class GomokuController {
     this.redraw();
     setStats(document.getElementById('g-think-stats'), `⏳ <b>${cfg.name}</b> 运算中… 正在展开候选…`);
     const delay = this.level === 4 ? 60 : (this.level === 3 ? 40 : 20);
+    const seq = ++this._searchSeq;
     this._aiTimer = setTimeout(async () => {
       const aiPlayer = this.turn;
       const lesson = this.level === 4 ? checkLesson(cloneBoard(this.board)) : null;
       const res = await this.ai.searchGomoku(cloneBoard(this.board), aiPlayer, this.level, this.mode, this.history.length);
+      // 这段 await 期间局面可能已被重置（新开局 / 换执子 / 换模式都会走 newGame）。
+      // 不作校验的话，为旧局面算出的着法会落到新棋盘上——甚至直接盖掉玩家
+      // 刚落下的子（表现为「AI 下在我的棋子上」）。
+      if (seq !== this._searchSeq) return;
       let m = res.move;
       // Demon memory: if this exact position was lost before and the search
       // wants to repeat the losing move, pick the next-best scored candidate.
@@ -162,6 +183,14 @@ export class GomokuController {
           appendLog(document.getElementById('g-think-log'), `📖 <b>恶魔记忆</b>：此局面前次走 (${lesson.x},${lesson.y}) 落败（第${lesson.count}次教训）→ 改走 <b>(${alt.x},${alt.y})</b>`);
           m = alt;
         }
+      }
+      // 兜底：引擎若返回越界或已占用的点，绝不覆盖盘上已有的棋子
+      if (m && (!inBounds(m.x, m.y) || this.board[m.y][m.x] !== 0)) {
+        const alt = (res.scores || []).find((s) => inBounds(s.x, s.y) && this.board[s.y][s.x] === 0);
+        const fix = alt ?? this.firstEmptyNear(m.x, m.y);
+        appendLog(document.getElementById('g-think-log'),
+          `⚠️ 引擎返回非法落点 (${m.x},${m.y})，已改用 ${fix ? `(${fix.x},${fix.y})` : '无可用空点'}`);
+        m = fix ?? null;
       }
       this.thinkCandidates = (res.scores || []).map((s, i) => ({ ...s, rank: i + 1 }));
       this.thinking = false;

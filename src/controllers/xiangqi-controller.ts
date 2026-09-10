@@ -50,6 +50,8 @@ export class XiangqiController {
   private godMove: XqMove | null = null;
   private godThinking = false;
   private _aiTimer: ReturnType<typeof setTimeout> | null = null;
+  /** 搜索代次：重置局面时 +1，作废「重置前发出、重置后才返回」的旧结果 */
+  private _searchSeq = 0;
   private _godTimer: ReturnType<typeof setInterval> | null = null;
   private _haltAivai = false;
   private _animFrame: number | null = null;
@@ -95,6 +97,7 @@ export class XiangqiController {
 
   newGame(): void {
     resetXqWarmDepth(); // new game → drop any warm-start adaptive depth
+    this._searchSeq++; // 在途搜索作废
     if (this._aiTimer) { clearTimeout(this._aiTimer); this._aiTimer = null; }
     if (this._godTimer) { clearInterval(this._godTimer); this._godTimer = null; }
     this.board = createInitialBoard();
@@ -178,9 +181,12 @@ export class XiangqiController {
     this.redraw();
     setStats(document.getElementById('x-think-stats'), `⏳ <b>${who}·${cfg.name}</b> 运算中… depth${cfg.depth}+Q${cfg.qd} · 正在展开 ${this.level === 4 ? '全宽度+杀棋延伸' : 'Alpha-Beta'}…`);
     const delay = this.level === 4 ? 60 : 20;
+    const seq = ++this._searchSeq;
     this._aiTimer = setTimeout(async () => {
       const aiSide = this.turn;
       const res = await this.ai.searchXq(this.board.map((r) => [...r]), aiSide, this.level, this.mode, this.hist.length);
+      // 局面在这期间被重置（重新摆棋 / 换执子 / 换模式）→ 旧结果作废
+      if (seq !== this._searchSeq) return;
       const m = res.move;
       this.thinkMoves = (res.scores || []).map((s, i) => ({ ...s, rank: i + 1 }));
       this.thinking = false;
