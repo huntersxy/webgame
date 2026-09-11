@@ -24,7 +24,8 @@ export class TornadoController {
   private dpr = 1;
 
   constructor(private canvas: HTMLCanvasElement, private audio: AudioEngine) {
-    if (import.meta.env.DEV) (window as any).__tornadoGame = this.game;
+    // 调试/自动化用：暴露当前局面（转场连续性冒烟脚本会读它）
+    (window as any).__tornadoGame = this.game;
     this.section = document.getElementById('view-tornado');
     this.applyDpr();
     this.bind();

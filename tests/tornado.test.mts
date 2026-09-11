@@ -78,5 +78,168 @@ console.log('— 地形覆盖与 R_MAX —');
   assert(maxTr <= 130, `障碍半径上限 ${maxTr.toFixed(0)} ≤ 130`);
 }
 
+console.log('— 转场连续性（屏幕尺寸 / 世界偏移）—');
+{
+  // dispScreenR 就是屏幕上画出来的龙卷风半径：整个转场里它必须平滑，
+  // 换手帧尤其不能跳——那正是玩家抱怨的「转场时突然缩一下」。
+  const g = new TornadoGame();
+  const DT = 1 / 60;
+  let prevR = g.dispScreenR;
+  let prevTier = g.tier;
+  let prevState = g.state;
+  let maxTargetErr = 0;     // 换手瞬间屏幕半径与下一关标称值的偏差
+  let maxZoomStep = 0;      // 转场中单帧屏幕半径变化
+  let maxHandoffStep = 0;   // 换手所在的那一帧
+  let maxOffset = 0;
+  let maxShiftStep = 0;
+  let prevOff = { x: g.worldOffset.x, y: g.worldOffset.y };
+  let sawZoom = false;
+  let guard = 0;
+
+  while (g.state !== 'win' && guard++ < 4000) {
+    if (g.state === 'play') {
+      for (const o of g.objects) if (!o.dead) { o.dead = true; g.eaten++; }
+      g.r = Math.min(220, g.r + 6);        // 模拟稳定成长
+      // 让龙卷风偏离世界中心：世界偏移补偿与相机连续性都要在偏心位置成立
+      g.x = g.world / 2 + (guard % 7 - 3) * 60;
+      g.y = g.world / 2 + (guard % 5 - 2) * 70;
+    } else {
+      sawZoom = true;
+    }
+    const rBefore = g.dispScreenR;
+    const tierBefore = g.tier;
+    g.update(DT, { kx: 0, ky: 0, tx: null, ty: null });
+    const r = g.dispScreenR;
+
+    if (tierBefore !== g.tier) {
+      // 换手帧：屏幕半径应当正好落在新量级的标称值上（延续成立的充要条件）
+      const nominal = TIERS[g.tier].baseR * TIERS[g.tier].camScale;
+      maxTargetErr = Math.max(maxTargetErr, Math.abs(r - nominal));
+      maxHandoffStep = Math.max(maxHandoffStep, Math.abs(r - rBefore));
+    } else if (g.state === 'zoom' && prevState === 'zoom') {
+      maxZoomStep = Math.max(maxZoomStep, Math.abs(r - rBefore));
+    }
+    maxOffset = Math.max(maxOffset, Math.hypot(g.worldOffset.x, g.worldOffset.y));
+    maxShiftStep = Math.max(maxShiftStep, Math.hypot(g.worldOffset.x - prevOff.x, g.worldOffset.y - prevOff.y));
+    prevR = r; prevTier = g.tier; prevState = g.state;
+    prevOff = { x: g.worldOffset.x, y: g.worldOffset.y };
+  }
+  void prevR; void prevTier;
+
+  assert(sawZoom, '确实经历了转场');
+  assert(g.state === 'win', '连续通关最终到达 win');
+  assert(g.tier === TIERS.length - 1, `最终量级 ${g.tier} = ${TIERS.length - 1}`);
+  assert(maxTargetErr < 0.1, `换手瞬间落在下一关标称屏幕半径（最大偏差 ${maxTargetErr.toFixed(4)}px）`);
+  assert(maxZoomStep < 0.6, `转场中屏幕半径逐帧平滑（最大 ${maxZoomStep.toFixed(3)}px/帧）`);
+  assert(maxHandoffStep < 0.6, `换手帧屏幕半径不跳变（最大 ${maxHandoffStep.toFixed(3)}px）`);
+  assert(maxOffset > 50, `换手时确实动用了世界偏移（峰值 ${maxOffset.toFixed(0)}）`);
+  assert(maxShiftStep < maxOffset + 1, `世界偏移逐帧连续（最大 ${maxShiftStep.toFixed(1)}/帧）`);
+  assert(Math.abs(g.worldOffset.x) < 1e-6 && Math.abs(g.worldOffset.y) < 1e-6, '通关后世界偏移归零');
+  assert(Math.abs(g.viewScale - TIERS[TIERS.length - 1].camScale) < 1e-6, `通关后镜头比例尺回到末关值 ${g.viewScale.toFixed(4)}`);
+  assert(Math.abs(g.dispScreenR - TIERS[TIERS.length - 1].baseR * TIERS[TIERS.length - 1].camScale) < 1e-6, '通关后屏幕半径 = 末关标称值');
+}
+
+console.log('— 屏幕尺度守恒与推远（各量级）—');
+{
+  // 每关开局：龙卷风屏幕半径从 22px 起，逐关额外推远 1.04 倍——
+  // 幅度很小，所以「世界在收小」看得出来、「龙卷风突然缩放」看不出来。
+  const perTier = 1.04;
+  let prev = 0;
+  for (let tier = 0; tier < TIERS.length; tier++) {
+    const g = new TornadoGame();
+    g.tier = tier;
+    g.restartTier();
+    const px = g.dispScreenR;
+    const expect = 22 * Math.pow(perTier, tier);
+    assert(Math.abs(px - expect) < 0.5, `T${tier + 1} 开局屏幕半径 ${px.toFixed(1)}px = 22·${perTier}^${tier}`);
+    if (tier > 0) assert(px > prev, `T${tier + 1} 比上一关更推远（世界占比 ${prev.toFixed(1)} → ${px.toFixed(1)}px 屏幕半径）`);
+    prev = px;
+  }
+  // 世界在屏幕上逐关收小＝镜头真的在推远，而不是越玩越近
+  for (let tier = 0; tier + 1 < TIERS.length; tier++) {
+    const w0 = TIERS[tier].camScale;
+    const w1 = TIERS[tier + 1].camScale;
+    assert(w1 < w0, `T${tier + 1}→T${tier + 2} 镜头确实推远（${w0.toFixed(3)} → ${w1.toFixed(3)}）`);
+  }
+  // 换手点：下一关标称屏幕半径 = 本关镜头再推远一档，龙卷风因此只差 4%
+  for (let tier = 0; tier + 1 < TIERS.length; tier++) {
+    const a = TIERS[tier].baseR * TIERS[tier].camScale;
+    const b = TIERS[tier + 1].baseR * TIERS[tier + 1].camScale;
+    assert(Math.abs(b / a - perTier) < 0.001, `T${tier + 1}→T${tier + 2} 换手屏幕半径比 ${(b / a).toFixed(4)} = ${perTier}`);
+  }
+}
+
+console.log('— 转场必须交还操作权（state 回到 play）—');
+{
+  // 历史上换手发生在段中、却把 state 留在 zoom：玩家在新量级无法操作，
+  // 残留下来的转场循环把后面所有量级连推到底——「进下一图瞬间吃完全部直接通关」。
+  const g = new TornadoGame();
+  for (const o of g.objects) { o.dead = true; g.eaten++; }
+  assert(g.state === 'play', '清空前仍在 play（清空判定只在 update 里走）');
+  let sawPlayBetweenZooms = false;
+  let lastState = g.state;
+  let guard = 0;
+  while (g.state !== 'win' && guard++ < 6000) {
+    if (g.state === 'play') {
+      for (const o of g.objects) if (!o.dead) { o.dead = true; g.eaten++; }
+      g.r = Math.min(220, g.r + 6);
+    }
+    g.update(1 / 60, { kx: 0, ky: 0, tx: null, ty: null });
+    if (lastState === 'zoom' && g.state === 'play') sawPlayBetweenZooms = true;
+    lastState = g.state;
+  }
+  assert(g.state === 'win', '最终通关');
+  assert(sawPlayBetweenZooms, '每次转场结束后都会回到 play（而不是一路 zoom 到底）');
+  assert(g.tier === TIERS.length - 1, `最终量级 ${g.tier}`);
+}
+
+console.log('— 地表与世界内容同步（同一相机变换）—');
+{
+  // 相机移动时，地表网格（格子）与建筑必须由同一支「世界 → 屏幕」变换投影。
+  // 旧实现把地表当屏幕坐标画，格子钉在屏幕上、建筑跟着相机走，于是相对滑动。
+  const el: any = { style: {}, width: 512, height: 512 };
+  const noop = () => {};
+  const ctx: any = {
+    save: noop, restore: noop, clearRect: noop, fillRect: noop, strokeRect: noop, beginPath: noop,
+    moveTo: noop, lineTo: noop, quadraticCurveTo: noop, closePath: noop, arc: noop, ellipse: noop,
+    roundRect: noop, fill: noop, stroke: noop, setLineDash: noop, fillText: noop, drawImage: noop,
+    translate: noop, scale: noop, rotate: noop, setTransform: noop,
+    createLinearGradient: () => ({ addColorStop: noop }),
+    createRadialGradient: () => ({ addColorStop: noop }),
+    fillStyle: '', strokeStyle: '', lineWidth: 1, globalAlpha: 1,
+    globalCompositeOperation: 'source-over', font: '', textAlign: '', textBaseline: '',
+  };
+  (el as any).getContext = () => ctx;      // 地面装饰的离屏画布
+  (globalThis as any).document = { createElement: () => el };
+  const g = new TornadoGame();
+  const camAt = (px: number, py: number) => {
+    g.x = px; g.y = py;
+    g.render(ctx);
+    return g.floorMatrix!;
+  };
+  const a = camAt(560, 560);
+  const b = camAt(760, 560);
+  assert(!!a && !!b, 'render 会记录地表所用的相机矩阵');
+
+  // paint 的变换：translate(VIEW/2) → scale(s) → translate(-cam)
+  const worldToScreen = (m: { a: number; d: number; e: number; f: number }, wx: number, wy: number) =>
+    [m.a * wx + m.e, m.d * wy + m.f] as const;
+  const s = 1;                                  // T1 的 camScale
+  const paint = { a: s, d: s, e: 320 - 560 * s, f: 320 - 560 * s };
+  const grid = worldToScreen(a, 260, 260);
+  const building = worldToScreen(paint, 260, 260);
+  assert(Math.abs(grid[0] - building[0]) < 1e-6 && Math.abs(grid[1] - building[1]) < 1e-6,
+    `同一世界点：格子 (${grid[0]},${grid[1]}) 与建筑 (${building[0]},${building[1]}) 屏幕位置一致`);
+
+  // 相机右移 200：同一世界点的屏幕位移必须是 -200px，两个层完全相同
+  const gridB = worldToScreen(b, 260, 260);
+  const buildingB = worldToScreen({ ...paint, e: 320 - 760 * s, f: 320 - 560 * s }, 260, 260);
+  const gridShift = gridB[0] - grid[0];
+  const buildingShift = buildingB[0] - building[0];
+  assert(Math.abs(gridShift - (-200)) < 1e-6, `相机右移 200 → 格子屏幕位移 ${gridShift.toFixed(1)}px`);
+  assert(Math.abs(buildingShift - (-200)) < 1e-6, `相机右移 200 → 建筑屏幕位移 ${buildingShift.toFixed(1)}px`);
+  assert(Math.abs(gridShift - buildingShift) < 1e-6, '格子与建筑位移一致（无相对运动）');
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail > 0) process.exit(1);
