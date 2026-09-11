@@ -103,6 +103,14 @@ const main = async () => {
   await send('Page.enable');
   await send('Page.navigate', { url: `${URL_}/#/othello` });
   await sleep(2500);
+  // 默认引擎是 Egaroucid（1.4MB wasm + 初始化），等它就绪，最多 60 秒
+  let engineReady = null;
+  for (let i = 0; i < 60; i++) {
+    engineReady = await evaluate('(() => { const c = window.othelloCtrl; return c ? c._egarReady : null; })()');
+    if (engineReady !== null) break;
+    await sleep(1000);
+  }
+  check('Egaroucid 引擎就绪', engineReady === true, String(engineReady));
 
   // 1) 视图与开局
   const boot = await evaluate(`(() => {
@@ -176,7 +184,7 @@ const main = async () => {
   check('像素校验：e4 黑子画在黑格', colorOk(pix.e4), JSON.stringify(pix.e4));
 
   // 3) 等 AI 应手（普通档预算 400ms，给足余量）
-  await sleep(1800);
+  await sleep(6000);
   const ai = await evaluate(`(() => {
     const ctrl = window.othelloCtrl;
     const total = ctrl.board.reduce((a, v) => a + (v ? 1 : 0), 0);

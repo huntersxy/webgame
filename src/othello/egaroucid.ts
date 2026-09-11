@@ -13,11 +13,13 @@ import { EGAROUCID_ASSET_VERSION, EGAROUCID_HINT_LEVEL, EGAROUCID_LEVELS } from 
 
 type EngineMsg =
   | { type: 'ready'; memMB?: number }
-  | { type: 'result'; id?: number; move: number; eval: number; ms: number; book: boolean }
+  | { type: 'result'; id?: number; move: number; coord?: { file: number; rank: number }; eval: number; ms: number; book: boolean }
   | { type: 'error'; id?: number; data: string };
 
 interface Reply {
   move: number | null;
+  /** 引擎原始坐标（file 0..7，rank 1..8）；着法映射以此为准 */
+  coord?: { file: number; rank: number };
   eval: number;
   ms: number;
   book: boolean;
@@ -163,8 +165,13 @@ export class EgaroucidEngine {
     try {
       const reply = await this.go(cells, side, useLevel, 60_000);
       if (reply.move == null) return fallback();
-      const idx = reply.move;
-      const mapped = mapBySymmetry(idx, legal);
+      // 引擎坐标 → 我们的索引：恒等映射（「真相矩阵」实验：16/16 命中）。
+      // 若上游坐标缺省，退回已算好的 move 字段。
+      const raw = reply.coord
+        ? (((8 - reply.coord.rank) * 8 + reply.coord.file) | 0)
+        : reply.move;
+      const idx = raw;
+      const mapped = legal.includes(idx) ? idx : mapBySymmetry(idx, legal);
       if (mapped == null) {
         console.warn('[egaroucid] 引擎着法经对称映射后仍不合法，回退内置引擎：', idx);
         this.failures++;

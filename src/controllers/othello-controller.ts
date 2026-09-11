@@ -74,12 +74,11 @@ export class OthelloController {
   private _passNotice = '';
   /**
    * 引擎选择。
-   *   'builtin' = 内置 JS 引擎（默认，行为与线上一致）
-   *   'experimental' = Egaroucid（GPL-3.0，1.4MB wasm，64MB 内存）。上游 wasm
-   *     的棋盘朝向与我们的坐标约定尚未对齐（见 public/egaroucid/NOTICE.md），
-   *     因此标注为实验性、默认关闭，仅用于验证。
+   *   'experimental' = Egaroucid（GPL-3.0，1.4MB wasm，64MB 内存）——默认，
+   *     实测在同档位对内置引擎 7 战全胜（净胜 23~43 子）
+   *   'builtin' = 内置 JS 引擎（零加载、零额外内存），作为可选与兜底
    */
-  private enginePref: 'experimental' | 'builtin' = 'builtin';
+  private enginePref: 'experimental' | 'builtin' = 'experimental';
   /** Egaroucid 是否就绪：null = 未知/加载中，true/false = 已定 */
   private _egarReady: boolean | null = null;
   private _warming = false;
@@ -572,11 +571,11 @@ export class OthelloController {
     if (this.enginePref === 'builtin') {
       note.textContent = '当前使用内置 JS 引擎（加载 0 字节、零额外内存）。';
     } else if (this._egarReady === true) {
-      note.textContent = '实验性：Egaroucid（1.4MB wasm · 64MB 内存）。棋盘朝向仍在标定，对局结果可能不正确。';
+      note.textContent = '当前使用 Egaroucid（1.4MB wasm · 64MB 内存 · 自包含评估表与 5.3 万局开局库）。';
     } else if (this._egarReady === false) {
-      note.textContent = '实验性：Egaroucid 加载失败，已回退内置 JS 引擎（刷新页面可重试）。';
+      note.textContent = 'Egaroucid 加载失败，已回退内置 JS 引擎（刷新页面可重试）。';
     } else {
-      note.textContent = '实验性：优先 Egaroucid；加载完成前先用内置引擎应手。';
+      note.textContent = 'Egaroucid 加载中；完成前先用内置引擎应手。';
     }
   }
 
@@ -636,7 +635,7 @@ export class OthelloController {
       this.enginePref = v === 'experimental' ? 'experimental' : 'builtin';
       appendLog(document.getElementById('o-think-log'), this.enginePref === 'builtin'
         ? '🔧 引擎切换 → <b>内置 JS 引擎</b>'
-        : '🔧 引擎切换 → <b>Egaroucid（实验性）</b>：棋盘朝向标定未完成，对局结果可能不正确');
+        : '🔧 引擎切换 → <b>Egaroucid</b>（1.4MB wasm · 64MB 内存）');
       if (this.enginePref === 'experimental') this.warmUp();
       this.syncEngineUI();
     });

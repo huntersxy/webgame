@@ -124,14 +124,12 @@ function go(cells, aiPlayer, level) {
   }
   const file = name.charCodeAt(0) - 97;      // a=0..h=7
   const rank = Number(name[1]);              // 1..8（引擎打印的棋谱行号）
-  // 实测定论（页面内闭环验证）：引擎坐标要**镜像**回我们的索引
-  //   index = (rank - 1) * 8 + file
-  // 反例数据：引擎打印 f1(=file5,rank1)，我们合法点为 {5,10,12,14,15,17,34,42,44,50}；
-  // 用 (rank-1)*8+file = 5 → 命中；用 (8-rank)*8+file = 61 → 不合法。
-  const index = (rank - 1) * 8 + file;
+  // 只回传坐标：坐标 → 我们的索引这一步由客户端按「真相矩阵」标定结果做。
+  // （早期把反解写死在这里，正是坐标口径两次出错的地方。）
+  const index = (8 - rank) * 8 + file;       // 缺省恒等映射；客户端可用 coord 覆盖
   const evaluation = Number.isFinite(score) ? score : 0;
   const book = text.split(String.fromCharCode(10)).some((line) => /^\s*book\s+[a-h][1-8]/i.test(line));
-  return { move: index, eval: evaluation, ms, book };
+  return { move: index, coord: { file, rank }, eval: evaluation, ms, book };
 }
 
 self.onmessage = (e) => {
