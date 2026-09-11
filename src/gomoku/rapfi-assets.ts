@@ -11,7 +11,8 @@
  *  按 URL 长期缓存——不换版本号，老访客永远拿不到新引擎。
  * ──────────────────────────────────────────────────────────── */
 
-export const RAPFI_ASSET_VERSION = '20260911a';
+/** 资源修订号：故意不用日期；改了 public/rapfi/ 才递增。 */
+export const RAPFI_ASSET_VERSION = 'c1';
 
 /** 引擎资源 URL（与 engine-worker.js 内部的 locateFile 拼法保持一致）。 */
 export function rapfiAssetUrl(file: string): string {

@@ -11,7 +11,8 @@
  *  URL 长期缓存——不换版本号，老访客永远拿不到新引擎。
  * ──────────────────────────────────────────────────────────── */
 
-export const PIKAFISH_ASSET_VERSION = '20260911a';
+/** 资源修订号：故意不用日期（日期像天天在变）；改了 public/pikafish/ 才递增。 */
+export const PIKAFISH_ASSET_VERSION = 'c1';
 
 /**
  * 权重包（pikafish.data，约 48MB）的托管基址。
