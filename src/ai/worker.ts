@@ -11,6 +11,7 @@ import { RapfiEngine } from '../gomoku/rapfi';
 import { XqnnEngine } from '../xqnn/engine';
 import { XqWLightEngine } from '../xiangqi/xqwlight';
 import { GoEngine } from '../go/engine';
+import { findBestMove as othSearch, findHintMove as othHint } from '../othello/search';
 
 /** Rapfi WASM 引擎（gomocup 级，五子棋）。wasm 加载失败时回退
  *  gomoku/search.ts 里的内置 JS 引擎。 */
@@ -158,6 +159,21 @@ self.onmessage = (e: MessageEvent<WorkerRequest>) => {
           reply(req, fallback() as any);
         },
       );
+      break;
+    }
+    case 'oth-search': {
+      const board = req.board;
+      const side = req.side;
+      reply(req, {
+        ...othSearch(board, side, req.difficulty, req.mode, req.historyLength),
+        engine: 'js',
+      } as any);
+      break;
+    }
+    case 'oth-hint': {
+      const board = req.board;
+      const side = req.side;
+      reply(req, { ...othHint(board, side, req.mode, req.historyLength), engine: 'js' } as any);
       break;
     }
     case 'junqi-search': {

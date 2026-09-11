@@ -1,7 +1,7 @@
 {
   "name": "webgame",
   "version": "3.0.0",
-  "description": "汐兮雨的小鱼池 — 五子棋 & 围棋（神经网络）& 中国象棋 & 军棋（增量评估 + 迭代加深 α-β + VCF 引擎）",
+  "description": "汐兮雨的小鱼池 — 五子棋 & 围棋（神经网络）& 中国象棋 & 黑白棋（位棋盘 + 迭代加深 α-β + 终局精确求解）& 军棋",
   "license": "MIT",
   "type": "module",
   "scripts": {
@@ -19,8 +19,10 @@
     "test:xqwlight": "esbuild tests/xqwlight.test.mts --bundle --platform=node --format=esm --outfile=.tmp/xqwlight.test.mjs --log-level=warning && node .tmp/xqwlight.test.mjs",
     "test:xqsearch": "esbuild tests/xqsearch.test.mts --bundle --platform=node --format=esm --outfile=.tmp/xqsearch.test.mjs --log-level=warning && node .tmp/xqsearch.test.mjs",
     "test:tornado": "esbuild tests/tornado.test.mts --bundle --platform=node --format=esm --outfile=.tmp/tornado.test.mjs --log-level=warning && node .tmp/tornado.test.mjs",
+    "test:othello:smoke": "node scripts/othello-smoke.mjs",
+    "test:othello": "esbuild tests/othello.test.mts --bundle --platform=node --format=esm --outfile=.tmp/othello.test.mjs --log-level=warning && node .tmp/othello.test.mjs && esbuild tests/othello-controller.test.mts --bundle --platform=node --format=esm --loader:.png=dataurl --outfile=.tmp/othello-controller.test.mjs --log-level=warning && node .tmp/othello-controller.test.mjs",
     "test:go": "esbuild tests/go.test.mts --bundle --platform=node --format=cjs --outfile=.tmp/go.test.cjs --log-level=warning && node .tmp/go.test.cjs",
-    "test": "npm run test:engine && npm run test:junqi && npm run test:rapfi && npm run test:xqfen && npm run test:xqsearch && npm run test:xqnn && npm run test:xqwlight && npm run test:tornado && npm run test:go"
+    "test": "npm run test:engine && npm run test:junqi && npm run test:rapfi && npm run test:xqfen && npm run test:xqsearch && npm run test:xqnn && npm run test:xqwlight && npm run test:tornado && npm run test:othello && npm run test:go"
   },
   "devDependencies": {
     "typescript": "^5.7.0",

@@ -26,6 +26,7 @@
     <button class="tab" data-tab="tornado">龙卷风</button>
     <button class="tab" data-tab="gomoku">五子棋</button>
     <button class="tab" data-tab="go">围棋</button>
+    <button class="tab" data-tab="othello">黑白棋</button>
     <button class="tab" data-tab="xiangqi">中国象棋</button>
     <button class="tab" data-tab="junqi">军棋</button>
   </nav>
@@ -160,6 +161,26 @@
       </article>
 
       <article class="game-card">
+        <div class="game-thumb othello-thumb">
+          <span class="oth-disc b" style="left:30%;top:30%"></span>
+          <span class="oth-disc w" style="left:70%;top:30%"></span>
+          <span class="oth-disc w" style="left:30%;top:70%"></span>
+          <span class="oth-disc b" style="left:70%;top:70%"></span>
+          <span class="oth-legal" style="left:16%;top:16%"></span>
+          <span class="oth-legal" style="left:84%;top:84%"></span>
+        </div>
+        <div class="game-body">
+          <h3>黑白棋 <span class="chip new">NEW</span></h3>
+          <p>8×8 翻转棋（奥赛罗）。落子夹住对方棋子即翻转，终局多子者胜。位置权重 + 行动力评估 + 终局精确求解，四档难度。</p>
+          <div class="tags"><span>人机对战</span><span>双人对战</span><span>AI 互搏</span><span>四档难度</span></div>
+          <div class="game-foot">
+            <span class="price">免费</span>
+            <button class="btn primary" data-goto="othello">立即开玩</button>
+          </div>
+        </div>
+      </article>
+
+      <article class="game-card">
         <div class="game-thumb junqi-thumb">
           <div class="j-rail top"></div>
           <span class="j-tile blue face" style="left:26%;top:22%">★</span>
@@ -188,7 +209,7 @@
         </div>
         <div class="game-body">
           <h3>新游戏 · 筹备中</h3>
-          <p>棋类之外更多品类正在路上：围棋入门、跳棋、黑白棋、贪吃蛇…… 敬请期待。</p>
+          <p>棋类之外更多品类正在路上：跳棋、五子棋变体、扫雷、贪吃蛇…… 敬请期待。</p>
           <div class="tags"><span>规划中</span></div>
           <div class="game-foot">
             <span class="price muted">—</span>
@@ -558,6 +579,87 @@
   </section>
 
   <!-- ═══════════ 围棋 ═══════════ -->
+
+  <!-- ═══════════ 黑白棋 ═══════════ -->
+  <section id="view-othello" class="view">
+    <div class="page-head">
+      <nav class="crumbs"><a href="#/" data-goto="home">游戏库</a><span>/</span><b>黑白棋</b></nav>
+      <div class="page-actions">
+        <button class="btn plain" data-goto="home">← 返回游戏库</button>
+      </div>
+    </div>
+    <div class="layout">
+      <div class="board-wrap">
+        <div class="board-head">
+          <h2>黑白棋 <small>OTHELLO · 8×8 翻转棋</small></h2>
+          <div id="othello-turn" class="turn-pill red">轮到 黑方 落子</div>
+        </div>
+        <div class="canvas-holder">
+          <canvas id="othello-canvas" width="620" height="620"></canvas>
+          <div id="othello-thinking" class="thinking hidden"><div class="spinner"></div>AI 思考中…</div>
+          <div id="othello-god-thinking" class="thinking god-thinking hidden"><div class="spinner"></div>神在思考…正在算最佳点 · 约 3 秒</div>
+        </div>
+        <div id="o-result" class="result-banner hidden"></div>
+      </div>
+      <aside class="panel">
+        <div class="panel-block">
+          <h3>对局设置</h3>
+          <label class="row"><span>模式</span>
+            <div class="seg" id="o-mode"><button data-v="ai" class="on">人机</button><button data-v="pvp">双人</button><button data-v="aivai">AI 互搏</button></div>
+          </label>
+          <label class="row"><span>执子</span>
+            <div class="seg" id="o-color"><button data-v="1" class="on">执黑先手</button><button data-v="2">执白后手</button></div>
+          </label>
+          <label class="row"><span>难度</span>
+            <div class="seg col4" id="o-level"><button data-v="1">简单</button><button data-v="2" class="on">普通</button><button data-v="3">困难</button><button data-v="4" class="demon">😈 恶魔</button></div>
+          </label>
+          <div class="demon-warn hidden" id="o-demon-warn">恶魔模式：满配搜索 + 终局精确求解，不保证你能赢。</div>
+          <div class="demon-profile hidden" id="o-demon-profile">
+            <img class="demon-avatar" id="o-demon-avatar" alt="褚赢" />
+            <div class="demon-info">
+              <b>褚赢 <span class="demon-tag">恶魔</span></b>
+              <small>南梁棋圣 · 黑白通吃</small>
+              <p>“黑子白子，都归我。”</p>
+            </div>
+          </div>
+        </div>
+        <div class="panel-block">
+          <div class="btn-grid">
+            <button id="o-new" class="btn primary">新开局</button>
+            <button id="o-undo" class="btn plain">悔棋</button>
+          </div>
+          <div class="btn-grid">
+            <button id="o-hint" class="btn soft">💡 求一着</button>
+            <button id="o-god" class="btn soft god">🙏 请神上身</button>
+          </div>
+          <div class="btn-grid">
+            <button id="o-sound" class="btn plain on">🔊 音效开</button>
+            <button id="o-stop" class="btn plain">⏹ 停止互搏</button>
+          </div>
+        </div>
+        <div class="panel-block info-box">
+          <div class="info-line"><span>黑子</span><b id="o-black">2</b></div>
+          <div class="info-line"><span>白子</span><b id="o-white">2</b></div>
+          <div class="info-line"><span>手数</span><b id="o-steps">0</b></div>
+          <div class="info-line"><span>状态</span><b id="o-status">对弈中</b></div>
+          <div class="bar"><i id="o-score-bar" style="width:50%"></i></div>
+          <div class="info-line small"><span>局势</span><b id="o-score-text">均势</b></div>
+        </div>
+        <div class="panel-block think-box">
+          <div class="think-head"><h4>AI 思考</h4><label class="viz-toggle"><input type="checkbox" id="o-legal" checked> 合法点显示</label></div>
+          <div class="think-stats" id="o-think-stats">等待 AI 行棋…</div>
+          <div class="think-progress hidden" id="o-think-progress"><i></i></div>
+          <div class="thinklog" id="o-think-log"><div class="empty">人机对战时自动输出深度 / 节点 / 评估 / 候选</div></div>
+        </div>
+        <details class="rules"><summary>规则说明</summary>
+          <p>8×8 棋盘，开局中央四子（黑 d5/e4，白 d4/e5），黑先。落子后必须在横、竖、斜任一方向上夹住对方棋子（己方-对方连续若干-己方），被夹住的棋子全部翻成己方颜色。</p>
+          <p><b>停一手</b>：若某一方没有任何能翻转棋子的落点，必须跳过（pass）；双方都无法落子时终局，子多者胜，一样多算和棋。本作会自动处理停手并在日志与顶栏播报。</p>
+          <p><b>请神上身</b>：开启后棋盘上常驻标出当前最佳点（紫色「神」标记），每落一手自动重算；再点一次「送神离开」关闭。<b>求一着</b>是单次提示（绿色虚线圈）。</p>
+          <p><b>AI 说明</b>：引擎为本地 JavaScript，评估用黑白棋通行的位置权重（角 &gt; 边 &gt; 中心，角旁星位为负）与行动力差，配合迭代加深 α-β + 置换表；剩余空格进入终局区间后切换为完全搜索（精确求解）。四档难度 = 不同的思考时间预算与深度上限；恶魔档会主动抢角并在残局精确收官。</p>
+        </details>
+      </aside>
+    </div>
+  </section>
   <section id="view-go" class="view">
     <div class="page-head">
       <nav class="crumbs"><a href="#/" data-goto="home">游戏库</a><span>/</span><b>围棋</b></nav>

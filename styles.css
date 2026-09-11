@@ -868,3 +868,33 @@ footer::before {
 ::-webkit-scrollbar-thumb { background: #ddd2bc; border-radius: 99px; border: 2px solid var(--bg); }
 ::-webkit-scrollbar-thumb:hover { background: var(--accent); }
 ::-webkit-scrollbar-track { background: transparent; }
+
+/* ── 黑白棋：绿绒棋盘缩略图 + 棋子 ── */
+.othello-thumb {
+  background:
+    repeating-linear-gradient(45deg, rgba(255,255,255,.035) 0 3px, transparent 3px 6px),
+    linear-gradient(145deg, #0f5f34 0%, #0b6b3a 55%, #075028 100%);
+}
+.othello-thumb .oth-disc {
+  position: absolute; width: 42px; height: 42px; border-radius: 50%;
+  transform: translate(-50%, -50%);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, .45);
+}
+.othello-thumb .oth-disc.b { background: radial-gradient(circle at 34% 30%, #6e6e6e, #111 60%, #000); }
+.othello-thumb .oth-disc.w { background: radial-gradient(circle at 34% 30%, #fff, #e6e6e6 60%, #b3b3b3); }
+.othello-thumb .oth-legal {
+  position: absolute; width: 12px; height: 12px; border-radius: 50%;
+  transform: translate(-50%, -50%);
+  background: rgba(255, 255, 255, .38);
+  box-shadow: 0 0 6px rgba(255, 255, 255, .3);
+}
+
+/* ── 黑白棋棋盘外框：绿绒底 + 角标 ── */
+#othello-canvas {
+  background: #0b6b3a;
+  border-radius: 16px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, .22);
+  touch-action: manipulation;
+  cursor: pointer;
+}
+#othello-canvas:active { cursor: grabbing; }

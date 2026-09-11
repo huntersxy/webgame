@@ -13,6 +13,11 @@ export type GomokuPlayer = 1 | 2;
 export type GomokuCell = 0 | 1 | 2;
 export type GomokuBoard = GomokuCell[][];
 
+/** Othello (黑白棋) disc colour: 1 = black, 2 = white */
+export type OthDisc = 1 | 2;
+/** Othello board as a flat 64-cell array, index = y*8+x; 0 empty, 1 black, 2 white */
+export type OthBoard = Uint8Array;
+
 /** Xiangqi side: 'r' = Red, 'b' = Black */
 export type XqSide = 'r' | 'b';
 /** A piece is an uppercase (Red) or lowercase (Black) letter, or null */
@@ -37,6 +42,18 @@ export interface GomokuMove extends Pt {
  *  只传 2D 棋盘无法还原顺序。 */
 export interface GomokuHistoryMove extends Pt {
   c: GomokuPlayer;
+}
+
+/** 黑白棋一手棋。pass = true 表示该方无合法点、被迫停一手（x/y 无意义）。 */
+export interface OthMove extends Pt {
+  /** 该手翻掉的棋子数（界面播报用） */
+  f?: number;
+  /** Heuristic score for ordering */
+  s?: number;
+  /** Search value（搜索分值，界面评估栏用） */
+  v?: number;
+  /** 停一手（pass） */
+  pass?: boolean;
 }
 
 /** A Xiangqi move */
@@ -183,6 +200,9 @@ export type WorkerRequest = (
   | { type: 'xq-hint'; board: XqBoard; side: XqSide; mode: GameMode; historyLength: number; engineKind?: XqEngineKind }
   | { type: 'junqi-search'; board: JqBoard; side: JqSide; difficulty: Difficulty; mode: GameMode; flip: boolean; historyLength: number }
   | { type: 'junqi-hint'; board: JqBoard; side: JqSide; mode: GameMode; flip: boolean; historyLength: number }
+  /** 黑白棋：board 为 64 格 Uint8Array（0 空 / 1 黑 / 2 白），side 为轮走方 */
+  | { type: 'oth-search'; board: OthBoard; side: OthDisc; difficulty: Difficulty; mode: GameMode; historyLength: number }
+  | { type: 'oth-hint'; board: OthBoard; side: OthDisc; mode: GameMode; historyLength: number }
   /** 围棋：求一着（level 决定访问量/时间预算；visitsOverride/timeMsOverride 给「请神上身」满配用） */
   | {
       type: 'go-search';
@@ -205,7 +225,7 @@ export type WorkerRequest = (
 
 /** Worker response messages */
 export type WorkerResponse =
-  | { type: 'search-result'; id?: number; result: SearchResult<GomokuMove | XqMove | JqMove | GoMove> }
+  | { type: 'search-result'; id?: number; result: SearchResult<GomokuMove | XqMove | JqMove | GoMove | OthMove> }
   | { type: 'progress'; nodes: number }
   /** 搜索进度（围棋：已访问次数） */
   | { type: 'search-progress'; id?: number; nodes: number }

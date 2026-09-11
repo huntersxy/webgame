@@ -12,6 +12,7 @@ import { CampaignController } from './controllers/campaign-controller';
 import { TornadoController } from './controllers/tornado-controller';
 import { JunqiController } from './controllers/junqi-controller';
 import { GoController } from './controllers/go-controller';
+import { OthelloController } from './controllers/othello-controller';
 import { setupDemonAssets } from './ui/demon';
 
 // ── Global status helper ──
@@ -22,14 +23,15 @@ function setGlobalStatus(t: string): void {
 (window as any).setGlobalStatus = setGlobalStatus;
 
 // ── Hash router ──
-type ViewName = 'home' | 'tornado' | 'gomoku' | 'campaign' | 'xiangqi' | 'junqi' | 'go';
-const routes = ['home', 'tornado', 'gomoku', 'campaign', 'xiangqi', 'junqi', 'go'] as const;
+type ViewName = 'home' | 'tornado' | 'gomoku' | 'campaign' | 'othello' | 'xiangqi' | 'junqi' | 'go';
+const routes = ['home', 'tornado', 'gomoku', 'campaign', 'othello', 'xiangqi', 'junqi', 'go'] as const;
 
 const views: Record<ViewName, HTMLElement | null> = {
   home: document.getElementById('view-home'),
   tornado: document.getElementById('view-tornado'),
   gomoku: document.getElementById('view-gomoku'),
   campaign: document.getElementById('view-campaign'),
+  othello: document.getElementById('view-othello'),
   xiangqi: document.getElementById('view-xiangqi'),
   junqi: document.getElementById('view-junqi'),
   go: document.getElementById('view-go'),
@@ -58,6 +60,7 @@ function applyView(name: ViewName): void {
   window.scrollTo({ top: 0, behavior: 'smooth' });
   if (name === 'gomoku' && gomokuCtrl) { gomokuCtrl.redraw(); gomokuCtrl.warmUp(); }
   if (name === 'campaign' && campaignCtrl) campaignCtrl.redraw();
+  if (name === 'othello' && othelloCtrl) othelloCtrl.redraw();
   if (name === 'xiangqi' && xiangqiCtrl) { xiangqiCtrl.redraw(); xiangqiCtrl.warmUp(); }
   if (name === 'tornado' && tornadoCtrl) tornadoCtrl.redraw();
   if (name === 'junqi' && junqiCtrl) junqiCtrl.redraw();
@@ -86,6 +89,7 @@ const campaignCanvas = document.getElementById('camp-canvas') as HTMLCanvasEleme
 const tornadoCanvas = document.getElementById('t-canvas') as HTMLCanvasElement | null;
 const junqiCanvas = document.getElementById('jq-canvas') as HTMLCanvasElement | null;
 const goCanvas = document.getElementById('go-canvas') as HTMLCanvasElement | null;
+const othelloCanvas = document.getElementById('othello-canvas') as HTMLCanvasElement | null;
 
 let gomokuCtrl: GomokuController | null = null;
 let xiangqiCtrl: XiangqiController | null = null;
@@ -93,6 +97,7 @@ let campaignCtrl: CampaignController | null = null;
 let tornadoCtrl: TornadoController | null = null;
 let junqiCtrl: JunqiController | null = null;
 let goCtrl: GoController | null = null;
+let othelloCtrl: OthelloController | null = null;
 
 if (gomokuCanvas) gomokuCtrl = new GomokuController(gomokuCanvas, ai, audio);
 if (xiangqiCanvas) xiangqiCtrl = new XiangqiController(xiangqiCanvas, ai, audio);
@@ -100,6 +105,9 @@ if (campaignCanvas) campaignCtrl = new CampaignController(campaignCanvas, audio)
 if (tornadoCanvas) tornadoCtrl = new TornadoController(tornadoCanvas, audio);
 if (junqiCanvas && ai && audio) junqiCtrl = new JunqiController(junqiCanvas, ai, audio);
 if (goCanvas && ai && audio) goCtrl = new GoController(goCanvas, ai, audio);
+if (othelloCanvas && ai && audio) othelloCtrl = new OthelloController(othelloCanvas, ai, audio);
+// 暴露给控制台/自动化冒烟使用（scripts/othello-smoke.mjs）
+(window as any).othelloCtrl = othelloCtrl;
 
 // ── Demon assets (avatar) ──
 setupDemonAssets();

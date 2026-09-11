@@ -2,7 +2,7 @@
  *  ai/ai-bridge.ts — Main-thread ↔ Worker bridge with promise API
  * ──────────────────────────────────────────────────────────── */
 
-import type { WorkerRequest, WorkerResponse, Difficulty, GameMode, SearchResult, GomokuBoard, GomokuPlayer, GomokuHistoryMove, XqBoard, XqSide, XqEngineKind, GomokuMove, XqMove, JqMove, JqBoard, JqSide, GoMove, GoPositionPayload, GoLevel } from '../types';
+import type { WorkerRequest, WorkerResponse, Difficulty, GameMode, SearchResult, GomokuBoard, GomokuPlayer, GomokuHistoryMove, XqBoard, XqSide, XqEngineKind, GomokuMove, XqMove, JqMove, JqBoard, JqSide, GoMove, GoPositionPayload, GoLevel, OthBoard, OthDisc, OthMove } from '../types';
 import { prefetchRapfiData } from '../gomoku/rapfi-assets';
 import { prefetchXqnnModel } from '../xqnn/model-assets';
 import { prefetchGoModel } from '../go/model-assets';
@@ -214,6 +214,27 @@ export class AIBridge {
       moves,
       forceJs,
     }) as Promise<SearchResult<GomokuMove>>;
+  }
+
+  /** 黑白棋：AI 落子（四档难度） */
+  searchOth(
+    board: OthBoard,
+    side: OthDisc,
+    difficulty: Difficulty,
+    mode: GameMode,
+    historyLength: number,
+  ): Promise<SearchResult<OthMove>> {
+    return this.send({ type: 'oth-search', board, side, difficulty, mode, historyLength }) as Promise<SearchResult<OthMove>>;
+  }
+
+  /** 黑白棋：求一着 / 请神上身（固定恶魔档配置、预算收短） */
+  hintOth(
+    board: OthBoard,
+    side: OthDisc,
+    mode: GameMode,
+    historyLength: number,
+  ): Promise<SearchResult<OthMove>> {
+    return this.send({ type: 'oth-hint', board, side, mode, historyLength }) as Promise<SearchResult<OthMove>>;
   }
 
   searchXq(
