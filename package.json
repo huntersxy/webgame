@@ -13,7 +13,8 @@
     "test:junqi": "esbuild tests/junqi.test.mts --bundle --platform=node --format=esm --outfile=.tmp/junqi.test.mjs --log-level=warning && node .tmp/junqi.test.mjs",
     "test:rapfi": "node tests/rapfi.test.cjs",
     "test:xqfen": "esbuild tests/xqfen.test.mts --bundle --platform=node --format=esm --outfile=.tmp/xqfen.test.mjs --log-level=warning && node .tmp/xqfen.test.mjs",
-    "test": "npm run test:engine && npm run test:junqi && npm run test:rapfi && npm run test:xqfen"
+    "test:tornado": "esbuild tests/tornado.test.mts --bundle --platform=node --format=esm --outfile=.tmp/tornado.test.mjs --log-level=warning && node .tmp/tornado.test.mjs",
+    "test": "npm run test:engine && npm run test:junqi && npm run test:rapfi && npm run test:xqfen && npm run test:tornado"
   },
   "devDependencies": {
     "typescript": "^5.7.0",

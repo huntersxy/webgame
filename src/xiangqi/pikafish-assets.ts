@@ -11,7 +11,7 @@
  *  URL 长期缓存——不换版本号，老访客永远拿不到新引擎。
  * ──────────────────────────────────────────────────────────── */
 
-export const PIKAFISH_ASSET_VERSION = '20260910a';
+export const PIKAFISH_ASSET_VERSION = '20260911a';
 
 /**
  * 权重包（pikafish.data，约 48MB）的托管基址。
@@ -56,30 +56,38 @@ export function pikafishDataUrl(): string {
 export const PIKAFISH_DATA_BYTES = 50_706_378;
 
 /**
- * 提前把权重数据包拉下来：预热 HTTP 缓存 + 上报进度。
+ * 下载权重包并返回完整 ArrayBuffer。
  *
- * 与 rapfi 那边同样的两条纪律：
- *   1. URL 与请求参数必须和 emscripten 内部那次取 .data 完全一致，
- *      这样引擎稍后自己去取时会直接命中同一缓存条目，不会重复下 48MB。
- *   2. 逐块读取并立即丢弃，不在主线程留驻这 48MB。
+ * 跨域时 Worker 里 emscripten 的第二次 fetch 往往吃不到 HTTP 缓存，
+ * 所以这里把字节拿在手里，经 postMessage 塞进引擎的 getPreloadedPackage，
+ * 引擎不再对公网发第二次请求。
  */
 export async function prefetchPikafishData(
   onProgress?: (loaded: number, total: number) => void,
-): Promise<void> {
+): Promise<ArrayBuffer> {
   const res = await fetch(pikafishDataUrl());
   if (!res.ok) throw new Error(`pikafish.data prefetch failed: ${res.status}`);
   const total = Number(res.headers.get('Content-Length')) || PIKAFISH_DATA_BYTES;
   if (!res.body) {
-    await res.arrayBuffer();
+    const buf = await res.arrayBuffer();
     onProgress?.(total, total);
-    return;
+    return buf;
   }
   const reader = res.body.getReader();
+  const chunks: Uint8Array[] = [];
   let loaded = 0;
   for (;;) {
     const { done, value } = await reader.read();
     if (done) break;
+    chunks.push(value);
     loaded += value.length;
     onProgress?.(loaded, total);
   }
+  const out = new Uint8Array(loaded);
+  let off = 0;
+  for (const c of chunks) {
+    out.set(c, off);
+    off += c.length;
+  }
+  return out.buffer;
 }

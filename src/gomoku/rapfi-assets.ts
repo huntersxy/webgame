@@ -11,7 +11,7 @@
  *  按 URL 长期缓存——不换版本号，老访客永远拿不到新引擎。
  * ──────────────────────────────────────────────────────────── */
 
-export const RAPFI_ASSET_VERSION = '20260910e';
+export const RAPFI_ASSET_VERSION = '20260911a';
 
 /** 引擎资源 URL（与 engine-worker.js 内部的 locateFile 拼法保持一致）。 */
 export function rapfiAssetUrl(file: string): string {
@@ -23,31 +23,37 @@ export function rapfiAssetUrl(file: string): string {
 export const RAPFI_DATA_BYTES = 10_131_512;
 
 /**
- * 提前把引擎数据包（约 10MB）拉下来，只做两件事：预热 HTTP 缓存、上报进度。
+ * 下载引擎数据包并返回完整 ArrayBuffer。
  *
- *   1. URL 与请求参数必须和 emscripten 内部那句 `fetch(h)` 完全一致
- *      （同 URL、都用默认参数），这样引擎稍后自己去取时会直接命中同一
- *      缓存条目，不会重复下载 10MB。
- *   2. 逐块读取并立即丢弃，不在主线程留驻这 10MB。
+ * 跨域时 Worker 里 emscripten 的第二次 fetch 往往吃不到 HTTP 缓存，
+ * 所以把字节经 postMessage 注入 getPreloadedPackage，避免重复下载。
  */
 export async function prefetchRapfiData(
   onProgress?: (loaded: number, total: number) => void,
-): Promise<void> {
+): Promise<ArrayBuffer> {
   const res = await fetch(rapfiAssetUrl('rapfi.data'));
   if (!res.ok) throw new Error(`rapfi.data prefetch failed: ${res.status}`);
   const total = Number(res.headers.get('Content-Length')) || RAPFI_DATA_BYTES;
   if (!res.body) {
-    // 极老的浏览器没有流式 body：退化成整体读取，只报一次完成
-    await res.arrayBuffer();
+    const buf = await res.arrayBuffer();
     onProgress?.(total, total);
-    return;
+    return buf;
   }
   const reader = res.body.getReader();
+  const chunks: Uint8Array[] = [];
   let loaded = 0;
   for (;;) {
     const { done, value } = await reader.read();
     if (done) break;
+    chunks.push(value);
     loaded += value.length;
     onProgress?.(loaded, total);
   }
+  const out = new Uint8Array(loaded);
+  let off = 0;
+  for (const c of chunks) {
+    out.set(c, off);
+    off += c.length;
+  }
+  return out.buffer;
 }

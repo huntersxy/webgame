@@ -131,6 +131,8 @@ self.onmessage = function (e) {
       // 这里解析出字节数发回主线程。解析失败就退回去读 Module.dataFileDownloads；
       // 两者都拿不到时只是没有进度条，不影响加载。
       let lastProgressAt = 0;
+      // 主线程预取好的权重包：注入后 emscripten 不会再 fetch
+      const dataBuffer = msg.dataBuffer instanceof ArrayBuffer ? msg.dataBuffer : null;
       const rapfiCfg = {
         locateFile: (url) => {
           // Every build requests its own '<name>.data'; all variants share
@@ -159,6 +161,11 @@ self.onmessage = function (e) {
           post({ type: 'load-progress', data: { loaded, total } });
         },
       };
+      if (dataBuffer) {
+        rapfiCfg.getPreloadedPackage = function () {
+          return dataBuffer;
+        };
+      }
       self.Rapfi(rapfiCfg).then(
         (inst) => {
           instance = inst;

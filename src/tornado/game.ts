@@ -2,17 +2,17 @@
  *  tornado/game.ts — 《龙卷风成长记》核心引擎
  *
  *  玩法（大鱼吃小鱼式成长）：
- *    • 玩家控制小龙卷风，卷走「比自己小」的物体壮大体积；
- *    • 撞上「比自己大」的物体会被弹开，没有任何惩罚；
- *    • 清空当前地图后：镜头拉远（缩放动画）+ 龙卷风相对缩小，
- *      生成下一个量级的物体 —— 街道 → 楼房 → 城市 → 国家 → 洲 → 全地球。
+ *    • 玩家控制小龙卷风，卷走「比自己小的物体」壮大体积；
+ *    • 撞上「比自己大的物体会被弹开」，没有任何惩罚；
+ *    • 清空当前地图后：镜头拉远（缩放动画）+ 相对缩小，
+ *      进入下一个量级：街道 → 楼房 → 城市 → 国家 → 洲 → 全地球。
  *
  *  纯 Canvas 2D 渲染，无外部资源；emoji 作物体贴图。
  * ──────────────────────────────────────────────────────────── */
 
 const VIEW = 640;
 const WORLD_K = 1.75;
-const R_MAX = 165;
+const R_MAX = 220;
 
 export interface TierDef {
   name: string;
@@ -157,18 +157,17 @@ export class TornadoGame {
 
     const rng = mulberry32(this.tier * 9973 + 17);
 
-    // ── 不可破坏地形障碍：湖 / 巨石 / 山脉 / 树林 ──
+    // ── 不可破坏地形：数量/半径随量级温和上升，高关封顶避免迷宫化 ──
     const kinds: Terrain['kind'][] = this.tier <= 1
       ? ['lake', 'boulder', 'lake', 'boulder']
       : this.tier <= 3
         ? ['lake', 'boulder', 'mount', 'forest']
         : ['mount', 'mount', 'lake', 'forest', 'boulder'];
-    const tn = 3 + Math.min(3, this.tier);
-    let tguard = 0;
+    const tn = this.tier <= 1 ? 3 : this.tier <= 3 ? 4 : 5;
+    const trCap = Math.min(def.baseR * 1.35, 92);
     for (let i = 0; i < tn; i++) {
-      const tr = def.baseR * (1.25 + rng() * 0.95);
+      const tr = trCap * (0.72 + rng() * 0.55);
       for (let tries = 0; tries < 60; tries++) {
-        tguard++;
         const x = 120 + rng() * (this.world - 240);
         const y = 120 + rng() * (this.world - 240);
         if (Math.hypot(x - this.x, y - this.y) < tr + this.r + 150) continue;
@@ -190,25 +189,29 @@ export class TornadoGame {
         if (Math.hypot(x - this.x, y - this.y) < p.s + this.r + 60) continue;
         let ok = true;
         for (const o of this.objects) {
-          if (Math.hypot(x - o.x, y - o.y) < (p.s + o.r) * 1.25) { ok = false; break; }
+          if (Math.hypot(x - o.x, y - o.y) < (p.s + o.r) * 1.15) { ok = false; break; }
         }
-        if (ok) for (const t of this.terrain) if (Math.hypot(x - t.x, y - t.y) < t.r + p.s + 30) { ok = false; break; }
+        if (ok) for (const t of this.terrain) if (Math.hypot(x - t.x, y - t.y) < t.r + p.s + 24) { ok = false; break; }
         if (!ok) continue;
         this.objects.push({ x, y, r: p.s, e: p.e, seed: Math.random() * 7, dead: false });
-        return;
+        return true;
       }
+      return false;
     };
-    // 保证开局可吃：前三个物体一定比龙卷风小
-    const smalls = def.pool.filter((p) => p.s < def.baseR * 0.92);
-    const forced = smalls.length ? smalls : [def.pool[0]];
-    for (const p of forced.slice(0, 3)) spawnObj(p);
+
+    // 保证开局有饵：优先严格小于 baseR 的物体（取最小的 3 种）
+    const bait = def.pool
+      .filter((p) => p.s < def.baseR)
+      .sort((a, b) => a.s - b.s);
+    const forced = bait.length ? bait.slice(0, 3) : [def.pool.slice().sort((a, b) => a.s - b.s)[0]];
+    for (const p of forced) spawnObj(p);
     for (let i = this.objects.length; i < def.count; i++) {
       spawnObj(def.pool[(Math.random() * def.pool.length) | 0]);
     }
-    void tguard;
   }
 
-  get total(): number { return TIERS[this.tier].count; }
+  /** 通关进度以实际生成物为准，避免 spawn 失败导致永久软锁 */
+  get total(): number { return this.objects.length; }
 
   update(dt: number, inp: Input): void {
     dt = Math.min(dt, 0.033);
@@ -288,7 +291,7 @@ export class TornadoGame {
         o.suck = { t: 0, sx: o.x, sy: o.y };
         this.eaten++;
         this.score += Math.round(o.r * 10) + this.tier * 50;
-        this.r = Math.min(R_MAX, Math.sqrt(this.r * this.r + o.r * o.r * 0.85));
+        this.r = Math.min(R_MAX, Math.sqrt(this.r * this.r + o.r * o.r * 0.9));
         this.burst(o.x, o.y, o.e, 10);
         this.rings.push({ x: o.x, y: o.y, r: o.r, max: this.r * 1.6, life: 0.45, c: 'rgba(14,159,133,.55)' });
         this.onEat(o.r > 26);
@@ -414,6 +417,7 @@ export class TornadoGame {
         continue;
       }
       const bob = Math.sin(this.time * 1.4 + o.seed) * 1.6;
+      const edible = this.r > o.r;
       // 建筑地基：深色圆角底板，让建筑"落地"而不是漂浮贴纸
       ctx.beginPath();
       ctx.roundRect(o.x - o.r * 1.02, o.y - o.r * 0.62, o.r * 2.04, o.r * 1.62, o.r * 0.34);
@@ -421,8 +425,20 @@ export class TornadoGame {
       ctx.fill();
       ctx.beginPath();
       ctx.roundRect(o.x - o.r * 0.94, o.y - o.r * 0.72, o.r * 1.88, o.r * 1.5, o.r * 0.3);
-      ctx.fillStyle = 'rgba(244,246,243,.88)';
+      ctx.fillStyle = edible ? 'rgba(244,246,243,.88)' : 'rgba(230,228,224,.86)';
       ctx.fill();
+      // 比自己大的：灰色描边 + 半透明「锁」，提示「现在还卷不动」
+      if (!edible) {
+        ctx.beginPath();
+        ctx.roundRect(o.x - o.r * 0.94, o.y - o.r * 0.72, o.r * 1.88, o.r * 1.5, o.r * 0.3);
+        ctx.strokeStyle = 'rgba(140,120,110,.45)';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        ctx.globalAlpha = 0.45;
+        ctx.font = `${Math.max(12, o.r * 0.55)}px "Segoe UI Emoji","Noto Color Emoji",serif`;
+        ctx.fillText('🔒', o.x + o.r * 0.62, o.y - o.r * 0.42 + bob);
+        ctx.globalAlpha = 1;
+      }
       ctx.font = `${o.r * 2.25}px "Segoe UI Emoji","Noto Color Emoji",serif`;
       ctx.fillText(o.e, o.x, o.y + bob);
     }
@@ -637,7 +653,7 @@ export class TornadoGame {
     ctx.restore();
   }
 
-  /** 屏幕(canvas)坐标 → 世界坐标，与 render 的相机变换互逆 */
+  /** 屏幕(canvas)逻辑坐标 → 世界坐标，与 render 的相机变换互逆 */
   screenToWorld(sx: number, sy: number): { x: number; y: number } {
     const zoom = this.state === 'zoom' ? 1 - 0.8 * ease(this.zoomT) : 1;
     const camX = clamp(this.x - VIEW / (2 * zoom), 0, Math.max(0, this.world - VIEW / zoom));

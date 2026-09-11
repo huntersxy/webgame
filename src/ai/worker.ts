@@ -47,8 +47,8 @@ self.onmessage = (e: MessageEvent<WorkerRequest>) => {
       break;
     }
     case 'gomoku-warmup': {
-      // 只加载、不搜索：进入对局页面即调用，把首次下载藏进玩家思考时间
-      rapfi.warmUp().then(
+      // dataBuffer：主线程已下完的权重；注入 getPreloadedPackage，避免二次下载
+      rapfi.warmUp(req.dataBuffer).then(
         () => post({ type: 'warmup-done', ok: true, variant: rapfi.variant ?? undefined, game: 'gomoku' }),
         () => post({ type: 'warmup-done', ok: false, game: 'gomoku' }),
       );
@@ -88,7 +88,7 @@ self.onmessage = (e: MessageEvent<WorkerRequest>) => {
       break;
     }
     case 'xq-warmup': {
-      pikafish.warmUp().then(
+      pikafish.warmUp(req.dataBuffer).then(
         () => post({ type: 'warmup-done', ok: true, game: 'xq' }),
         () => post({ type: 'warmup-done', ok: false, game: 'xq' }),
       );

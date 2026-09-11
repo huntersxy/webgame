@@ -181,7 +181,7 @@ export class RapfiEngine {
   /** serialization so concurrent requests never interleave stdout */
   private chain: Promise<unknown> = Promise.resolve();
 
-  private startWorker(): Promise<void> {
+  private startWorker(dataBuffer?: ArrayBuffer): Promise<void> {
     return new Promise<void>((resolve, reject) => {
       let w: Worker;
       try {
@@ -269,7 +269,11 @@ export class RapfiEngine {
         else this.markDead(err.message);
       };
       // variant 让客户端能指定构建：多线程挂掉后重建时改传 'single'
-      w.postMessage({ type: 'init', version: ASSET_VERSION, variant: this.nextVariant() });
+      // dataBuffer：主线程已下完的权重，注入 getPreloadedPackage 后不再二次 fetch
+      w.postMessage(
+        { type: 'init', version: ASSET_VERSION, variant: this.nextVariant(), dataBuffer },
+        dataBuffer ? [dataBuffer] : [],
+      );
       this.worker = w;
     });
   }
@@ -312,11 +316,11 @@ export class RapfiEngine {
     return 'auto';
   }
 
-  private ensureReady(): Promise<void> {
+  private ensureReady(dataBuffer?: ArrayBuffer): Promise<void> {
     if (this.disabled) return Promise.reject(new Error('引擎已在本局停用'));
     if (this.readyPromise) return this.readyPromise;
     if (Date.now() - this.lastInitFail < 45_000) return Promise.reject(new Error('rapfi init cooldown'));
-    this.readyPromise = this.startWorker().catch((err) => {
+    this.readyPromise = this.startWorker(dataBuffer).catch((err) => {
       this.readyPromise = null;
       this.lastInitFail = Date.now();
       if (this.variant) this.failedVariants.add(this.variant);
@@ -329,12 +333,11 @@ export class RapfiEngine {
   }
 
   /**
-   * 预热：提前开始加载 wasm 与 NNUE 权重（首次约 11MB）。
-   * 进入对局页面时调用，把首次加载挪到玩家思考首手的时间里，
-   * 之后所有搜索都会命中同一个已就绪的实例。
+   * 预热：提前开始加载 wasm 与 NNUE 权重。dataBuffer 为主线程已下完的权重包。
+   * 进入对局页面时调用，把首次加载挪到玩家思考首手的时间里。
    */
-  warmUp(): Promise<void> {
-    return this.ensureReady();
+  warmUp(dataBuffer?: ArrayBuffer): Promise<void> {
+    return this.ensureReady(dataBuffer);
   }
 
   /** 引擎是否已实例化完成（UI 可据此提示） */

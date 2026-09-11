@@ -138,7 +138,7 @@ export class PikafishEngine {
     );
   }
 
-  private startWorker(): Promise<void> {
+  private startWorker(dataBuffer?: ArrayBuffer): Promise<void> {
     return new Promise<void>((resolve, reject) => {
       if (!PikafishEngine.isSupported()) {
         reject(new Error('缺少 cross-origin isolation / SharedArrayBuffer'));
@@ -218,15 +218,18 @@ export class PikafishEngine {
       };
 
       this.worker = w;
-      // 权重包可能托管在外部 OSS/CDN（VITE_PIKAFISH_DATA_BASE）——把解析好的
-      // 完整 URL 交给 worker，让它的 locateFile 对 .data 用同一条 URL，
-      // 这样我们的预取与引擎自己那次取包才能命中同一缓存条目。
-      w.postMessage({
-        type: 'init',
-        sab,
-        version: PIKAFISH_ASSET_VERSION,
-        dataUrl: pikafishDataUrl(),
-      });
+      // 权重包可能托管在外部 OSS/CDN。dataBuffer 是主线程已下完的字节，
+      // 经 getPreloadedPackage 直接喂给 emscripten，跨域时不再二次 fetch。
+      w.postMessage(
+        {
+          type: 'init',
+          sab,
+          version: PIKAFISH_ASSET_VERSION,
+          dataUrl: pikafishDataUrl(),
+          dataBuffer,
+        },
+        dataBuffer ? [dataBuffer] : [],
+      );
     });
   }
 
@@ -309,11 +312,11 @@ export class PikafishEngine {
     this.cmdBytes = null;
   }
 
-  private ensureReady(): Promise<void> {
+  private ensureReady(dataBuffer?: ArrayBuffer): Promise<void> {
     if (this.disabled) return Promise.reject(new Error('引擎已在本局停用'));
     if (this.readyPromise) return this.readyPromise;
     if (Date.now() - this.lastInitFail < 45_000) return Promise.reject(new Error('pikafish init cooldown'));
-    this.readyPromise = this.startWorker()
+    this.readyPromise = this.startWorker(dataBuffer)
       .then(() => this.handshake())
       .catch((err) => {
         this.readyPromise = null;
@@ -327,9 +330,9 @@ export class PikafishEngine {
     return this.readyPromise;
   }
 
-  /** 预热：进入对局页面即调用，把 wasm + 48MB 权重的加载藏进玩家思考时间。 */
-  warmUp(): Promise<void> {
-    return this.ensureReady();
+  /** 预热：进入对局页面即调用。dataBuffer 为主线程已下完的权重包。 */
+  warmUp(dataBuffer?: ArrayBuffer): Promise<void> {
+    return this.ensureReady(dataBuffer);
   }
 
   get isReady(): boolean {

@@ -94,6 +94,8 @@ self.onmessage = function (e) {
       // init 带上的是「已经解析好的完整 URL」，直接用它——必须与主线程预取
       // 用的那条 URL 完全一致，否则会白下两遍 48MB。
       const dataUrl = typeof msg.dataUrl === 'string' && msg.dataUrl ? msg.dataUrl : null;
+      // 主线程预取好的权重包：注入后 emscripten 不会再 fetch（跨域缓存不可靠时用这个）
+      const dataBuffer = msg.dataBuffer instanceof ArrayBuffer ? msg.dataBuffer : null;
 
       let lastProgressAt = 0;
       const cfg = {
@@ -127,6 +129,11 @@ self.onmessage = function (e) {
           post({ type: 'load-progress', data: { loaded, total } });
         },
       };
+      if (dataBuffer) {
+        cfg.getPreloadedPackage = function () {
+          return dataBuffer;
+        };
+      }
 
       importScripts('pikafish.js' + ver);
       const factory = self.createPikafishModule;

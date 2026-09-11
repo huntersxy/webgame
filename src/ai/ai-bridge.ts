@@ -72,7 +72,7 @@ export class AIBridge {
   private warmUp(
     game: 'gomoku' | 'xq',
     req: WorkerRequest,
-    prefetch: ((cb: (loaded: number, total: number) => void) => Promise<void>) | null,
+    prefetch: ((cb: (loaded: number, total: number) => void) => Promise<ArrayBuffer>) | null,
     onProgress?: (loaded: number, total: number, src: LoadPhase) => void,
   ): Promise<{ ok: boolean; variant?: 'multi' | 'single' }> {
     let shownLoaded = 0;
@@ -88,20 +88,26 @@ export class AIBridge {
     };
     this.loadProgressCb = onProgress ? emit : null;
 
-    const startEngine = (): Promise<{ ok: boolean; variant?: 'multi' | 'single' }> =>
+    const startEngine = (dataBuffer?: ArrayBuffer): Promise<{ ok: boolean; variant?: 'multi' | 'single' }> =>
       new Promise((resolve) => {
         if (!this.worker) {
           resolve({ ok: false });
           return;
         }
         this.warmupResolvers.set(game, resolve);
-        this.worker.postMessage(req);
+        if (dataBuffer) {
+          // transfer 避免再拷一份 10~48MB；worker 再 transfer 给 classic engine-worker
+          this.worker.postMessage({ ...req, dataBuffer }, [dataBuffer]);
+        } else {
+          this.worker.postMessage(req);
+        }
       });
 
-    const prefetchDone = prefetch
-      ? prefetch((loaded, total) => this.loadProgressCb?.(loaded, total, 'prefetch')).catch(() => undefined)
-      : Promise.resolve();
-    return prefetchDone.then(() => startEngine());
+    if (!prefetch) return startEngine();
+    return prefetch((loaded, total) => this.loadProgressCb?.(loaded, total, 'prefetch')).then(
+      (dataBuffer) => startEngine(dataBuffer),
+      () => startEngine(),
+    );
   }
 
   /**

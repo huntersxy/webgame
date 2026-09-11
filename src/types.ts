@@ -121,10 +121,10 @@ export type WorkerRequest = (
   | { type: 'xq-hint'; board: XqBoard; side: XqSide; mode: GameMode; historyLength: number; forceJs?: boolean }
   | { type: 'junqi-search'; board: JqBoard; side: JqSide; difficulty: Difficulty; mode: GameMode; flip: boolean; historyLength: number }
   | { type: 'junqi-hint'; board: JqBoard; side: JqSide; mode: GameMode; flip: boolean; historyLength: number }
-  /** 提前唤醒 Rapfi 引擎，把首次 ~11MB 加载挪到玩家思考首手的时间里 */
-  | { type: 'gomoku-warmup' }
-  /** 提前唤醒 Pikafish 引擎（wasm + 约 48MB NNUE 权重） */
-  | { type: 'xq-warmup' }
+  /** 提前唤醒 Rapfi 引擎。dataBuffer：主线程已下完的权重包，经 getPreloadedPackage 注入 */
+  | { type: 'gomoku-warmup'; dataBuffer?: ArrayBuffer }
+  /** 提前唤醒 Pikafish 引擎。dataBuffer：主线程已下完的 NNUE 权重包 */
+  | { type: 'xq-warmup'; dataBuffer?: ArrayBuffer }
   | { type: 'cancel' }
 ) & { id?: number };
 
