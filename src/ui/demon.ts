@@ -13,7 +13,7 @@ export const DEMON_NAME = '褚赢';
  * Safe to call multiple times; only sets src when element exists.
  */
 export function setupDemonAssets(): void {
-  for (const id of ['g-demon-avatar', 'x-demon-avatar']) {
+  for (const id of ['g-demon-avatar', 'x-demon-avatar', 'go-demon-avatar']) {
     const img = document.getElementById(id) as HTMLImageElement | null;
     if (img) img.src = demonAvatarUrl;
   }

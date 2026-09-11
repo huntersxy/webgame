@@ -11,6 +11,7 @@ import { XiangqiController } from './controllers/xiangqi-controller';
 import { CampaignController } from './controllers/campaign-controller';
 import { TornadoController } from './controllers/tornado-controller';
 import { JunqiController } from './controllers/junqi-controller';
+import { GoController } from './controllers/go-controller';
 import { setupDemonAssets } from './ui/demon';
 
 // ── Global status helper ──
@@ -21,8 +22,8 @@ function setGlobalStatus(t: string): void {
 (window as any).setGlobalStatus = setGlobalStatus;
 
 // ── Hash router ──
-type ViewName = 'home' | 'tornado' | 'gomoku' | 'campaign' | 'xiangqi' | 'junqi';
-const routes = ['home', 'tornado', 'gomoku', 'campaign', 'xiangqi', 'junqi'] as const;
+type ViewName = 'home' | 'tornado' | 'gomoku' | 'campaign' | 'xiangqi' | 'junqi' | 'go';
+const routes = ['home', 'tornado', 'gomoku', 'campaign', 'xiangqi', 'junqi', 'go'] as const;
 
 const views: Record<ViewName, HTMLElement | null> = {
   home: document.getElementById('view-home'),
@@ -31,6 +32,7 @@ const views: Record<ViewName, HTMLElement | null> = {
   campaign: document.getElementById('view-campaign'),
   xiangqi: document.getElementById('view-xiangqi'),
   junqi: document.getElementById('view-junqi'),
+  go: document.getElementById('view-go'),
 };
 
 function isView(v: string): v is ViewName {
@@ -59,6 +61,7 @@ function applyView(name: ViewName): void {
   if (name === 'xiangqi' && xiangqiCtrl) { xiangqiCtrl.redraw(); xiangqiCtrl.warmUp(); }
   if (name === 'tornado' && tornadoCtrl) tornadoCtrl.redraw();
   if (name === 'junqi' && junqiCtrl) junqiCtrl.redraw();
+  if (name === 'go' && goCtrl) { goCtrl.redraw(); goCtrl.warmUp(); }
 }
 
 function routeFromHash(): ViewName {
@@ -82,18 +85,21 @@ const xiangqiCanvas = document.getElementById('xiangqi-canvas') as HTMLCanvasEle
 const campaignCanvas = document.getElementById('camp-canvas') as HTMLCanvasElement | null;
 const tornadoCanvas = document.getElementById('t-canvas') as HTMLCanvasElement | null;
 const junqiCanvas = document.getElementById('jq-canvas') as HTMLCanvasElement | null;
+const goCanvas = document.getElementById('go-canvas') as HTMLCanvasElement | null;
 
 let gomokuCtrl: GomokuController | null = null;
 let xiangqiCtrl: XiangqiController | null = null;
 let campaignCtrl: CampaignController | null = null;
 let tornadoCtrl: TornadoController | null = null;
 let junqiCtrl: JunqiController | null = null;
+let goCtrl: GoController | null = null;
 
 if (gomokuCanvas) gomokuCtrl = new GomokuController(gomokuCanvas, ai, audio);
 if (xiangqiCanvas) xiangqiCtrl = new XiangqiController(xiangqiCanvas, ai, audio);
 if (campaignCanvas) campaignCtrl = new CampaignController(campaignCanvas, audio);
 if (tornadoCanvas) tornadoCtrl = new TornadoController(tornadoCanvas, audio);
 if (junqiCanvas && ai && audio) junqiCtrl = new JunqiController(junqiCanvas, ai, audio);
+if (goCanvas && ai && audio) goCtrl = new GoController(goCanvas, ai, audio);
 
 // ── Demon assets (avatar) ──
 setupDemonAssets();

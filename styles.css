@@ -223,12 +223,22 @@ main { max-width: 1200px; margin: 0 auto; padding: 28px clamp(14px, 4vw, 40px) 4
     repeating-linear-gradient(2deg, rgba(122,84,35,.06) 0 9px, transparent 9px 23px),
     linear-gradient(145deg, #f6ddb0, #e3ba75);
 }
-.gomoku-thumb .grid-lines {
+/* ── 围棋：同一块木纹，格子更疏（9 路） ── */
+.go-thumb {
+  background:
+    repeating-linear-gradient(94deg, rgba(122,84,35,.07) 0 7px, transparent 7px 19px),
+    repeating-linear-gradient(2deg, rgba(122,84,35,.06) 0 9px, transparent 9px 23px),
+    linear-gradient(145deg, #f7e0b6, #e0b46c);
+}
+.gomoku-thumb .grid-lines,
+.go-thumb .grid-lines {
   position: absolute; inset: 16% 12%;
   background-image: linear-gradient(#8a622f 1.2px, transparent 1.2px), linear-gradient(90deg, #8a622f 1.2px, transparent 1.2px);
   background-size: 20% 25%; opacity: .5;
 }
-.gomoku-thumb .grid-lines::after {
+.go-thumb .grid-lines { background-size: 12.5% 12.5%; inset: 14% 14%; }
+.gomoku-thumb .grid-lines::after,
+.go-thumb .grid-lines::after {
   content: ""; position: absolute; inset: 0;
   background:
     radial-gradient(circle 3px at 40% 50%, #8a622f 97%, transparent),
@@ -237,6 +247,14 @@ main { max-width: 1200px; margin: 0 auto; padding: 28px clamp(14px, 4vw, 40px) 4
     radial-gradient(circle 3px at 20% 75%, #8a622f 97%, transparent),
     radial-gradient(circle 3px at 80% 75%, #8a622f 97%, transparent);
   opacity: .75;
+}
+.go-thumb .grid-lines::after {
+  background:
+    radial-gradient(circle 3px at 12.5% 12.5%, #8a622f 97%, transparent),
+    radial-gradient(circle 3px at 87.5% 12.5%, #8a622f 97%, transparent),
+    radial-gradient(circle 3px at 12.5% 87.5%, #8a622f 97%, transparent),
+    radial-gradient(circle 3px at 87.5% 87.5%, #8a622f 97%, transparent),
+    radial-gradient(circle 3px at 50% 50%, #8a622f 97%, transparent);
 }
 .t-stone {
   position: absolute; width: 34px; height: 34px; border-radius: 50%;

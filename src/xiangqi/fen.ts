@@ -1,9 +1,10 @@
 /* ────────────────────────────────────────────────────────────
  *  xiangqi/fen.ts — FEN + UCI 坐标编解码
  *
- *  Pikafish 是 UCI 引擎，吃的是 FEN 字符串与 ICCS/UCCI 走法
- *  （形如 "h2e2"），而我们内部用的是 2D 棋盘 + {fx,fy,tx,ty}。
- *  这一层负责两者之间的无损转换。
+ *  象棋的两套引擎吃的都是 FEN 字符串与 ICCS/UCCI 走法（形如 "h2e2"），
+ *  而我们内部用的是 2D 棋盘 + {fx,fy,tx,ty}。这一层负责两者之间的无损转换：
+ *    · 神经网络引擎（src/xqnn/）：FEN 只用于测试与 fixture，正式路径直接用棋盘编码
+ *    · XQWLight（src/xiangqi/xqwlight.ts）：每手把 FEN 喂给引擎，着法按 ICCS 收回
  *
  *  坐标约定（与标准象棋 FEN 一致）：
  *    · FEN 从【黑方底线】开始往下逐行书写 → FEN 第 y 行 = board[y]
@@ -11,7 +12,7 @@
  *    · 大写 = 红方，小写 = 黑方（与本题 XqBoard 完全一致）
  *    · UCI 格：file = 'a' + x，rank = 9 - y（红方底线为 rank 0）
  *      例：红帅在 (4,9) → "e0"；黑将在 (4,0) → "e9"
- *    · FEN 行棋方：红 = 'w'，黑 = 'b'（Pikafish 沿用 Stockfish 的 w/b）
+ *    · FEN 行棋方：红 = 'w'，黑 = 'b'（与 xqbase 的 FEN 写法一致）
  * ──────────────────────────────────────────────────────────── */
 
 import type { XqBoard, XqMove, XqSide } from '../types';

@@ -233,7 +233,14 @@ function alphaBeta(
   return best;
 }
 
-/** Find best move for the current side */
+/** Find best move for the current side
+ *
+ *  @param rootOut 可选：把**全部**根着法及其 α-β 分数写回这里（神经网络
+ *                 引擎要把网络先验融合进根着法评分，光靠返回的 top6 不够）。
+ *  @param skipOpeningRandom 跳过「开局随机挑一手」的捷径。神经网络引擎要传 true：
+ *                 开局的多样性应当由网络先验 + 温度采样给出，而不是随机数——
+ *                 而且那条捷径不走 rootOut，会让调用方拿到空的根着法表。
+ */
 export function findBestMove(
   board: XqBoard,
   side: XqSide,
@@ -241,6 +248,8 @@ export function findBestMove(
   mode: GameMode,
   historyLength: number,
   persist = true,
+  rootOut?: Array<XqMove & { v: number }>,
+  skipOpeningRandom = false,
 ): SearchResult<XqMove> {
   const t0 = typeof performance !== 'undefined' ? performance.now() : Date.now();
   const cfg = LEVEL_CONFIG[difficulty];
@@ -272,9 +281,13 @@ export function findBestMove(
     return { move: null, depth: base, nodes: 0, ms: 0, eval: 0, scores: [] };
   }
 
-  // Non-demon opening randomness
-  if (!demon && historyLength < 2 && Math.random() < 0.35 && allMoves.length > 5) {
+  // Non-demon opening randomness（神经网络引擎会跳过这条捷径，见上面的参数说明）
+  if (!skipOpeningRandom && !demon && historyLength < 2 && Math.random() < 0.35 && allMoves.length > 5) {
     const r = allMoves[(Math.random() * 5) | 0];
+    if (rootOut) {
+      rootOut.length = 0;
+      rootOut.push({ ...r, v: 0 });
+    }
     return { move: r, depth: base, nodes: 5, ms: 1, eval: 0, scores: [{ ...r, v: 0 }], opening: true };
   }
 
@@ -363,6 +376,10 @@ export function findBestMove(
   else if (!demon) { warmDepth.r = 0; warmDepth.b = 0; }
 
   const t1 = typeof performance !== 'undefined' ? performance.now() : Date.now();
+  if (rootOut) {
+    rootOut.length = 0;
+    for (const s of res.scored) rootOut.push(s);
+  }
   return {
     move: res.best,
     depth: searchDepth,

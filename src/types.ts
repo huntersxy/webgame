@@ -4,6 +4,8 @@
 
 import type { Board as JqBoard, Side as JqSide } from './junqi/rules';
 export type { JqBoard, JqSide };
+import type { GoColor } from './go/rules';
+export type { GoColor };
 
 /** Player color for Gomoku: 1 = Black, 2 = White */
 export type GomokuPlayer = 1 | 2;
@@ -59,6 +61,50 @@ export interface JqMove {
   ub?: boolean;
 }
 
+/* ── 围棋 ── */
+
+/** 围棋一手棋：i = 棋盘索引（y*size+x），-1 = 虚手 */
+export interface GoMove {
+  i: number;
+  /** 搜索值（访问次数），界面排序用 */
+  v?: number;
+}
+
+/** 围棋候选点（界面「候选点显示」与思考日志用） */
+export interface GoCandidate {
+  /** 棋盘索引，size*size 表示虚手 */
+  move: number;
+  visits: number;
+  /** 该手之后轮走方的胜率 0~1 */
+  winProb: number;
+  /** 黑方视角目差 */
+  scoreLead: number;
+  prior: number;
+}
+
+/** 围棋 AI 难度档 */
+export type GoLevel = 1 | 2 | 3 | 4;
+
+/**
+ * 围棋局面负载（主线程 → Worker，必须可结构化克隆）。
+ * stones 用 Uint8Array（0 空 / 1 黑 / 2 白），长度 size*size。
+ */
+export interface GoPositionPayload {
+  size: number;
+  stones: Uint8Array;
+  /** 劫禁着点，-1 无 */
+  koPoint: number;
+  toMove: GoColor;
+  komi: number;
+  /** 最近若干手（时间顺序，最后一项是最近一手；move = -1 为虚手） */
+  moveHistory: Array<{ move: number; color: GoColor }>;
+  /** 上一手 / 上上手局面（供网络输入的历史与征子平面） */
+  prevStones?: Uint8Array | null;
+  prevKoPoint?: number;
+  prevPrevStones?: Uint8Array | null;
+  prevPrevKoPoint?: number;
+}
+
 /** Search result returned by the AI */
 export interface SearchResult<M> {
   move: M | null;
@@ -73,12 +119,28 @@ export interface SearchResult<M> {
   opening?: boolean;
   book?: boolean;
   qd?: number;
-  /** Which engine produced this result: rapfi WASM variant, pikafish WASM, or the bundled JS engine */
-  engine?: 'rapfi-multi' | 'rapfi-single' | 'pikafish' | 'js';
+  /** Which engine produced this result: rapfi WASM variant, 象棋神经网络, XQWLight, or the bundled JS engine */
+  engine?: 'rapfi-multi' | 'rapfi-single' | 'xqnn' | 'xqwlight' | 'js' | 'go-nn' | 'go-heuristic';
+  /** 围棋：访问次数 */
+  visits?: number;
+  /** 围棋：轮走方胜率 0~1 */
+  winProb?: number;
+  /** 围棋：黑方视角目差 */
+  scoreLead?: number;
+  /** 围棋：候选点（按访问次数排序） */
+  goCandidates?: GoCandidate[];
+  /** 围棋：黑视角归属（+1 黑 / -1 白，长度 size*size） */
+  ownership?: Float32Array;
+  /** 围棋：推理后端与网络名（界面展示） */
+  backend?: string;
+  modelName?: string;
 }
 
 /** Difficulty levels */
 export type Difficulty = 1 | 2 | 3 | 4;
+
+/** 象棋引擎选择：'nn' = 神经网络（默认），'classic' = XQWLight 小巫师 */
+export type XqEngineKind = 'nn' | 'classic';
 
 export interface DifficultyConfig {
   name: string;
@@ -117,22 +179,45 @@ export interface ThinkInfo {
 export type WorkerRequest = (
   | { type: 'gomoku-search'; board: GomokuBoard; player: GomokuPlayer; difficulty: Difficulty; mode: GameMode; historyLength: number; moves: GomokuHistoryMove[]; forceJs?: boolean }
   | { type: 'gomoku-hint'; board: GomokuBoard; player: GomokuPlayer; mode: GameMode; historyLength: number; moves: GomokuHistoryMove[]; forceJs?: boolean }
-  | { type: 'xq-search'; board: XqBoard; side: XqSide; difficulty: Difficulty; mode: GameMode; historyLength: number; forceJs?: boolean }
-  | { type: 'xq-hint'; board: XqBoard; side: XqSide; mode: GameMode; historyLength: number; forceJs?: boolean }
+  | { type: 'xq-search'; board: XqBoard; side: XqSide; difficulty: Difficulty; mode: GameMode; historyLength: number; engineKind?: XqEngineKind }
+  | { type: 'xq-hint'; board: XqBoard; side: XqSide; mode: GameMode; historyLength: number; engineKind?: XqEngineKind }
   | { type: 'junqi-search'; board: JqBoard; side: JqSide; difficulty: Difficulty; mode: GameMode; flip: boolean; historyLength: number }
   | { type: 'junqi-hint'; board: JqBoard; side: JqSide; mode: GameMode; flip: boolean; historyLength: number }
+  /** 围棋：求一着（level 决定访问量/时间预算；visitsOverride/timeMsOverride 给「请神上身」满配用） */
+  | {
+      type: 'go-search';
+      position: GoPositionPayload;
+      level: GoLevel;
+      forceHeuristic?: boolean;
+      visitsOverride?: number;
+      timeMsOverride?: number;
+    }
+  /** 围棋：形势判断（不搜索，只要网络的胜率/目差/归属） */
+  | { type: 'go-estimate'; position: GoPositionPayload }
   /** 提前唤醒 Rapfi 引擎。dataBuffer：主线程已下完的权重包，经 getPreloadedPackage 注入 */
   | { type: 'gomoku-warmup'; dataBuffer?: ArrayBuffer }
-  /** 提前唤醒 Pikafish 引擎。dataBuffer：主线程已下完的 NNUE 权重包 */
+  /** 提前唤醒象棋神经网络引擎。dataBuffer：主线程已下完的 .onnx 权重 */
   | { type: 'xq-warmup'; dataBuffer?: ArrayBuffer }
+  /** 提前唤醒围棋神经网络。dataBuffer：主线程已下完的权重（gzip 流） */
+  | { type: 'go-warmup'; dataBuffer?: ArrayBuffer }
   | { type: 'cancel' }
 ) & { id?: number };
 
 /** Worker response messages */
 export type WorkerResponse =
-  | { type: 'search-result'; id?: number; result: SearchResult<GomokuMove | XqMove | JqMove> }
+  | { type: 'search-result'; id?: number; result: SearchResult<GomokuMove | XqMove | JqMove | GoMove> }
   | { type: 'progress'; nodes: number }
+  /** 搜索进度（围棋：已访问次数） */
+  | { type: 'search-progress'; id?: number; nodes: number }
   /** 预热结果。game 用于区分是哪个项目的引擎（两个引擎各自预热）。 */
-  | { type: 'warmup-done'; ok: boolean; variant?: 'multi' | 'single'; game?: 'gomoku' | 'xq' }
+  | {
+      type: 'warmup-done';
+      ok: boolean;
+      variant?: 'multi' | 'single';
+      game?: 'gomoku' | 'xq' | 'go';
+      error?: string;
+      backend?: string;
+      modelName?: string;
+    }
   /** 引擎数据包下载进度（worker 侧上报，主线程预取时通常一闪而过） */
   | { type: 'load-progress'; loaded: number; total: number };

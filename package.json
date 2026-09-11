@@ -1,23 +1,35 @@
 {
   "name": "webgame",
   "version": "3.0.0",
-  "description": "汐兮雨的小鱼池 — 五子棋 & 中国象棋 & 军棋（增量评估 + 迭代加深 α-β + VCF 引擎）",
+  "description": "汐兮雨的小鱼池 — 五子棋 & 围棋（神经网络）& 中国象棋 & 军棋（增量评估 + 迭代加深 α-β + VCF 引擎）",
   "license": "MIT",
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "predev": "node scripts/copy-tfjs-wasm.mjs",
     "build": "tsc --noEmit && vite build",
+    "prebuild": "node scripts/copy-tfjs-wasm.mjs",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "test:engine": "esbuild tests/engine.test.mts --bundle --platform=node --format=esm --outfile=.tmp/engine.test.mjs --log-level=warning && node .tmp/engine.test.mjs",
     "test:junqi": "esbuild tests/junqi.test.mts --bundle --platform=node --format=esm --outfile=.tmp/junqi.test.mjs --log-level=warning && node .tmp/junqi.test.mjs",
     "test:rapfi": "node tests/rapfi.test.cjs",
     "test:xqfen": "esbuild tests/xqfen.test.mts --bundle --platform=node --format=esm --outfile=.tmp/xqfen.test.mjs --log-level=warning && node .tmp/xqfen.test.mjs",
+    "test:xqnn": "esbuild tests/xqnn.test.mts --bundle --platform=node --format=esm --external:@tensorflow/tfjs-core --external:@tensorflow/tfjs-backend-cpu --external:@tensorflow/tfjs-backend-webgl --external:@tensorflow/tfjs-backend-wasm --external:@tensorflow/tfjs-backend-webgpu --outfile=.tmp/xqnn.test.mjs --log-level=warning && node .tmp/xqnn.test.mjs",
+    "test:xqwlight": "esbuild tests/xqwlight.test.mts --bundle --platform=node --format=esm --outfile=.tmp/xqwlight.test.mjs --log-level=warning && node .tmp/xqwlight.test.mjs",
     "test:tornado": "esbuild tests/tornado.test.mts --bundle --platform=node --format=esm --outfile=.tmp/tornado.test.mjs --log-level=warning && node .tmp/tornado.test.mjs",
-    "test": "npm run test:engine && npm run test:junqi && npm run test:rapfi && npm run test:xqfen && npm run test:tornado"
+    "test:go": "esbuild tests/go.test.mts --bundle --platform=node --format=cjs --outfile=.tmp/go.test.cjs --log-level=warning && node .tmp/go.test.cjs",
+    "test": "npm run test:engine && npm run test:junqi && npm run test:rapfi && npm run test:xqfen && npm run test:xqnn && npm run test:xqwlight && npm run test:tornado && npm run test:go"
   },
   "devDependencies": {
     "typescript": "^5.7.0",
     "vite": "^6.0.0"
+  },
+  "dependencies": {
+    "@tensorflow/tfjs-backend-cpu": "^4.22.0",
+    "@tensorflow/tfjs-backend-wasm": "^4.22.0",
+    "@tensorflow/tfjs-backend-webgl": "^4.22.0",
+    "@tensorflow/tfjs-backend-webgpu": "^4.22.0",
+    "@tensorflow/tfjs-core": "^4.22.0"
   }
 }
