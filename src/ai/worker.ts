@@ -5,7 +5,7 @@
 
 import type { WorkerRequest, WorkerResponse, GomokuBoard, XqBoard, GomokuPlayer, XqSide, JqBoard, JqSide, SearchResult, GomokuMove, XqMove, JqMove, GoMove, GoLevel } from '../types';
 import { findBestMove as gomokuSearch, findHintMove as gomokuHint } from '../gomoku/search';
-import { findBestMove as xqSearch, findHintMove as xqHint } from '../xiangqi/search';
+import { findBestMove as xqSearch, findHintMove as xqHint, HINT_BUDGET_MS } from '../xiangqi/search';
 import { findBestMove as jqSearch, findHintMove as jqHint } from '../junqi/ai';
 import { RapfiEngine } from '../gomoku/rapfi';
 import { XqnnEngine } from '../xqnn/engine';
@@ -139,7 +139,7 @@ self.onmessage = (e: MessageEvent<WorkerRequest>) => {
       const { mode, historyLength, engineKind } = req;
       const fallback = () => ({ ...xqHint(board, side, mode, historyLength), engine: 'js' as const });
       if (engineKind === 'classic') {
-        xqwlight.findMove(board, side, 4, mode, historyLength, fallback).then((result) => reply(req, result as any));
+        xqwlight.findMove(board, side, 4, mode, historyLength, fallback, HINT_BUDGET_MS).then((result) => reply(req, result as any));
         break;
       }
       if (!xqnn.ready) {
@@ -147,8 +147,8 @@ self.onmessage = (e: MessageEvent<WorkerRequest>) => {
         reply(req, fallback() as any);
         break;
       }
-      // 提示走满配档：一次最高难度搜索给出最佳着法
-      const runHint = () => xqnn.findMove(board, side, 4, mode, historyLength);
+      // 提示走恶魔档配置，但用短预算：请神要的是体验，不跟着恶魔一起等 10 秒
+      const runHint = () => xqnn.findMove(board, side, 4, mode, historyLength, HINT_BUDGET_MS);
       const hintTask = xqnnChain.then(runHint, runHint);
       xqnnChain = hintTask.catch(() => undefined);
       hintTask.then(

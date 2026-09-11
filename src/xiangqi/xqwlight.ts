@@ -21,12 +21,13 @@ import { legalMoves } from './rules';
 /** 资源修订号：改了 public/xqwlight/ 下任何文件才递增 */
 export const XQWLIGHT_ASSET_VERSION = 'a1';
 
-/** 难度档：depth 是迭代加深的上限，millis 是真正的时限（引擎自己控时） */
+/** 难度档：depth 是迭代加深的上限，millis 是真正的时限（引擎自己控时）。
+ *  恶魔档给足预算（6s）；「求一着」提示用 millisOverride 压到短预算。 */
 export const XQWLIGHT_LEVELS: Record<Difficulty, { depth: number; millis: number }> = {
   1: { depth: 4, millis: 150 },
   2: { depth: 8, millis: 450 },
   3: { depth: 14, millis: 1200 },
-  4: { depth: 64, millis: 2800 },
+  4: { depth: 64, millis: 6000 },
 };
 
 interface BestMoveReply {
@@ -143,6 +144,7 @@ export class XqWLightEngine {
 
   /**
    * 求一着。fallback 用于未就绪/失败时的兜底（内置 JS 引擎）。
+   * millisOverride 覆盖该档位的思考时限（「求一着」提示走短预算）。
    */
   async findMove(
     board: XqBoard,
@@ -151,6 +153,7 @@ export class XqWLightEngine {
     mode: GameMode,
     historyLength: number,
     fallback: () => SearchResult<XqMove>,
+    millisOverride?: number,
   ): Promise<SearchResult<XqMove>> {
     void historyLength;
     if (this.disabled) return fallback();
@@ -163,7 +166,7 @@ export class XqWLightEngine {
     const cfg = XQWLIGHT_LEVELS[difficulty];
     // AI 互搏时抖一点思考时间，避免每局一模一样
     const jitter = mode === 'aivai' ? 0.85 + Math.random() * 0.3 : 1;
-    const millis = Math.round(cfg.millis * jitter);
+    const millis = Math.round((millisOverride ?? cfg.millis) * jitter);
     const legal = legalMoves(board, side);
 
     try {

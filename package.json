@@ -17,9 +17,10 @@
     "test:xqfen": "esbuild tests/xqfen.test.mts --bundle --platform=node --format=esm --outfile=.tmp/xqfen.test.mjs --log-level=warning && node .tmp/xqfen.test.mjs",
     "test:xqnn": "esbuild tests/xqnn.test.mts --bundle --platform=node --format=esm --external:@tensorflow/tfjs-core --external:@tensorflow/tfjs-backend-cpu --external:@tensorflow/tfjs-backend-webgl --external:@tensorflow/tfjs-backend-wasm --external:@tensorflow/tfjs-backend-webgpu --outfile=.tmp/xqnn.test.mjs --log-level=warning && node .tmp/xqnn.test.mjs",
     "test:xqwlight": "esbuild tests/xqwlight.test.mts --bundle --platform=node --format=esm --outfile=.tmp/xqwlight.test.mjs --log-level=warning && node .tmp/xqwlight.test.mjs",
+    "test:xqsearch": "esbuild tests/xqsearch.test.mts --bundle --platform=node --format=esm --outfile=.tmp/xqsearch.test.mjs --log-level=warning && node .tmp/xqsearch.test.mjs",
     "test:tornado": "esbuild tests/tornado.test.mts --bundle --platform=node --format=esm --outfile=.tmp/tornado.test.mjs --log-level=warning && node .tmp/tornado.test.mjs",
     "test:go": "esbuild tests/go.test.mts --bundle --platform=node --format=cjs --outfile=.tmp/go.test.cjs --log-level=warning && node .tmp/go.test.cjs",
-    "test": "npm run test:engine && npm run test:junqi && npm run test:rapfi && npm run test:xqfen && npm run test:xqnn && npm run test:xqwlight && npm run test:tornado && npm run test:go"
+    "test": "npm run test:engine && npm run test:junqi && npm run test:rapfi && npm run test:xqfen && npm run test:xqsearch && npm run test:xqnn && npm run test:xqwlight && npm run test:tornado && npm run test:go"
   },
   "devDependencies": {
     "typescript": "^5.7.0",

@@ -17,6 +17,28 @@ export const LEVEL_CONFIG: Record<Difficulty, { name: string; depth: number; qd:
 
 export const MATE = 1_000_000;
 
+/* ── 恶魔档的时间预算 ──
+ * 硬上限 10s：任何一层跑不完就丢弃，绝不会用被截断的结果（见 findBestMove 里的说明）。
+ * 软目标 6s：过了软目标就不再开新的一层 —— 大多数局面 2~6s 已经到位，
+ * 没必要为了「跑满」而空烧 CPU；只有一直没算到杀、且下一层估得进硬上限时才继续加深。 */
+export const DEMON_HARD_BUDGET_MS = 10_000;
+export const DEMON_SOFT_BUDGET_MS = 6_000;
+/** 「请神」提示走的也是恶魔档，但它要的是体验：给一个短预算，别让人等 10 秒 */
+export const HINT_BUDGET_MS = 3_000;
+/** 下一层预估开销 = 上一层耗时 × 这个系数（α-β + 置换表 + 杀手着下的经验值，留了余量） */
+const NEXT_ITER_FACTOR = 3.2;
+
+/** 软目标：恶魔档默认 6s；外部传了更小的硬上限（如提示的 3s）就按它来。 */
+function difficultiesSoftBudget(difficulty: Difficulty, hardBudgetMs: number): number {
+  if (difficulty !== 4 || !hardBudgetMs) return 0;
+  return Math.min(DEMON_SOFT_BUDGET_MS, hardBudgetMs);
+}
+
+/** 单调时钟（performance.now 在 worker/主线程都有；退化到 Date.now） */
+function now(): number {
+  return typeof performance !== 'undefined' ? performance.now() : Date.now();
+}
+
 // Zobrist for Xiangqi: 9×10 board, 14 piece types
 const PIECE_CHARS = ['r', 'n', 'b', 'a', 'k', 'c', 'p', 'R', 'N', 'B', 'A', 'K', 'C', 'P'];
 const PIECE_IDX: Record<string, number> = {};
@@ -45,6 +67,8 @@ export interface XqSearchContext {
   deadline?: number;
   /** Set when a node bailed out of the remaining search due to the deadline. */
   hitDeadline?: boolean;
+  /** Set when a node bailed out due to the node cap（同样意味着这一层不完整） */
+  hitNodeCap?: boolean;
 }
 
 function boardHash(board: XqBoard, turn: XqSide): number {
@@ -93,8 +117,11 @@ export function orderMoves(moves: XqMove[], demon = false): XqMove[] {
 /** Quiescence search: only explore captures (and checks) to avoid horizon effect */
 function quiesce(board: XqBoard, alpha: number, beta: number, turn: XqSide, qd: number, ctx: XqSearchContext): number {
   ctx.nodes++;
-  const nodeCap = ctx.level === 4 ? (ctx.mode === 'aivai' ? 2_000_000 : 900_000) : 120_000;
-  if (ctx.nodes > nodeCap) return (turn === 'r' ? 1 : -1) * evaluate(board);
+  const nodeCap = ctx.level === 4 ? (ctx.mode === 'aivai' ? 3_500_000 : 2_500_000) : 120_000;
+  if (ctx.nodes > nodeCap) {
+    ctx.hitNodeCap = true;
+    return (turn === 'r' ? 1 : -1) * evaluate(board);
+  }
   if (ctx.deadline && typeof performance !== 'undefined' && performance.now() > ctx.deadline) {
     ctx.hitDeadline = true;
     return (turn === 'r' ? 1 : -1) * evaluate(board);
@@ -157,8 +184,11 @@ function alphaBeta(
 ): number {
   ctx.nodes++;
   const demon = ctx.level === 4;
-  const nodeCap = demon && ctx.boost ? 2_500_000 : demon && ctx.mode === 'aivai' ? 1_500_000 : demon ? 900_000 : 120_000;
-  if (ctx.nodes > nodeCap) return (turn === 'r' ? 1 : -1) * evaluate(board);
+  const nodeCap = demon && ctx.mode === 'aivai' ? 4_000_000 : demon ? 2_500_000 : 120_000;
+  if (ctx.nodes > nodeCap) {
+    ctx.hitNodeCap = true;
+    return (turn === 'r' ? 1 : -1) * evaluate(board);
+  }
   if (ctx.deadline && typeof performance !== 'undefined' && performance.now() > ctx.deadline) {
     ctx.hitDeadline = true;
     return (turn === 'r' ? 1 : -1) * evaluate(board);
@@ -240,6 +270,7 @@ function alphaBeta(
  *  @param skipOpeningRandom 跳过「开局随机挑一手」的捷径。神经网络引擎要传 true：
  *                 开局的多样性应当由网络先验 + 温度采样给出，而不是随机数——
  *                 而且那条捷径不走 rootOut，会让调用方拿到空的根着法表。
+ *  @param timeBudgetMs 覆盖恶魔档的硬时间上限（默认 10s）。「请神」提示走短预算。
  */
 export function findBestMove(
   board: XqBoard,
@@ -250,14 +281,16 @@ export function findBestMove(
   persist = true,
   rootOut?: Array<XqMove & { v: number }>,
   skipOpeningRandom = false,
+  timeBudgetMs?: number,
 ): SearchResult<XqMove> {
   const t0 = typeof performance !== 'undefined' ? performance.now() : Date.now();
   const cfg = LEVEL_CONFIG[difficulty];
   let base = cfg.depth;
 
-  // Soft time budget: demon gets a responsive ceiling while still reaching
-  // deep depths when fast. (Other levels keep their node-cap behaviour.)
-  const TIME_BUDGET_MS = difficulty === 4 ? 3800 : 0;
+  // 恶魔档的时间预算：硬上限管死（跑不完的层一律丢弃），软目标决定「够强就收手」。
+  // 非恶魔档没有时间预算（按固定深度搜完）。
+  const hardBudgetMs = difficulty === 4 ? (timeBudgetMs ?? DEMON_HARD_BUDGET_MS) : 0;
+  const softBudgetMs = difficultiesSoftBudget(difficulty, hardBudgetMs);
 
   const ctx: XqSearchContext = {
     nodes: 0,
@@ -265,7 +298,7 @@ export function findBestMove(
     mode,
     curQD: cfg.qd,
     boost: false,
-    deadline: TIME_BUDGET_MS ? (typeof performance !== 'undefined' ? performance.now() + TIME_BUDGET_MS : 0) : undefined,
+    deadline: hardBudgetMs ? (typeof performance !== 'undefined' ? performance.now() + hardBudgetMs : 0) : undefined,
   };
 
   // Demon AI-vs-AI: deeper
@@ -323,50 +356,61 @@ export function findBestMove(
   // The settled depth is persisted so it carries into the next move, and is
   // never allowed below the base depth.
   const hardCap = 8;
-  const disAdv = (v: number) => v < -80;    // clearly losing for the side to move
-  const adv = (v: number) => v > 120;       // clearly winning for the side to move
-  const pastDeadline = () => !!ctx.deadline && typeof performance !== 'undefined' && performance.now() > ctx.deadline;
 
   let searchDepth = base;
   // Keeps the last COMPLETE (budget-safe) depth result so a time-out deepens
   // fall back to a solid shallower search instead of a garbled partial one.
   let lastGood: ReturnType<typeof runAtDepth> | null = null;
   let lastGoodDepth = base;
+  /** 迭代里跑出绝杀分就收手：再深也不会更好 */
+  let solvedMate = false;
 
   if (demon) {
-    // Resume from the persisted warm-start depth (if still >= base).
-    searchDepth = Math.max(base, Math.min(warmDepth[side] || base, hardCap));
+    // ── 迭代加深 + 时间管理 ──
+    // ① 先垫一个「一定能跑完」的浅层完整结果：一个完整迭代都没有时，
+    //    只能用被截断的那次结果，而被截断的子树直接返回静态评估，
+    //    于是「刚吃完一个马」的节点会被算成大优（实测把亏子交换算成 +236）。
+    //    depth3 通常几十毫秒，换来结果永远自洽。
+    // ② 再一层层加深，每层都做「还值不值得再开一层」的估算：
+    //    软目标（默认 6s）之内、且预估下一层能在硬上限（默认 10s）内跑完才继续。
+    //    这样大多数局面 2~6s 就收手，只有真需要深算的局面才用满硬上限。
+    const savedDeadline = ctx.deadline;
+    ctx.deadline = undefined;
+    ctx.hitDeadline = false;
+    ctx.hitNodeCap = false;
+    lastGood = runAtDepth(Math.min(base, 3));
+    lastGoodDepth = Math.min(base, 3);
+    ctx.deadline = savedDeadline;
 
-    // Deepen while losing; start from the warm depth, capped at base+3.
-    for (let iter = 0; iter < 3; iter++) {
-      if (pastDeadline()) break; // time's up — keep the best complete depth
+    let lastIterMs = 0;
+    for (let d = lastGoodDepth + 1; d <= hardCap; d++) {
+      const nowMs = now();
+      const elapsed = nowMs - t0;
+      const remain = (ctx.deadline ?? nowMs) - nowMs;
+      // 已经过了软目标就收手；估算下一层跑不完也不开（EBF 取 3.2 留余量）
+      if (elapsed >= softBudgetMs) break;
+      if (remain <= 0) break;
+      if (lastIterMs > 0 && lastIterMs * NEXT_ITER_FACTOR > remain * 0.85) break;
+
       ctx.hitDeadline = false;
-      const r = runAtDepth(searchDepth);
-      if (!ctx.hitDeadline) { lastGood = r; lastGoodDepth = searchDepth; }
-      if (ctx.hitDeadline || !disAdv(r.bestV) || searchDepth >= Math.min(base + 3, hardCap)) break;
-      ctx.boost = true;
-      searchDepth++;
+      ctx.hitNodeCap = false;
+      const iterStart = now();
+      const r = runAtDepth(d);
+      lastIterMs = now() - iterStart;
+      // 被硬上限/节点上限掐断的这一层不算数，保留上一层完整结果
+      if (ctx.hitDeadline || ctx.hitNodeCap) break;
+      lastGood = r;
+      lastGoodDepth = d;
+      if (Math.abs(r.bestV) >= MATE - 1000) { solvedMate = true; break; }
     }
+
+    searchDepth = lastGoodDepth;
+    void solvedMate;
   }
 
-  // Settle on a reduced depth once the position is no longer losing.
   let res: ReturnType<typeof runAtDepth>;
-  if (demon && searchDepth > base && lastGood && !pastDeadline()) {
-    const preSettleDepth = searchDepth;
-    ctx.hitDeadline = false;
-    const probe = runAtDepth(searchDepth);
-    if (ctx.hitDeadline || pastDeadline()) {
-      // Ran out of time while settling — trust the last complete depth we have.
-      res = lastGood;
-      searchDepth = lastGoodDepth;
-    } else {
-      if (adv(probe.bestV)) searchDepth = Math.max(base, searchDepth - 2);
-      else if (!disAdv(probe.bestV)) searchDepth = Math.max(base, searchDepth - 1); // balanced
-      res = searchDepth === preSettleDepth ? probe : runAtDepth(searchDepth);
-    }
-  } else if (demon && pastDeadline()) {
+  if (demon) {
     res = lastGood ?? runAtDepth(searchDepth);
-    if (lastGood) searchDepth = lastGoodDepth;
   } else {
     res = runAtDepth(searchDepth);
   }
@@ -393,12 +437,13 @@ export function findBestMove(
   };
 }
 
-/** Hint: always demon-level (does not mutate the persisted adaptive depth). */
+/** Hint: 走恶魔档配置，但用短预算（HINT_BUDGET_MS）——「请神」要的是体验，不是榨干 CPU。 */
 export function findHintMove(
   board: XqBoard,
   side: XqSide,
   mode: GameMode,
   historyLength: number,
+  timeBudgetMs: number = HINT_BUDGET_MS,
 ): SearchResult<XqMove> {
-  return findBestMove(board, side, 4, mode, historyLength, false);
+  return findBestMove(board, side, 4, mode, historyLength, false, undefined, true, timeBudgetMs);
 }

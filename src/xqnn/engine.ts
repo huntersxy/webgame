@@ -58,16 +58,18 @@ export class XqnnEngine {
     return this.loading;
   }
 
-  /** 求一着。未就绪会直接抛错，由 worker 决定是否回退内置引擎。 */
+  /** 求一着。未就绪会直接抛错，由 worker 决定是否回退内置引擎。
+   *  timeBudgetMs 仅在恶魔档生效（默认硬上限 10s / 软目标 6s）。 */
   async findMove(
     board: XqBoard,
     side: XqSide,
     difficulty: Difficulty,
     mode: GameMode,
     historyLength = 0,
+    timeBudgetMs?: number,
   ): Promise<SearchResult<XqMove>> {
     if (!this.ev.ready) throw new Error('象棋神经网络尚未就绪');
-    const res = await this.searcher.search(board, side, difficulty, mode, historyLength);
+    const res = await this.searcher.search(board, side, difficulty, mode, historyLength, timeBudgetMs);
     return { ...res, backend: this.backend ?? undefined };
   }
 

@@ -74,16 +74,25 @@ const SLOW_BACKEND_VALUE_EVALS = 16;
 export class XqSearcher {
   constructor(private readonly ev: XqEvaluatorLike) {}
 
-  /** 求一着：α-β 全根着法评分 + 网络策略先验 + 网络价值微调。 */
-  async search(board: XqBoard, side: XqSide, difficulty: Difficulty, mode: GameMode, historyLength = 0): Promise<SearchResult<XqMove>> {
+  /** 求一着：α-β 全根着法评分 + 网络策略先验 + 网络价值微调。
+   *  timeBudgetMs 只在恶魔档生效（覆盖默认 10s 硬上限），「请神」提示走短预算。 */
+  async search(
+    board: XqBoard,
+    side: XqSide,
+    difficulty: Difficulty,
+    mode: GameMode,
+    historyLength = 0,
+    timeBudgetMs?: number,
+  ): Promise<SearchResult<XqMove>> {
     const cfg = XQNN_LEVELS[difficulty];
     const table = this.ev.moves;
+    void table;
 
     // ① α-β 搜索：拿到全部根着法的分数（行棋方视角）
     //    skipOpeningRandom=true：开局的多样性交给网络先验 + 温度采样，
     //    而不是内置引擎那条「随机挑一手」的捷径（它还会绕过 rootOut）。
     const rootScores: Array<XqMove & { v: number }> = [];
-    const ab = findBestMove(board, side, difficulty, mode, historyLength, true, rootScores, true);
+    const ab = findBestMove(board, side, difficulty, mode, historyLength, true, rootScores, true, timeBudgetMs);
     if (!rootScores.length) {
       // 兜底：正常不会走到（skipOpeningRandom 之后所有出口都会填 rootOut）
       return { ...ab, engine: 'xqnn', backend: this.ev.backend ?? undefined, modelName: 'chess_model.onnx' };
