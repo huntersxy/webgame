@@ -19,8 +19,13 @@ import {
 import type { OthPosition } from './rules';
 import { evaluateState, ENDGAME_EMPTIES, WIN_BASE, weightAt } from './evaluate';
 
-/** 单次搜索的节点硬上限（约 0.4~1s 量级，视引擎速度而定） */
-const NODE_CAP = 260_000;
+/**
+ * 单次搜索的节点硬上限。
+ * 残局精确求解在「剩 14 空」附近需要几十万节点，上限给小了会在预算没用完时
+ * 就被掐断（表现为恶魔档的精确求解反而不如困难档的深搜）。这里按恶魔档
+ * 5.2s 预算的量级放宽，主线程有 worker 隔离，卡不到界面。
+ */
+const NODE_CAP = 900_000;
 
 export const LEVEL_CONFIG: Record<Difficulty, { name: string; depth: number; limit: number; timeMs: number }> = {
   1: { name: '简单', depth: 1, limit: 8, timeMs: 60 },
@@ -364,12 +369,14 @@ export function findBestMove(
   difficulty: Difficulty,
   mode: GameMode,
   historyLength: number,
+  /** 覆盖时间预算（毫秒）。基准脚本用它在固定预算下比较不同档位，不传则用档位默认值 */
+  budgetOverride?: number,
 ): SearchResult<OthMove> {
   void historyLength;
   ttClear();
   const pos = fromCellsFast(cells, side);
   const cfg = LEVEL_CONFIG[difficulty];
-  const budget = mode === 'aivai' && difficulty === 4 ? Math.round(cfg.timeMs * 1.3) : cfg.timeMs;
+  const budget = budgetOverride ?? (mode === 'aivai' && difficulty === 4 ? Math.round(cfg.timeMs * 1.3) : cfg.timeMs);
 
   // 简单档：只算一层，并偶尔在候选中挑次优，保证新手也有胜机
   if (difficulty === 1) {
