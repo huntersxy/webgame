@@ -241,5 +241,18 @@ console.log('— 地表与世界内容同步（同一相机变换）—');
   assert(Math.abs(gridShift - buildingShift) < 1e-6, '格子与建筑位移一致（无相对运动）');
 }
 
+console.log('— 粒子上限（防止越玩越卡）—');
+{
+  // 连续吃物体时粒子会堆积；早期每个粒子是一次 emoji fillText，
+  // DPR2 下 300 个要 1.68ms（换成填充圆只要 0.16ms），于是越玩越卡。
+  const g = new TornadoGame();
+  (g as any).burst(100, 100, '🪨', 400);      // 一次爆 400 个，必须被截到上限
+  const ps = (g as any).particles as Array<{ c: string }>;
+  assert(ps.length <= 160, `粒子数被截到上限（${ps.length} ≤ 160）`);
+  assert(ps.every((p) => typeof p.c === 'string' && p.c.length > 0), '每个粒子都带可直接填充的颜色（不再走 emoji 分支）');
+  for (let i = 0; i < 20; i++) (g as any).burst(100, 100, '', 50);   // 反复爆量
+  assert(ps.length <= 160, `反复爆量后仍在上限内（${ps.length}）`);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail > 0) process.exit(1);

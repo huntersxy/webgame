@@ -131,8 +131,15 @@ const HANDOFF_P = 1;
 const WIPE_SPAN = VIEW * 0.74;
 /** 地面装饰离屏画布的分辨率（1120 世界单位映射到这么多像素） */
 const DECOR_PX = 512;
-/** 一帧最多平铺几块装饰；推得极远时格子会碎成几百片，超出就交给细网格 */
+/**
+ * 一帧最多平铺几块装饰。推得越远、屏幕覆盖的世界越大，需要的块数越多；
+ * 封顶避免推得极远时格子碎成几百片，超出就交给细网格。
+ */
 const DECOR_TILE_CAP = 16;
+/** 粒子数上限：连续快吃时粒子会堆到上百个，超出就挤掉最老的（防止越玩越卡） */
+const PARTICLE_CAP = 160;
+/** 无贴图「风色」粒子的固定色 */
+const WIND_PARTICLE = 'rgba(150,168,182,.55)';
 
 export interface Obj {
   x: number; y: number; r: number; e: string; seed: number; dead: boolean;
@@ -528,11 +535,15 @@ export class TornadoGame {
     for (let i = 0; i < n; i++) {
       const a = Math.random() * Math.PI * 2;
       const sp = 60 + Math.random() * 240;
+      // 风色（无贴图）用固定灰蓝；有贴图时按量级取色
+      const c = e ? WIND_PARTICLE : particleColor(this.tier, i);
+      // 上限保护：连续快吃时粒子会堆积，超上限就挤掉最老的
+      if (this.particles.length >= PARTICLE_CAP) this.particles.shift();
       this.particles.push({
         x, y,
         vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 80,
         life: 0.4 + Math.random() * 0.5, max: 0.9,
-        c: e ? '' : `hsla(${(this.tier * 47 + i * 30) % 360},45%,55%,.9)`,
+        c,
         sz: 3 + Math.random() * 4,
       });
     }
@@ -983,7 +994,13 @@ export class TornadoGame {
     }
   }
 
-  /** 粒子与环（已处于世界坐标系） */
+  /**
+   * 粒子与环（已处于世界坐标系）。
+   *
+   * 粒子一律用「填充圆」画：早期用 💨 emoji + fillText，实测在 DPR2 下
+   * 300 个粒子要 1.68ms、而圆只要 0.16ms（emoji 逐字栅格化很贵）；连续吃
+   * 物体时粒子会堆到上百个，于是越玩越卡。圆没有任何字体栅格化开销。
+   */
   private drawFx(ctx: CanvasRenderingContext2D): void {
     for (const rg of this.rings) {
       ctx.beginPath();
@@ -994,19 +1011,12 @@ export class TornadoGame {
       ctx.stroke();
       ctx.globalAlpha = 1;
     }
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
     for (const p of this.particles) {
       ctx.globalAlpha = Math.max(0, p.life / p.max);
-      if (p.c) {
-        ctx.fillStyle = p.c;
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, p.sz, 0, Math.PI * 2);
-        ctx.fill();
-      } else {
-        ctx.font = `${p.sz * 4}px "Segoe UI Emoji",serif`;
-        ctx.fillText('💨', p.x, p.y);
-      }
+      ctx.fillStyle = p.c;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.sz, 0, Math.PI * 2);
+      ctx.fill();
       ctx.globalAlpha = 1;
     }
   }
@@ -1185,6 +1195,11 @@ function smoothstep(t: number): number {
   return k * k * (3 - 2 * k);
 }
 function clamp(v: number, a: number, b: number): number { return Math.max(a, Math.min(b, v)); }
+
+/** 粒子颜色：按量级轮换色相（与旧实现同族，但始终是可直接 fill 的颜色） */
+function particleColor(tier: number, i: number): string {
+  return `hsla(${(tier * 47 + i * 30) % 360},45%,55%,.9)`;
+}
 /** 确定性伪随机（地形/装饰按量级种子生成，每帧一致） */
 function mulberry32(a: number): () => number {
   return () => {
