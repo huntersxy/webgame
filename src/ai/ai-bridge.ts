@@ -61,9 +61,13 @@ export class AIBridge {
   }
 
   /**
-   * 预热统一入口。
+   * 预热统一入口：主线程预取权重 → **完整结束**后再启动引擎。
    * @param game     'gomoku' | 'xq'，用于把结果配回对应的调用方
-   * @param prefetch 主线程预取函数（与引擎内部取数据包的方式一致，命中同一缓存）
+   * @param prefetch 主线程预取函数（URL 与引擎内部取包一致，完成后引擎应命中 HTTP 缓存）
+   *
+   * 不再「预取与引擎并行」：并行时浏览器常不合并同 URL 的 in-flight 请求，
+   * 会变成真下两遍（象棋约 48MB），且两条进度流抢写进度条。
+   * 预取失败也照常启引擎——让引擎自己再下，并改由 engine 侧 progress 驱动。
    */
   private warmUp(
     game: 'gomoku' | 'xq',
@@ -71,20 +75,33 @@ export class AIBridge {
     prefetch: ((cb: (loaded: number, total: number) => void) => Promise<void>) | null,
     onProgress?: (loaded: number, total: number, src: LoadPhase) => void,
   ): Promise<{ ok: boolean; variant?: 'multi' | 'single' }> {
-    this.loadProgressCb = onProgress ?? null;
-    // 主线程先按「与引擎内部完全相同的方式」预取数据包：既拿到真实字节进度，
-    // 又让引擎稍后那次 fetch 直接命中缓存。失败无所谓——引擎自己还会再取一次。
-    if (prefetch) {
-      void prefetch((loaded, total) => this.loadProgressCb?.(loaded, total, 'prefetch')).catch(() => undefined);
-    }
-    return new Promise((resolve) => {
-      if (!this.worker) {
-        resolve({ ok: false });
-        return;
-      }
-      this.warmupResolvers.set(game, resolve);
-      this.worker.postMessage(req);
-    });
+    let shownLoaded = 0;
+    let shownTotal = 0;
+    const emit = (loaded: number, total: number, src: LoadPhase): void => {
+      if (!total) return;
+      const nextTotal = Math.max(total, shownTotal);
+      const nextLoaded = Math.max(shownLoaded, Math.min(loaded, nextTotal));
+      if (nextLoaded === shownLoaded && nextTotal === shownTotal) return;
+      shownLoaded = nextLoaded;
+      shownTotal = nextTotal;
+      onProgress?.(shownLoaded, shownTotal, src);
+    };
+    this.loadProgressCb = onProgress ? emit : null;
+
+    const startEngine = (): Promise<{ ok: boolean; variant?: 'multi' | 'single' }> =>
+      new Promise((resolve) => {
+        if (!this.worker) {
+          resolve({ ok: false });
+          return;
+        }
+        this.warmupResolvers.set(game, resolve);
+        this.worker.postMessage(req);
+      });
+
+    const prefetchDone = prefetch
+      ? prefetch((loaded, total) => this.loadProgressCb?.(loaded, total, 'prefetch')).catch(() => undefined)
+      : Promise.resolve();
+    return prefetchDone.then(() => startEngine());
   }
 
   /**
