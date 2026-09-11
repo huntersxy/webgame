@@ -60,7 +60,7 @@ function applyView(name: ViewName): void {
   window.scrollTo({ top: 0, behavior: 'smooth' });
   if (name === 'gomoku' && gomokuCtrl) { gomokuCtrl.redraw(); gomokuCtrl.warmUp(); }
   if (name === 'campaign' && campaignCtrl) campaignCtrl.redraw();
-  if (name === 'othello' && othelloCtrl) othelloCtrl.redraw();
+  if (name === 'othello' && othelloCtrl) { othelloCtrl.redraw(); othelloCtrl.warmUp(); }
   if (name === 'xiangqi' && xiangqiCtrl) { xiangqiCtrl.redraw(); xiangqiCtrl.warmUp(); }
   if (name === 'tornado' && tornadoCtrl) tornadoCtrl.redraw();
   if (name === 'junqi' && junqiCtrl) junqiCtrl.redraw();

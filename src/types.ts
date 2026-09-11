@@ -137,7 +137,7 @@ export interface SearchResult<M> {
   book?: boolean;
   qd?: number;
   /** Which engine produced this result: rapfi WASM variant, 象棋神经网络, XQWLight, or the bundled JS engine */
-  engine?: 'rapfi-multi' | 'rapfi-single' | 'xqnn' | 'xqwlight' | 'js' | 'go-nn' | 'go-heuristic';
+  engine?: 'rapfi-multi' | 'rapfi-single' | 'xqnn' | 'xqwlight' | 'js' | 'go-nn' | 'go-heuristic' | 'egaroucid';
   /** 围棋：访问次数 */
   visits?: number;
   /** 围棋：轮走方胜率 0~1 */
@@ -201,8 +201,8 @@ export type WorkerRequest = (
   | { type: 'junqi-search'; board: JqBoard; side: JqSide; difficulty: Difficulty; mode: GameMode; flip: boolean; historyLength: number }
   | { type: 'junqi-hint'; board: JqBoard; side: JqSide; mode: GameMode; flip: boolean; historyLength: number }
   /** 黑白棋：board 为 64 格 Uint8Array（0 空 / 1 黑 / 2 白），side 为轮走方 */
-  | { type: 'oth-search'; board: OthBoard; side: OthDisc; difficulty: Difficulty; mode: GameMode; historyLength: number }
-  | { type: 'oth-hint'; board: OthBoard; side: OthDisc; mode: GameMode; historyLength: number }
+  | { type: 'oth-search'; board: OthBoard; side: OthDisc; difficulty: Difficulty; mode: GameMode; historyLength: number; engineKind?: 'builtin' | 'egar' }
+  | { type: 'oth-hint'; board: OthBoard; side: OthDisc; mode: GameMode; historyLength: number; engineKind?: 'builtin' | 'egar' }
   /** 围棋：求一着（level 决定访问量/时间预算；visitsOverride/timeMsOverride 给「请神上身」满配用） */
   | {
       type: 'go-search';
@@ -220,6 +220,8 @@ export type WorkerRequest = (
   | { type: 'xq-warmup'; dataBuffer?: ArrayBuffer }
   /** 提前唤醒围棋神经网络。dataBuffer：主线程已下完的权重（gzip 流） */
   | { type: 'go-warmup'; dataBuffer?: ArrayBuffer }
+  /** 提前唤醒黑白棋的 Egaroucid 引擎（资源由 Emscripten 自行 fetch） */
+  | { type: 'oth-warmup' }
   | { type: 'cancel' }
 ) & { id?: number };
 
@@ -234,7 +236,7 @@ export type WorkerResponse =
       type: 'warmup-done';
       ok: boolean;
       variant?: 'multi' | 'single';
-      game?: 'gomoku' | 'xq' | 'go';
+      game?: 'gomoku' | 'xq' | 'go' | 'oth';
       error?: string;
       backend?: string;
       modelName?: string;

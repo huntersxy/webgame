@@ -22,7 +22,7 @@ import { AIBridge } from '../ai/ai-bridge';
 import { AudioEngine } from '../ui/audio';
 import { Stats } from '../ui/stats';
 import { renderOth, pxToCellOth, othScorePercent, type OthRenderState } from '../ui/othello-renderer';
-import { appendLog, setStats, toggleProgress, fmtEval } from '../ui/format';
+import { appendLog, setStats, toggleProgress } from '../ui/format';
 import { applyDemonTheme, DEMON_NAME } from '../ui/demon';
 
 interface HistoryEntry {
@@ -72,6 +72,22 @@ export class OthelloController {
   private _animFrame: number | null = null;
   private _down: { x: number; y: number } | null = null;
   private _passNotice = '';
+  /**
+   * 引擎选择。
+   *   'builtin' = 内置 JS 引擎（默认，行为与线上一致）
+   *   'experimental' = Egaroucid（GPL-3.0，1.4MB wasm，64MB 内存）。上游 wasm
+   *     的棋盘朝向与我们的坐标约定尚未对齐（见 public/egaroucid/NOTICE.md），
+   *     因此标注为实验性、默认关闭，仅用于验证。
+   */
+  private enginePref: 'experimental' | 'builtin' = 'builtin';
+  /** Egaroucid 是否就绪：null = 未知/加载中，true/false = 已定 */
+  private _egarReady: boolean | null = null;
+  private _warming = false;
+  private _warmed = false;
+  private _loadText = '🧠 Egaroucid 引擎预热中…';
+  private _egarLogged = false;
+  /** 引擎回退只播报一次 */
+  private _demonFallbackWarned = false;
 
   constructor(canvas: HTMLCanvasElement, ai: AIBridge, audio: AudioEngine) {
     this.canvas = canvas;
@@ -282,7 +298,8 @@ export class OthelloController {
     const delay = this.level === 4 ? 60 : (this.level === 3 ? 40 : 20);
     this._aiTimer = setTimeout(async () => {
       const side = this.turn;
-      const res: SearchResult<OthMove> = await this.ai.searchOth(this.board.slice(), side, this.level, this.mode, this.history.length);
+      if (seq !== this._searchSeq) return;
+      const res: SearchResult<OthMove> = await this.ai.searchOth(this.board.slice(), side, this.level, this.mode, this.history.length, this.engineKind);
       if (seq !== this._searchSeq) return;
       this.thinking = false;
       this.showThinking(false);
@@ -291,6 +308,16 @@ export class OthelloController {
       const who = side === 1 ? '黑' : '白';
       const mv = res.move;
       const log = document.getElementById('o-think-log');
+      const engineName = res.engine === 'egaroucid' ? '🧠 Egaroucid Web' : '内置引擎';
+      if (res.engine === 'egaroucid' && !this._egarLogged) {
+        this._egarLogged = true;
+        appendLog(log, '🧠 <b>Egaroucid 引擎已接入</b>（1.4MB wasm · 自包含评估表 + 5.3 万局开局库 · 线程隔离运行）');
+      } else if (this.enginePref === 'experimental' && this._egarReady === false && res.engine === 'js') {
+        if (!this._demonFallbackWarned) {
+          this._demonFallbackWarned = true;
+          appendLog(log, '⚠️ <b>Egaroucid 加载失败</b>，已回退内置 JS 引擎（刷新页面可重试）。');
+        }
+      }
       if (!mv || isPass(mv)) {
         setStats(document.getElementById('o-think-stats'), `⏸ <b>${who}</b> 无合法落点，停一手`);
         appendLog(log, `⏸ <b>${who}方停一手</b>（引擎确认无合法落点）`);
@@ -303,10 +330,10 @@ export class OthelloController {
 
       const top = (res.scores || []).slice(0, 5)
         .map((s, i) => `#${i + 1}${ptName(s)}(翻${s.f ?? 0})`).join(' ');
-      const ev = fmtEval(res.eval, 1000);
+      const ev = fmtOthEval(res.eval);
       setStats(document.getElementById('o-think-stats'),
-        `✅ <b>${who}·${cfg.name}</b> depth${res.depth} · 节点 <b>${res.nodes.toLocaleString()}</b> · ${res.ms}ms · 评估 <b>${ev}</b> · 选 ${ptName(mv)}（翻 ${mv.f ?? 0}）`);
-      appendLog(log, `🧠 depth<b>${res.depth}</b> · 节点${res.nodes.toLocaleString()} · ${res.ms}ms · 评估${ev} · 选<b>${ptName(mv)}</b> 翻 ${mv.f ?? 0} 子<br><span class="cand">${top}</span>`);
+        `✅ <b>${who}·${cfg.name}</b>〔${engineName}〕${res.book ? ' 开局谱 ' : ''}depth${res.depth} · 节点 <b>${res.nodes.toLocaleString()}</b> · ${res.ms}ms · 评估 <b>${ev}</b> · 选 ${ptName(mv)}（翻 ${mv.f ?? 0}）`);
+      appendLog(log, `🧠 <b>${engineName}</b> · ${res.book ? '开局谱 ' : ''}depth<b>${res.depth}</b> · 节点${res.nodes.toLocaleString()} · ${res.ms}ms · 评估${ev} · 选<b>${ptName(mv)}</b> 翻 ${mv.f ?? 0} 子<br><span class="cand">${top}</span>`);
 
       this.applyMove(indexOfPt(mv), side);
       this.setGlobalStatus('AI 就绪');
@@ -396,13 +423,13 @@ export class OthelloController {
     setStats(document.getElementById('o-think-stats'), '👉 恶魔正在支招… 满配搜索中，请稍候');
     setTimeout(async () => {
       try {
-        const res = await this.ai.hintOth(this.board.slice(), this.turn, this.mode, this.history.length);
+        const res = await this.ai.hintOth(this.board.slice(), this.turn, this.mode, this.history.length, this.engineKind);
         if (seq !== this._posSeq) return;
         const m = res.move;
         if (m && !isPass(m)) {
           this.hintPos = { x: m.x, y: m.y };
           appendLog(document.getElementById('o-think-log'),
-            `💡 <b>恶魔支招</b> depth${res.depth} · 推荐<b>${ptName(m)}</b>（翻 ${m.f ?? 0}）· 评估${fmtEval(res.eval, 1000)} · 节点${res.nodes.toLocaleString()} · ${res.ms}ms`);
+            `💡 <b>恶魔支招</b> depth${res.depth} · 推荐<b>${ptName(m)}</b>（翻 ${m.f ?? 0}）· 评估${fmtOthEval(res.eval)} · 节点${res.nodes.toLocaleString()} · ${res.ms}ms`);
           setStats(document.getElementById('o-think-stats'), `💡 恶魔支招 depth${res.depth} · 推荐 ${ptName(m)} · 翻 ${m.f ?? 0} · ${res.ms}ms`);
           this.redraw();
           this.audio.hint();
@@ -443,7 +470,7 @@ export class OthelloController {
     const seq = this._posSeq;
     setTimeout(async () => {
       try {
-        const res = await this.ai.hintOth(this.board.slice(), this.turn, this.mode, this.history.length);
+        const res = await this.ai.hintOth(this.board.slice(), this.turn, this.mode, this.history.length, this.engineKind);
         if (this.god && seq === this._posSeq) {
           const m = res.move;
           this.godMove = m && !isPass(m) ? { x: m.x, y: m.y } : null;
@@ -498,6 +525,66 @@ export class OthelloController {
     document.getElementById('othello-thinking')?.classList.toggle('hidden', !on);
   }
 
+  /**
+   * 预热 Egaroucid 引擎。进入黑白棋页面时调用：1.4MB wasm + 评估表/开局库初始化，
+   * 提前加载可以让玩家第一手就吃到真引擎，而不是先被内置引擎应手。
+   */
+  warmUp(): void {
+    if (this._warmed || this._warming) return;
+    this._warming = true;
+    this.setGlobalStatus(this._loadText);
+    void this.ai
+      .warmUpOth((loaded, total, src) => {
+        const mb = (n: number) => (n / 1048576).toFixed(1);
+        const pct = total ? Math.round((loaded / total) * 100) : 0;
+        if (src === 'prefetch' && total) {
+          this._loadText = `🧠 Egaroucid 引擎预热中… ${pct}%（${mb(loaded)}/${mb(total)} MB）`;
+          this.setGlobalStatus(this._loadText);
+        }
+      })
+      .then(({ ok, error }) => {
+        this._warming = false;
+        this._warmed = ok;
+        this._egarReady = ok;
+        this.syncEngineUI();
+        if (ok) {
+          this.setGlobalStatus('AI 就绪');
+          appendLog(document.getElementById('o-think-log'), '🧠 <b>Egaroucid 引擎已预加载</b>（1.4MB wasm）· 落子无需等待');
+          this._egarLogged = true;
+        } else {
+          this.setGlobalStatus('AI 就绪（内置引擎）');
+          appendLog(document.getElementById('o-think-log'),
+            `⚠️ <b>Egaroucid 加载失败</b>，已回退内置引擎：${error ?? '未知原因'}`);
+        }
+      });
+  }
+
+  /** 传给 worker 的引擎选择：Egaroucid 未就绪时先用内置引擎应手 */
+  private get engineKind(): 'builtin' | 'egar' {
+    return this.enginePref === 'experimental' && this._egarReady === true ? 'egar' : 'builtin';
+  }
+
+  /** 刷新「引擎」区块与说明文字 */
+  private syncEngineUI(): void {
+    this.paintSeg('o-engine', this.enginePref);
+    const note = document.getElementById('o-engine-note');
+    if (!note) return;
+    if (this.enginePref === 'builtin') {
+      note.textContent = '当前使用内置 JS 引擎（加载 0 字节、零额外内存）。';
+    } else if (this._egarReady === true) {
+      note.textContent = '实验性：Egaroucid（1.4MB wasm · 64MB 内存）。棋盘朝向仍在标定，对局结果可能不正确。';
+    } else if (this._egarReady === false) {
+      note.textContent = '实验性：Egaroucid 加载失败，已回退内置 JS 引擎（刷新页面可重试）。';
+    } else {
+      note.textContent = '实验性：优先 Egaroucid；加载完成前先用内置引擎应手。';
+    }
+  }
+
+  private paintSeg(id: string, value: string): void {
+    document.getElementById(id)?.querySelectorAll<HTMLButtonElement>('button')
+      .forEach((b) => b.classList.toggle('on', b.dataset.v === value));
+  }
+
   private hideResult(): void {
     document.getElementById('o-result')?.classList.add('hidden');
   }
@@ -545,6 +632,15 @@ export class OthelloController {
       appendLog(document.getElementById('o-think-log'), `⚙️ 难度切换 → <b>${cfg.name}</b>${this.level === 4 ? ' · <span style="color:#ff6b6b">恶魔全开</span>' : ''}`);
     });
 
+    seg('o-engine', (v) => {
+      this.enginePref = v === 'experimental' ? 'experimental' : 'builtin';
+      appendLog(document.getElementById('o-think-log'), this.enginePref === 'builtin'
+        ? '🔧 引擎切换 → <b>内置 JS 引擎</b>'
+        : '🔧 引擎切换 → <b>Egaroucid（实验性）</b>：棋盘朝向标定未完成，对局结果可能不正确');
+      if (this.enginePref === 'experimental') this.warmUp();
+      this.syncEngineUI();
+    });
+
     const legalToggle = document.getElementById('o-legal') as HTMLInputElement | null;
     legalToggle?.addEventListener('change', () => { this.showLegal = !!legalToggle.checked; this.redraw(); });
 
@@ -561,6 +657,18 @@ export class OthelloController {
       if (this.level === 4) { if (this.audio.enabled) this.audio.startBGM(); else this.audio.stopBGM(); }
     });
   }
+}
+
+/**
+ * 黑白棋评估显示：引擎给的是「子数差」口径（正 = 当前行棋方净胜子数）。
+ * 不能用象棋/五子棋的 fmtEval —— 那个在阈值边界会把 0 判成「必胜」。
+ */
+function fmtOthEval(v: number): string {
+  if (!Number.isFinite(v)) return '—';
+  if (v >= 60) return '胜势';
+  if (v <= -60) return '败势';
+  if (v > 0) return `+${v}`;
+  return `${v}`;
 }
 
 /** 界面坐标 → 记谱（a1 在左下，换算只在 othello/search.ts 里做） */

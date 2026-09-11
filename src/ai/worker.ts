@@ -12,6 +12,8 @@ import { XqnnEngine } from '../xqnn/engine';
 import { XqWLightEngine } from '../xiangqi/xqwlight';
 import { GoEngine } from '../go/engine';
 import { findBestMove as othSearch, findHintMove as othHint } from '../othello/search';
+import { EgaroucidEngine } from '../othello/egaroucid';
+import { EGAROUCID_HINT_LEVEL } from '../othello/egaroucid-assets';
 
 /** Rapfi WASM 引擎（gomocup 级，五子棋）。wasm 加载失败时回退
  *  gomoku/search.ts 里的内置 JS 引擎。 */
@@ -27,6 +29,10 @@ let xqnnChain: Promise<unknown> = Promise.resolve();
 /** XQWLight（象棋小巫师）经典引擎：public/xqwlight/ 下的 GPL 代码由独立
  *  classic worker 加载，见 xiangqi/xqwlight.ts。不可用时回退内置 JS 引擎。 */
 const xqwlight = new XqWLightEngine();
+
+/** 黑白棋可选引擎：Egaroucid（GPL-3.0）跑在 public/egaroucid/engine-worker.js
+ *  的独立 module worker 里，不会顶住本 worker 的其它搜索。 */
+const egar = new EgaroucidEngine();
 
 /** 围棋：KataGo 小网络的 TF.js 推理 + PUCT 搜索（见 src/go/）。
  *  权重没就绪时 engine 内部会自动落到常识棋兜底。 */
@@ -164,16 +170,46 @@ self.onmessage = (e: MessageEvent<WorkerRequest>) => {
     case 'oth-search': {
       const board = req.board;
       const side = req.side;
-      reply(req, {
+      const fallback = () => ({
         ...othSearch(board, side, req.difficulty, req.mode, req.historyLength),
-        engine: 'js',
-      } as any);
+        engine: 'js' as const,
+      });
+      if (req.engineKind === 'egar') {
+        egar
+          .findMove(board, side, req.difficulty, req.mode, fallback)
+          .then((r) => reply(req, r as any));
+        break;
+      }
+      reply(req, fallback() as any);
       break;
     }
     case 'oth-hint': {
       const board = req.board;
       const side = req.side;
-      reply(req, { ...othHint(board, side, req.mode, req.historyLength), engine: 'js' } as any);
+      const fallback = () => ({
+        ...othHint(board, side, req.mode, req.historyLength),
+        engine: 'js' as const,
+      });
+      if (req.engineKind === 'egar') {
+        // 提示走中上强度档位：满档 24 在单线程 wasm 里可能要十几秒
+        egar
+          .findMove(board, side, 3, req.mode, fallback, EGAROUCID_HINT_LEVEL)
+          .then((r) => reply(req, r as any));
+        break;
+      }
+      reply(req, fallback() as any);
+      break;
+    }
+    case 'oth-warmup': {
+      console.info(`[egaroucid] 预热开始（当前 ready=${egar.ready}）`);
+      egar.warmUp().then(
+        () => post({ type: 'warmup-done', ok: true, game: 'oth', modelName: `Egaroucid Web (wasm 内存 ${egar.memMB ?? '?'}MB)` }),
+        (err) => {
+          const reason = String((err && (err as Error).message) || err);
+          console.error('[egaroucid] 预热失败：', err);
+          post({ type: 'warmup-done', ok: false, game: 'oth', error: reason });
+        },
+      );
       break;
     }
     case 'junqi-search': {

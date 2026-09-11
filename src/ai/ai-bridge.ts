@@ -6,6 +6,7 @@ import type { WorkerRequest, WorkerResponse, Difficulty, GameMode, SearchResult,
 import { prefetchRapfiData } from '../gomoku/rapfi-assets';
 import { prefetchXqnnModel } from '../xqnn/model-assets';
 import { prefetchGoModel } from '../go/model-assets';
+import { prefetchEgaroucid } from '../othello/egaroucid-assets';
 
 /** 数据包下载进度来源：主线程预取，或引擎自己的那次请求 */
 export type LoadPhase = 'prefetch' | 'engine';
@@ -32,7 +33,7 @@ export class AIBridge {
   private pending = new Map<number, (r: SearchResult<GomokuMove | XqMove | JqMove | GoMove>) => void>();
   private nextId = 0;
   /** 预热结果按项目分开挂起：三个引擎（Rapfi / 象棋神经网络 / 围棋网络）各自预热，互不冒领。 */
-  private warmupResolvers = new Map<'gomoku' | 'xq' | 'go', (r: WarmUpResult) => void>();
+  private warmupResolvers = new Map<'gomoku' | 'xq' | 'go' | 'oth', (r: WarmUpResult) => void>();
   private loadProgressCb: ((loaded: number, total: number, src: LoadPhase) => void) | null = null;
   private searchProgressCb: ((id: number, nodes: number) => void) | null = null;
 
@@ -85,9 +86,9 @@ export class AIBridge {
    * 预取失败也照常启引擎——让引擎自己再下，并改由 engine 侧 progress 驱动。
    */
   private warmUp(
-    game: 'gomoku' | 'xq' | 'go',
+    game: 'gomoku' | 'xq' | 'go' | 'oth',
     req: WorkerRequest,
-    prefetch: ((cb: (loaded: number, total: number) => void) => Promise<ArrayBuffer>) | null,
+    prefetch: ((cb: (loaded: number, total: number) => void) => Promise<ArrayBuffer | void>) | null,
     onProgress?: (loaded: number, total: number, src: LoadPhase) => void,
   ): Promise<WarmUpResult> {
     let shownLoaded = 0;
@@ -120,7 +121,8 @@ export class AIBridge {
 
     if (!prefetch) return startEngine();
     return prefetch((loaded, total) => this.loadProgressCb?.(loaded, total, 'prefetch')).then(
-      (dataBuffer) => startEngine(dataBuffer),
+      // Egaroucid 返回空（wasm 由 Emscripten 自己 fetch，只借预取刷缓存与进度）
+      (dataBuffer) => startEngine(dataBuffer instanceof ArrayBuffer ? dataBuffer : undefined),
       () => startEngine(),
     );
   }
@@ -143,6 +145,16 @@ export class AIBridge {
     onProgress?: (loaded: number, total: number, src: LoadPhase) => void,
   ): Promise<WarmUpResult> {
     return this.warmUp('xq', { type: 'xq-warmup' }, prefetchXqnnModel, onProgress);
+  }
+
+  /**
+   * 提前唤醒黑白棋的 Egaroucid 引擎（约 1.4MB wasm，自包含评估表 + 开局库）。
+   * 与 Rapfi 不同：wasm 由 Emscripten 自己 fetch，这里只负责「先下同 URL 刷缓存 + 进度」。
+   */
+  warmUpOth(
+    onProgress?: (loaded: number, total: number, src: LoadPhase) => void,
+  ): Promise<WarmUpResult> {
+    return this.warmUp('oth', { type: 'oth-warmup' }, prefetchEgaroucid, onProgress);
   }
 
   /**
@@ -223,8 +235,11 @@ export class AIBridge {
     difficulty: Difficulty,
     mode: GameMode,
     historyLength: number,
+    engineKind: 'builtin' | 'egar' = 'builtin',
   ): Promise<SearchResult<OthMove>> {
-    return this.send({ type: 'oth-search', board, side, difficulty, mode, historyLength }) as Promise<SearchResult<OthMove>>;
+    return this.send({
+      type: 'oth-search', board, side, difficulty, mode, historyLength, engineKind,
+    }) as Promise<SearchResult<OthMove>>;
   }
 
   /** 黑白棋：求一着 / 请神上身（固定恶魔档配置、预算收短） */
@@ -233,8 +248,9 @@ export class AIBridge {
     side: OthDisc,
     mode: GameMode,
     historyLength: number,
+    engineKind: 'builtin' | 'egar' = 'builtin',
   ): Promise<SearchResult<OthMove>> {
-    return this.send({ type: 'oth-hint', board, side, mode, historyLength }) as Promise<SearchResult<OthMove>>;
+    return this.send({ type: 'oth-hint', board, side, mode, historyLength, engineKind }) as Promise<SearchResult<OthMove>>;
   }
 
   searchXq(
