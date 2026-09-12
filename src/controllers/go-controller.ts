@@ -751,7 +751,6 @@ export class GoController {
       god: this.god && !this.over,
       godMove: this.godMove,
       godPhase: this._godPhase,
-      dimmed: this.thinking || this.over,
     };
   }
 

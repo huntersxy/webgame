@@ -34,7 +34,6 @@ export interface GoRenderState {
   godMove: number;
   /** 神标记的动画相位 0..1（请神期间由控制器持续推动） */
   godPhase: number;
-  dimmed: boolean;                 // AI 思考中 / 终局：轻微降低棋子对比度
 }
 
 /* ── 尺寸与配色常量 ───────────────────────────────────────── */
@@ -361,14 +360,13 @@ export class GoRenderer {
       ctx.globalAlpha = 1;
     }
 
-    // 7) 棋子：思考中/终局时整体降一点对比度
-    ctx.globalAlpha = state.dimmed ? 0.72 : 1;
+    // 7) 棋子：始终画成实心。AI 思考中由棋盘上的浮层与顶栏状态提示，
+    //    终局由结果横幅提示——不给棋子上半透明，棋子看起来才像真棋子。
     for (let i = 0; i < total && i < stones.length; i++) {
       const c = stones[i];
       if (c !== 1 && c !== 2) continue;
       this.drawStone(ctx, c, ox + (i % n) * cell, oy + ((i / n) | 0) * cell);
     }
-    ctx.globalAlpha = 1;
 
     // 8) 死子叉号（终局数目）：黑子上用金色、白子上用红色，保证对比
     if (state.deadStones) {
