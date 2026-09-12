@@ -184,9 +184,29 @@ export class OthelloController {
     const cfg = LEVEL_CONFIG[this.level];
     const modeName = this.mode === 'aivai' ? '🤖AI互搏观战' : (this.mode === 'pvp' ? '双人对战' : '人机对战');
     setStats(mustEl('o-think-stats'), `新对局 · ${modeName} · 难度 <b>${cfg.name}</b> · 黑先`);
-    if (this.mode === 'aivai') this.aiMove();
-    else if (this.mode === 'ai' && this.turn !== this.human) this.aiMove();
-    else this.refreshGod();
+    this.proceed();
+  }
+
+  /** 现在是否该由 AI 落子 */
+  private aiToMove(): boolean {
+    if (this.over || this.thinking) return false;
+    if (this.mode === 'aivai') return !this._haltAivai;
+    if (this.mode === 'ai') return this.turn !== this.human;
+    return false;
+  }
+
+  /**
+   * 一手棋（落子或停手）结束后推进对局：该 AI 动就让 AI 动，否则刷新神指。
+   *
+   * 所有会改变行棋权的地方都必须走这里。坑：停手可能把行棋权**交回刚刚落子的一方**
+   * ——AI 落子后人类无合法点被判停一手，于是又轮到 AI——此时若不重新排一次 AI 思考，
+   * 顶栏就停在「⏸ 黑方无子可下，自动停一手 · 轮到 白方 落子」，AI 不动、人也下不了。
+   */
+  private proceed(): void {
+    if (!this.aiToMove()) { this.refreshGod(); return; }
+    // AI 互搏连走时不直接递归，隔一拍再起手，避免一长串同步调用堆在一次事件里
+    if (this.mode === 'aivai') this._aiTimer = setTimeout(() => this.aiMove(), 10);
+    else this.aiMove();
   }
 
   /** 落子（人类/AI 共用）。index < 0 视为停一手。 */
@@ -230,9 +250,8 @@ export class OthelloController {
   private afterMoveCommon(): void {
     const st = this.position();
     // 双方都无合法点 → 终局数子
-    const over = result(st).over;
-    if (over) {
-      this.finish(result(st).winner !== 0 ? result(st).winner : (result(st) as { winner: 0 | OthDisc }).winner);
+    if (result(st).over) {
+      this.finish(result(st).winner);
       return;
     }
     // 轮走方无合法点：自动停一手
@@ -318,12 +337,21 @@ export class OthelloController {
         }
       }
       if (!mv || isPass(mv)) {
+        // 引擎给出「停一手」。先自己核一遍本地合法点：若仍有合法点却停手，
+        // 等于白送行棋权（甚至把局面又交回自己，空转成死循环）。
+        const legal = legalMoves(this.position());
+        if (legal.length) {
+          appendLog(log, `⚠️ <b>引擎未给出着法</b>，本地仍有合法点，改下 <b>${notationOf(legal[0])}</b>`);
+          this.applyMove(legal[0], side);
+          this.setGlobalStatus('AI 就绪');
+          this.proceed();
+          return;
+        }
         setStats(mustEl('o-think-stats'), `⏸ <b>${who}</b> 无合法落点，停一手`);
         appendLog(log, `⏸ <b>${who}方停一手</b>（引擎确认无合法落点）`);
         this.applyMove(-1, side, true);
         this.setGlobalStatus('AI 就绪');
-        if (!this.over && this.mode === 'aivai' && !this._haltAivai) this._aiTimer = setTimeout(() => this.aiMove(), 10);
-        else this.refreshGod();
+        this.proceed();
         return;
       }
 
@@ -336,11 +364,7 @@ export class OthelloController {
 
       this.applyMove(indexOfPt(mv), side);
       this.setGlobalStatus('AI 就绪');
-      if (!this.over && this.mode === 'aivai' && !this._haltAivai) {
-        this._aiTimer = setTimeout(() => this.aiMove(), 10);
-      } else {
-        this.refreshGod();
-      }
+      this.proceed();
     }, delay);
   }
 
@@ -364,8 +388,7 @@ export class OthelloController {
     if (!this.legalIdx().includes(index)) return false;
     const side = this.turn;
     this.applyMove(index, side);
-    if (!this.over && this.mode === 'ai' && this.turn !== this.human) this.aiMove();
-    else this.refreshGod();
+    this.proceed();
     return true;
   }
 
@@ -409,8 +432,7 @@ export class OthelloController {
     this.redraw();
     this.audio.undo();
     if (this.mode === 'aivai') { this.stopAivaiSilent(); this.refreshGod(); return; }
-    if (this.mode === 'ai' && !this.over && this.turn !== this.human) this.aiMove();
-    else this.refreshGod();
+    this.proceed();
   }
 
   async showHint(): Promise<void> {

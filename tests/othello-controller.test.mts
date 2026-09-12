@@ -65,6 +65,12 @@ function node(id: string): FakeElement {
 
 (globalThis as any).window = globalThis;
 (globalThis as any).setGlobalStatus = () => undefined;
+// 对局真的走到终局时 Stats.add 会写 localStorage（node 下没有）
+(globalThis as any).localStorage = {
+  getItem: () => null,
+  setItem: () => undefined,
+  removeItem: () => undefined,
+};
 (globalThis as any).document = {
   getElementById: (id: string) => node(id),
   querySelector: () => null,
@@ -206,6 +212,38 @@ console.log('== 停手与终局 ==');
   ctrl['board'] = fromCells(cells, 1).black[0] !== undefined ? cells : cells;
   const inv = invariants(ctrl['board']);
   check('构造局面自身合法', inv === null, String(inv));
+}
+
+console.log('== 停手后 AI 必须继续应手 ==');
+for (const human of [1, 2] as const) {
+  // 回归：AI 落子后若人类一方无合法点，控制器会替人类自动停一手、把行棋权
+  // 交回 AI；此时必须再触发一次 AI 思考，否则对局静默卡死（顶栏停在
+  // 「⏸ 黑方无子可下，自动停一手 · 轮到 白方 落子」，AI 不动、人也下不了）。
+  const bridge = makeBridge();
+  const ctrl = new OthelloController(canvas, bridge as never, audio as never);
+  ctrl['mode'] = 'ai';
+  ctrl['human'] = human;
+  ctrl['newGame']();
+
+  let mine = 0;
+  let stall = 0;
+  let maxStall = 0;
+  const tag = human === 1 ? '人类执黑' : '人类执白';
+  const STALL_LIMIT = 60; // 60 × 5ms = 300ms 无人可动即判定卡死
+  for (let i = 0; i < 8000 && !ctrl['over'] && maxStall < STALL_LIMIT; i++) {
+    if (ctrl['isHumanTurn']()) {
+      const legal = ctrl['legalIdx']();
+      if (legal.length && ctrl['placeHuman'](legal[0])) { mine++; stall = 0; continue; }
+    }
+    if (!ctrl['over'] && !ctrl['thinking'] && !ctrl['isHumanTurn']()) { stall++; maxStall = Math.max(maxStall, stall); }
+    else stall = 0;
+    await new Promise((r) => setTimeout(r, 5));
+  }
+
+  const passes = ctrl['history'].filter((h) => h.index < 0).length;
+  check(`${tag}：对局中确有停手发生（覆盖到本回归场景）`, passes > 0, `passes=${passes} 手数=${ctrl['history'].length}`);
+  check(`${tag}：停手后 AI 不会静默停摆`, maxStall < STALL_LIMIT, `最长无人可动 ${maxStall * 5}ms · turn=${ctrl['turn']} human=${ctrl['human']}`);
+  check(`${tag}：人机对局能走到终局`, ctrl['over'] === true, `人类落子 ${mine} 手 · 历史 ${ctrl['history'].length} 步`);
 }
 
 finish('othello-controller');
