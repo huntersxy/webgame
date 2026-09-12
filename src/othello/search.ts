@@ -14,10 +14,11 @@
 
 import type { OthBoard, OthDisc, Difficulty, GameMode, SearchResult, OthMove } from '../types';
 import {
-  CELLS, PASS_MOVE, bitOfIndex, legalMoves, other, place, popcount, result, toCells,
+  CELLS, PASS_MOVE, bitOfIndex, legalMoves, other, place, popcount, result,
 } from './rules';
 import type { OthPosition } from './rules';
 import { evaluateState, ENDGAME_EMPTIES, WIN_BASE, weightAt } from './evaluate';
+import { nowMs as now } from '../core/time';
 
 /**
  * 单次搜索的节点硬上限。
@@ -35,10 +36,6 @@ export const LEVEL_CONFIG: Record<Difficulty, { name: string; depth: number; lim
 };
 
 type Word = [number, number];
-
-function now(): number {
-  return typeof performance !== 'undefined' ? performance.now() : Date.now();
-}
 
 function isEmpty(a: Word): boolean {
   return a[0] === 0 && a[1] === 0;
@@ -424,19 +421,6 @@ export function fromCellsFast(cells: OthBoard, side: OthDisc): OthPosition {
     }
   }
   return { black: [bl >>> 0, bh >>> 0], white: [wl >>> 0, wh >>> 0], side };
-}
-
-/** 局面 → 64 格数组（导出给 worker / 控制器复用） */
-export function cellsOf(pos: OthPosition): OthBoard {
-  return toCells(pos);
-}
-
-/** 供界面显示：当前局面双方子数 */
-export function countsOf(pos: OthPosition): { black: number; white: number } {
-  return {
-    black: popcount(pos.black[0]) + popcount(pos.black[1]),
-    white: popcount(pos.white[0]) + popcount(pos.white[1]),
-  };
 }
 
 export { isEmpty };

@@ -6,12 +6,8 @@ import {
   type Board, type Piece, type Side, type PType,
 } from '../src/junqi/rules';
 import { findBestMove, evaluate, HIDDEN_VAL } from '../src/junqi/ai';
+import { check, finish } from './harness.mts';
 
-let pass = 0, fail = 0;
-function check(name: string, cond: boolean, extra = ''): void {
-  if (cond) { pass++; console.log(`  ok  ${name}`); }
-  else { fail++; console.log(`FAIL  ${name} ${extra}`); }
-}
 const mk = (side: Side, type: PType, id = 1): Piece => ({ id, side, type });
 const empty = (): Board => new Array(60).fill(null);
 
@@ -435,5 +431,4 @@ console.log('== AI ==');
   check('揭棋 AI 自对弈 20 手不崩', ok2);
 }
 
-console.log(`\n${pass} passed, ${fail} failed`);
-process.exit(fail ? 1 : 0);
+finish('junqi');

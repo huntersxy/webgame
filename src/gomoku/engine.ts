@@ -25,6 +25,8 @@
  *      proves forced wins far beyond the alpha-beta horizon.
  * ──────────────────────────────────────────────────────────── */
 
+import { nowMs } from '../core/time';
+
 const N = 15;
 const CELLS = N * N;
 export const MATE = 10_000_000;
@@ -385,8 +387,7 @@ export class GomokuEngine {
   private tick(): boolean {
     this.nodes++;
     if ((this.nodes & 255) === 0) {
-      const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
-      if (now > this.deadline || this.nodes > this.maxNodes) { this.abort = true; return true; }
+      if (nowMs() > this.deadline || this.nodes > this.maxNodes) { this.abort = true; return true; }
     }
     return this.abort;
   }
@@ -549,8 +550,7 @@ export class GomokuEngine {
     function attack(movesLeft: number, rootMove: number): boolean {
       if (movesLeft <= 0) return false;
       if (++used > nodeBudget) return false;
-      const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
-      if (now > deadline) return false;
+      if (nowMs() > deadline) return false;
 
       if (eng.wCount[ci] > 0) {
         const fiveCell = eng.wStack[ci][eng.wCount[ci] - 1];

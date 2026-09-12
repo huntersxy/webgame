@@ -8,13 +8,8 @@ import {
 import type { OthPosition } from '../src/othello/rules';
 import { LEVEL_CONFIG, findBestMove, findHintMove, notationOf } from '../src/othello/search';
 import type { Difficulty } from '../src/types';
+import { check, finish } from './harness.mts';
 
-let pass = 0;
-let fail = 0;
-function check(name: string, cond: boolean, extra = ''): void {
-  if (cond) { pass++; console.log(`  ok  ${name}`); }
-  else { fail++; console.log(`FAIL  ${name} ${extra}`); }
-}
 
 /* ── 朴素参考实现（2D 数组 + 逐格逐方向扫描） ── */
 
@@ -212,5 +207,4 @@ console.log('== 搜索 ==');
   check('提示按恶魔档迭代加深', h.depth >= 2, `depth=${h.depth}`);
 }
 
-console.log(`\n${fail === 0 ? '✅' : '❌'} othello: ${pass} passed, ${fail} failed`);
-if (fail) process.exit(1);
+finish('othello');

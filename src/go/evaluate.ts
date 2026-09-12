@@ -202,7 +202,6 @@ export class GoEvaluator {
   private scratch: FeatureScratch | null = null;
   private spatial: Float32Array | null = null;
   private global: Float32Array | null = null;
-  private bufferedSize = 0;
 
   get ready(): boolean {
     return this.net !== null;
@@ -240,7 +239,6 @@ export class GoEvaluator {
     const globalLen = batch * NUM_GLOBAL_PLANES;
     if (!this.spatial || this.spatial.length < spatialLen) this.spatial = new Float32Array(spatialLen);
     if (!this.global || this.global.length < globalLen) this.global = new Float32Array(globalLen);
-    this.bufferedSize = size;
   }
 
   /**
@@ -327,6 +325,5 @@ export class GoEvaluator {
     this.spatial = null;
     this.global = null;
     this.scratch = null;
-    this.bufferedSize = 0;
   }
 }

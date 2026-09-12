@@ -5,17 +5,17 @@
 
 import demonAvatarUrl from '../assets/demon-avatar.png';
 import type { AudioEngine } from './audio';
+import { mustEl } from './dom';
 
 export const DEMON_NAME = '褚赢';
 
 /**
  * Populate any demon avatars with the project image.
- * Safe to call multiple times; only sets src when element exists.
+ * Safe to call multiple times.
  */
 export function setupDemonAssets(): void {
   for (const id of ['g-demon-avatar', 'x-demon-avatar', 'go-demon-avatar', 'o-demon-avatar']) {
-    const img = document.getElementById(id) as HTMLImageElement | null;
-    if (img) img.src = demonAvatarUrl;
+    mustEl<HTMLImageElement>(id).src = demonAvatarUrl;
   }
 }
 
@@ -27,8 +27,8 @@ export function setupDemonAssets(): void {
  */
 export function applyDemonTheme(panelId: string, level: number, audio: AudioEngine): void {
   const demon = level === 4;
-  document.getElementById(`${panelId}-demon-profile`)?.classList.toggle('hidden', !demon);
-  document.getElementById(`${panelId}-demon-warn`)?.classList.toggle('hidden', !demon);
+  mustEl(`${panelId}-demon-profile`).classList.toggle('hidden', !demon);
+  mustEl(`${panelId}-demon-warn`).classList.toggle('hidden', !demon);
   if (demon) {
     audio.startBGM();
   } else {

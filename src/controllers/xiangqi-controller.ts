@@ -2,15 +2,16 @@
  *  controllers/xiangqi-controller.ts — Xiangqi game controller
  * ──────────────────────────────────────────────────────────── */
 
-import type { XqBoard, XqSide, XqMove, Difficulty, GameMode, Pt, SearchResult, XqEngineKind } from '../types';
-import { createInitialBoard, findKing, makeMove, undoMoveOnBoard, legalMoves, inCheck, colorOf, typeOf, PIECE_NAME, isRed } from '../xiangqi/rules';
+import type { XqBoard, XqSide, XqMove, Difficulty, GameMode, Pt, XqEngineKind } from '../types';
+import { createInitialBoard, legalMoves, inCheck, colorOf, typeOf, PIECE_NAME } from '../xiangqi/rules';
 import { LEVEL_CONFIG, MATE, resetXqWarmDepth } from '../xiangqi/search';
 import { AIBridge } from '../ai/ai-bridge';
 import { AudioEngine } from '../ui/audio';
 import { Stats } from '../ui/stats';
 import { renderXiangqi, pxToCellXq, type XqRenderState } from '../ui/xiangqi-renderer';
-import { appendLog, setStats, toggleProgress, fmtEval } from '../ui/format';
+import { appendLog, setStats, toggleProgress } from '../ui/format';
 import { applyDemonTheme } from '../ui/demon';
+import { mustEl } from '../ui/dom';
 
 interface XqHistoryEntry extends XqMove {
   cap: import('../types').XqPiece;
@@ -78,7 +79,6 @@ export class XiangqiController {
   /** 搜索代次：重置局面时 +1，作废「重置前发出、重置后才返回」的旧结果 */
   private _searchSeq = 0;
   private _haltAivai = false;
-  private _animFrame: number | null = null;
   private _down: { x: number; y: number } | null = null;
 
   /** 玩家选的引擎：'nn' = 神经网络（默认，策略先验 + α-β 搜索）；
@@ -134,8 +134,8 @@ export class XiangqiController {
    */
   private syncEngineUI(): void {
     this.paintSeg('x-engine', this.enginePref);
-    const note = document.getElementById('x-engine-note');
-    if (note) note.textContent = this.engineNote();
+    const note = mustEl('x-engine-note');
+    note.textContent = this.engineNote();
 
     const demonBtn = document.querySelector<HTMLButtonElement>('#x-level button[data-v="4"]');
     if (demonBtn) {
@@ -163,8 +163,8 @@ export class XiangqiController {
 
   /** 程序化设置分段控件的选中项（不触发回调）。 */
   private paintSeg(id: string, value: string): void {
-    const el = document.getElementById(id);
-    el?.querySelectorAll<HTMLButtonElement>('button').forEach((b) => {
+    const el = mustEl(id);
+    el.querySelectorAll<HTMLButtonElement>('button').forEach((b) => {
       b.classList.toggle('on', b.dataset.v === value);
     });
   }
@@ -203,13 +203,13 @@ export class XiangqiController {
       this.showEngineLoad(false);
       if (ok) {
         this.setGlobalStatus('AI 就绪');
-        appendLog(document.getElementById('x-think-log'),
+        appendLog(mustEl('x-think-log'),
           `🧠 <b>象棋神经网络已就绪</b>（${modelName ?? 'ResNet'} · 推理后端 ${backend ?? '?'}）· 策略先验 + α-β 搜索`);
         this._engineLogged = true;
       } else {
         this.setGlobalStatus('AI 就绪（内置引擎）');
         const detail = error ? `（${error}）` : '';
-        appendLog(document.getElementById('x-think-log'),
+        appendLog(mustEl('x-think-log'),
           `⚠️ <b>象棋神经网络加载失败</b>${detail}，已回退内置 JS 引擎；<b>恶魔模式暂不可用</b>（刷新页面可重试，详情见控制台）。`);
       }
       this.syncEngineUI();
@@ -218,16 +218,16 @@ export class XiangqiController {
 
   /** 引擎加载进度条 */
   private setEngineLoad(pct: number, loaded: number, text: string): void {
-    const bar = document.getElementById('x-engine-bar');
-    const pctEl = document.getElementById('x-engine-pct');
-    const stateEl = document.getElementById('x-engine-state');
-    if (bar) bar.style.width = `${pct}%`;
-    if (stateEl) stateEl.textContent = text;
-    if (pctEl) pctEl.textContent = loaded ? `${pct}%` : '';
+    const bar = mustEl('x-engine-bar');
+    const pctEl = mustEl('x-engine-pct');
+    const stateEl = mustEl('x-engine-state');
+    bar.style.width = `${pct}%`;
+    stateEl.textContent = text;
+    pctEl.textContent = loaded ? `${pct}%` : '';
   }
 
   private showEngineLoad(on: boolean): void {
-    document.getElementById('xiangqi-engine-load')?.classList.toggle('hidden', !on);
+    mustEl('xiangqi-engine-load').classList.toggle('hidden', !on);
     if (on) this.setEngineLoad(0, 0, '引擎加载中…');
   }
 
@@ -239,9 +239,9 @@ export class XiangqiController {
       if (godMark || (this.viz && this.thinkMoves.length > 0 && !this.over)) {
         this.redraw();
       }
-      this._animFrame = requestAnimationFrame(loop);
+      requestAnimationFrame(loop);
     };
-    this._animFrame = requestAnimationFrame(loop);
+    requestAnimationFrame(loop);
   }
 
   redraw(): void { renderXiangqi(this.canvas, this.state); }
@@ -272,7 +272,7 @@ export class XiangqiController {
     this.redraw();
     const cfg = LEVEL_CONFIG[this.level];
     const modeName = this.mode === 'aivai' ? '🤖AI互搏观战' : (this.mode === 'pvp' ? '双人对战' : '人机对战');
-    setStats(document.getElementById('x-think-stats'), `新对局 · ${modeName} · 难度 <b>${cfg.name}</b> · depth${cfg.depth}+Q${cfg.qd} · 等待行棋…`);
+    setStats(mustEl('x-think-stats'), `新对局 · ${modeName} · 难度 <b>${cfg.name}</b> · depth${cfg.depth}+Q${cfg.qd} · 等待行棋…`);
     if (this.mode === 'ai' && this.turn !== this.human) this.aiMove();
     else if (this.mode === 'aivai') this.aiMove();
     else this.refreshGod();
@@ -325,12 +325,12 @@ export class XiangqiController {
   private async aiMove(): Promise<void> {
     this.thinking = true;
     this.showThink(true);
-    toggleProgress(document.getElementById('x-think-progress'), true);
+    toggleProgress(mustEl('x-think-progress'), true);
     const cfg = LEVEL_CONFIG[this.level];
     const who = this.turn === 'r' ? '红' : '黑';
     this.setGlobalStatus(`象棋 AI 深算中…(${cfg.name} depth${cfg.depth})`);
     this.redraw();
-    setStats(document.getElementById('x-think-stats'), `⏳ <b>${who}·${cfg.name}</b> 运算中… depth${cfg.depth}+Q${cfg.qd} · 正在展开 ${this.level === 4 ? '全宽度+杀棋延伸' : 'Alpha-Beta'}…`);
+    setStats(mustEl('x-think-stats'), `⏳ <b>${who}·${cfg.name}</b> 运算中… depth${cfg.depth}+Q${cfg.qd} · 正在展开 ${this.level === 4 ? '全宽度+杀棋延伸' : 'Alpha-Beta'}…`);
     const delay = this.level === 4 ? 60 : 20;
     const seq = ++this._searchSeq;
     this._aiTimer = setTimeout(async () => {
@@ -342,7 +342,7 @@ export class XiangqiController {
       this.thinkMoves = (res.scores || []).map((s, i) => ({ ...s, rank: i + 1 }));
       this.thinking = false;
       this.showThink(false);
-      toggleProgress(document.getElementById('x-think-progress'), false);
+      toggleProgress(mustEl('x-think-progress'), false);
       this.setGlobalStatus('AI 就绪');
       if (!m) { this.over = true; this.winner = this.turn === 'r' ? 'b' : 'r'; this.onEnd(); this.updatePanel(); this.redraw(); return; }
 
@@ -355,23 +355,23 @@ export class XiangqiController {
         : res.engine === 'xqwlight' ? ' · 🐘小巫师'
           : res.engine === 'js' ? ' · 内置引擎' : '';
       if (res.engine === 'xqnn' && !this._engineLogged) {
-        appendLog(document.getElementById('x-think-log'), `🧠 <b>象棋神经网络已接入</b>（策略先验 + α-β 搜索 · 后端 ${res.backend ?? '?'}）`);
+        appendLog(mustEl('x-think-log'), `🧠 <b>象棋神经网络已接入</b>（策略先验 + α-β 搜索 · 后端 ${res.backend ?? '?'}）`);
         this._engineLogged = true;
       } else if (res.engine === 'xqwlight' && !this._engineLogged) {
-        appendLog(document.getElementById('x-think-log'), '🐘 <b>XQWLight 小巫师已接入</b>（经典 JS 引擎 · 带开局库）');
+        appendLog(mustEl('x-think-log'), '🐘 <b>XQWLight 小巫师已接入</b>（经典 JS 引擎 · 带开局库）');
         this._engineLogged = true;
       }
       // 恶魔档本该用所选引擎：它不可用而退回内置引擎时必须让玩家知道
       if (this.level === 4 && res.engine === 'js' && !this._fallbackWarned) {
         this._fallbackWarned = true;
-        appendLog(document.getElementById('x-think-log'), '⚠️ <b>所选引擎不可用</b>，本局恶魔档已临时改用内置 JS 引擎应手（刷新页面可重试加载）。');
+        appendLog(mustEl('x-think-log'), '⚠️ <b>所选引擎不可用</b>，本局恶魔档已临时改用内置 JS 引擎应手（刷新页面可重试加载）。');
       }
       const bookTag = res.book ? ' · 开局库' : '';
       const detail = res.engine === 'js'
         ? `depth${res.depth}+Q${res.qd ?? cfg.qd} · 节点 <b>${res.nodes.toLocaleString()}</b> · ${res.ms}ms · 评估 <b>${ev}</b>`
         : `depth${res.depth} · 节点 <b>${res.nodes.toLocaleString()}</b> · ${res.ms}ms${bookTag} · 评估 <b>${ev}</b>`;
-      setStats(document.getElementById('x-think-stats'), `✅ <b>${who}·${cfg.name}</b> ${detail}${engineName}${boost}<br>主变：${pvStr}`);
-      appendLog(document.getElementById('x-think-log'), `🧠 depth<b>${res.depth}</b> · 节点${res.nodes.toLocaleString()} · ${res.ms}ms · 评估${ev} · 选<b>${moveStr(m)}</b>${engineName}${res.boosted ? ' · <span style="color:#ff6b6b">劣势加深</span>' : ''}<br><span class="cand">主变 ${pvStr}</span><br><span class="cand">${topStr}</span>`);
+      setStats(mustEl('x-think-stats'), `✅ <b>${who}·${cfg.name}</b> ${detail}${engineName}${boost}<br>主变：${pvStr}`);
+      appendLog(mustEl('x-think-log'), `🧠 depth<b>${res.depth}</b> · 节点${res.nodes.toLocaleString()} · ${res.ms}ms · 评估${ev} · 选<b>${moveStr(m)}</b>${engineName}${res.boosted ? ' · <span style="color:#ff6b6b">劣势加深</span>' : ''}<br><span class="cand">主变 ${pvStr}</span><br><span class="cand">${topStr}</span>`);
 
       this.pushMove(m);
       this.afterMove(m);
@@ -381,7 +381,7 @@ export class XiangqiController {
   stopAivai(): void {
     this._haltAivai = true;
     if (this._aiTimer) { clearTimeout(this._aiTimer); this._aiTimer = null; }
-    if (!this.over) appendLog(document.getElementById('x-think-log'), '⏹ <b>已停止AI互搏</b>，可悔棋/新开一局');
+    if (!this.over) appendLog(mustEl('x-think-log'), '⏹ <b>已停止AI互搏</b>，可悔棋/新开一局');
     this.updatePanel();
     this.setGlobalStatus('AI 就绪');
   }
@@ -427,7 +427,7 @@ export class XiangqiController {
     this._hintBusy = true;
     this.syncGodUI();          // 亮进度条，别让玩家以为没反应
     const seq = this._posSeq;
-    setStats(document.getElementById('x-think-stats'), '👉 恶魔正在附体算招… depth4+Q3全开，请稍候');
+    setStats(mustEl('x-think-stats'), '👉 恶魔正在附体算招… depth4+Q3全开，请稍候');
     setTimeout(async () => {
       try {
         const res = await this.ai.hintXq(this.board.map((r) => [...r]), this.turn, this.mode, this.hist.length, this.engineKind);
@@ -438,8 +438,8 @@ export class XiangqiController {
           this.thinkMoves = (res.scores || []).map((s, i) => ({ ...s, rank: i + 1 }));
           const ev = res.eval >= MATE - 1000 ? '绝杀' : res.eval;
           const qdTag = res.qd !== undefined ? `+Q${res.qd}` : '';
-          appendLog(document.getElementById('x-think-log'), `💡 <b>恶魔支招</b> depth${res.depth}${qdTag} · 推荐<b>${moveStr(m)}</b> · 评估${ev} · 节点${res.nodes.toLocaleString()}`);
-          setStats(document.getElementById('x-think-stats'), `💡 恶魔支招 depth${res.depth} · 推荐 ${moveStr(m)} · 节点${res.nodes.toLocaleString()} · ${res.ms}ms`);
+          appendLog(mustEl('x-think-log'), `💡 <b>恶魔支招</b> depth${res.depth}${qdTag} · 推荐<b>${moveStr(m)}</b> · 评估${ev} · 节点${res.nodes.toLocaleString()}`);
+          setStats(mustEl('x-think-stats'), `💡 恶魔支招 depth${res.depth} · 推荐 ${moveStr(m)} · 节点${res.nodes.toLocaleString()} · ${res.ms}ms`);
           this.sel = { x: m.fx, y: m.fy };
           this.moves = legalMoves(this.board, this.turn).filter((z) => z.fx === m.fx && z.fy === m.fy);
           this.redraw();
@@ -455,14 +455,14 @@ export class XiangqiController {
   toggleGod(): void {
     this.god = !this.god;
     if (this.god) {
-      appendLog(document.getElementById('x-think-log'), '🙏 <b>恶魔附体！请神上身成功</b>，每手都将用 depth4 给你指 👇 最佳走法');
+      appendLog(mustEl('x-think-log'), '🙏 <b>恶魔附体！请神上身成功</b>，每手都将用 depth4 给你指 👇 最佳走法');
       this.syncGodUI();
       this.refreshGod();
     } else {
       this.godMove = null;
       this.godThinking = false;
       this._godDirty = false;
-      appendLog(document.getElementById('x-think-log'), '🛌 已送神，神指消失');
+      appendLog(mustEl('x-think-log'), '🛌 已送神，神指消失');
       this.syncGodUI();
       this.redraw();
     }
@@ -470,14 +470,12 @@ export class XiangqiController {
 
   /** 「神在思考」提示 + 按钮态 + 进度条：让玩家知道在算、大概等多久。 */
   private syncGodUI(): void {
-    const btn = document.getElementById('x-god');
-    if (btn) {
-      btn.classList.toggle('on', this.god);
-      btn.textContent = !this.god ? '🙏 请神上身' : (this.godThinking ? '🙏 神算中…' : '🛌 送神离开');
-    }
+    const btn = mustEl('x-god');
+    btn.classList.toggle('on', this.god);
+    btn.textContent = !this.god ? '🙏 请神上身' : (this.godThinking ? '🙏 神算中…' : '🛌 送神离开');
     const busy = this.god && this.godThinking;
-    document.getElementById('xiangqi-god-thinking')?.classList.toggle('hidden', !busy);
-    toggleProgress(document.getElementById('x-think-progress'), busy || this._hintBusy || this.thinking);
+    mustEl('xiangqi-god-thinking').classList.toggle('hidden', !busy);
+    toggleProgress(mustEl('x-think-progress'), busy || this._hintBusy || this.thinking);
     this.updatePanel();
   }
 
@@ -506,8 +504,8 @@ export class XiangqiController {
   }
 
   private onEnd(): void {
-    const el = document.getElementById('xiangqi-result');
-    el?.classList.remove('hidden');
+    const el = mustEl('xiangqi-result');
+    el.classList.remove('hidden');
     const w = this.winner;
     let t = '';
     if (w === 'draw') { t = '🤝 和棋！双方激战 80 回合未分胜负。'; }
@@ -515,34 +513,28 @@ export class XiangqiController {
     else if (this.mode === 'ai' && w === this.human) { t = `🎉 绝杀！你执${w === 'r' ? '红' : '黑'}战胜了 AI！`; this.audio.win(); Stats.add(true); }
     else if (this.mode === 'ai') { t = `🤖 AI（${w === 'r' ? '红' : '黑'}）获胜，将军绝杀！`; this.audio.lose(); Stats.add(false); }
     else { t = `🏆 ${w === 'r' ? '红方' : '黑方'} 获胜！`; this.audio.win(); Stats.add(true); }
-    if (el) el.textContent = t;
+    el.textContent = t;
   }
 
   private updatePanel(): void {
-    const t = document.getElementById('xiangqi-turn');
-    if (t) t.textContent = this.over ? '对局结束' : `轮到 ${this.turn === 'r' ? '红方' : '黑方'} 走棋${this.check ? ' · 将军！' : ''}${this.mode === 'aivai' ? ' · AI互搏中' : ''}${this.god ? ' · 神附体👇' : ''}`;
-    const stepsEl = document.getElementById('x-steps');
-    if (stepsEl) stepsEl.textContent = String(Math.floor(this.hist.length / 2) + 1);
+    mustEl('xiangqi-turn').textContent = this.over ? '对局结束' : `轮到 ${this.turn === 'r' ? '红方' : '黑方'} 走棋${this.check ? ' · 将军！' : ''}${this.mode === 'aivai' ? ' · AI互搏中' : ''}${this.god ? ' · 神附体👇' : ''}`;
+    mustEl('x-steps').textContent = String(Math.floor(this.hist.length / 2) + 1);
     const modeTag = this.mode === 'aivai' ? '🤖互搏' : (this.thinking ? 'AI 思考中…' : (this.godThinking ? '👇神算中…' : '行棋中'));
-    const statusEl = document.getElementById('x-status');
-    if (statusEl) statusEl.textContent = this.over ? ('胜者：' + (this.winner === 'draw' ? '和棋' : (this.winner === 'r' ? '红' : '黑'))) : ((this.turn === 'r' ? '红' : '黑') + `方${modeTag}` + (this.check ? '（将军）' : ''));
+    mustEl('x-status').textContent = this.over ? ('胜者：' + (this.winner === 'draw' ? '和棋' : (this.winner === 'r' ? '红' : '黑'))) : ((this.turn === 'r' ? '红' : '黑') + `方${modeTag}` + (this.check ? '（将军）' : ''));
     const cr: string[] = [], cb: string[] = [];
     this.hist.forEach((h) => { if (h.cap) { (colorOf(h.cap) === 'r' ? cb : cr).push(PIECE_NAME[typeOf(h.cap)!][colorOf(h.cap) === 'r' ? 1 : 0]); } });
-    const capR = document.getElementById('x-cap-r');
-    if (capR) capR.textContent = cr.join(' ') || '—';
-    const capB = document.getElementById('x-cap-b');
-    if (capB) capB.textContent = cb.join(' ') || '—';
+    mustEl('x-cap-r').textContent = cr.join(' ') || '—';
+    mustEl('x-cap-b').textContent = cb.join(' ') || '—';
   }
 
   private renderLog(): void {
-    const el = document.getElementById('x-log');
-    if (!el) return;
+    const el = mustEl('x-log');
     el.innerHTML = this.log.length ? this.log.slice(-30).map((s) => `<div>${s}</div>`).join('') : '<div class="empty">暂无棋谱，点击棋子开始</div>';
     el.scrollTop = el.scrollHeight;
   }
 
-  private showThink(on: boolean): void { document.getElementById('xiangqi-thinking')?.classList.toggle('hidden', !on); }
-  private hideResult(): void { document.getElementById('xiangqi-result')?.classList.add('hidden'); }
+  private showThink(on: boolean): void { mustEl('xiangqi-thinking').classList.toggle('hidden', !on); }
+  private hideResult(): void { mustEl('xiangqi-result').classList.add('hidden'); }
   private setGlobalStatus(t: string): void { (window as any).setGlobalStatus?.(t); }
 
   private wireEvents(): void {
@@ -575,20 +567,20 @@ export class XiangqiController {
     });
     this.canvas.addEventListener('pointercancel', () => { this._down = null; });
 
-    this.seg('x-mode', (v) => { this.mode = v as GameMode; if (v === 'aivai') appendLog(document.getElementById('x-think-log'), '🤖 <b>AI互搏观战开始</b>，红黑双方都用当前难度恶战到底'); this.newGame(); });
+    this.seg('x-mode', (v) => { this.mode = v as GameMode; if (v === 'aivai') appendLog(mustEl('x-think-log'), '🤖 <b>AI互搏观战开始</b>，红黑双方都用当前难度恶战到底'); this.newGame(); });
     this.seg('x-color', (v) => { this.human = v as XqSide; this.newGame(); });
     this.seg('x-level', (v) => {
       // 恶魔档要求所选引擎就绪：引擎没就绪就不放行（按钮已禁用，这里再兜一层）
       if (v === '4' && this._engineReady !== true) {
         this.paintSeg('x-level', String(this.level));
-        appendLog(document.getElementById('x-think-log'), '🚫 <b>恶魔模式不可用</b>：所选引擎尚未就绪。');
+        appendLog(mustEl('x-think-log'), '🚫 <b>恶魔模式不可用</b>：所选引擎尚未就绪。');
         return;
       }
       this.level = +v as Difficulty;
       applyDemonTheme('x', this.level, this.audio);
       const cfg = LEVEL_CONFIG[this.level];
-      setStats(document.getElementById('x-think-stats'), `难度切换 → <b>${cfg.name}</b> · depth${cfg.depth}+Q${cfg.qd}`);
-      appendLog(document.getElementById('x-think-log'), `⚙️ 难度切换 → <b>${cfg.name}</b> depth${cfg.depth}+Q${cfg.qd}${this.level === 4 ? ' · <span style="color:#ff6b6b">恶魔全开，不求你能赢</span>' : ''}`);
+      setStats(mustEl('x-think-stats'), `难度切换 → <b>${cfg.name}</b> · depth${cfg.depth}+Q${cfg.qd}`);
+      appendLog(mustEl('x-think-log'), `⚙️ 难度切换 → <b>${cfg.name}</b> depth${cfg.depth}+Q${cfg.qd}${this.level === 4 ? ' · <span style="color:#ff6b6b">恶魔全开，不求你能赢</span>' : ''}`);
       this.syncEngineUI();
       this.updatePanel();
     });
@@ -596,7 +588,7 @@ export class XiangqiController {
     this.seg('x-engine', (v) => {
       this.enginePref = v === 'classic' ? 'classic' : 'nn';
       saveEnginePref(this.enginePref); // 记住选择：选经典引擎下次就不再下那 8.7MB
-      appendLog(document.getElementById('x-think-log'), this.enginePref === 'classic'
+      appendLog(mustEl('x-think-log'), this.enginePref === 'classic'
         ? '🔧 引擎切换 → <b>XQWLight 小巫师</b>（经典 JS 引擎 · 带开局库 · 零下载）'
         : '🔧 引擎切换 → <b>象棋神经网络</b>（ResNet 策略先验 + α-β 搜索）');
       this._engineLogged = false;
@@ -607,16 +599,16 @@ export class XiangqiController {
       if (this.enginePref === 'nn') this.warmUp();
     });
 
-    const xv = document.getElementById('x-viz') as HTMLInputElement | null;
-    xv?.addEventListener('change', (e) => { this.viz = (e.target as HTMLInputElement).checked; this.redraw(); });
+    const xv = mustEl<HTMLInputElement>('x-viz');
+    xv.addEventListener('change', (e) => { this.viz = (e.target as HTMLInputElement).checked; this.redraw(); });
 
-    document.getElementById('x-new')?.addEventListener('click', () => this.newGame());
-    document.getElementById('x-undo')?.addEventListener('click', () => this.undo());
-    document.getElementById('x-hint')?.addEventListener('click', () => this.hint());
-    document.getElementById('x-god')?.addEventListener('click', () => this.toggleGod());
-    document.getElementById('x-stop')?.addEventListener('click', () => this.stopAivai());
-    document.getElementById('x-flip')?.addEventListener('click', () => { this.flip = !this.flip; this.redraw(); });
-    document.getElementById('x-sound')?.addEventListener('click', (e) => {
+    mustEl('x-new').addEventListener('click', () => this.newGame());
+    mustEl('x-undo').addEventListener('click', () => this.undo());
+    mustEl('x-hint').addEventListener('click', () => this.hint());
+    mustEl('x-god').addEventListener('click', () => this.toggleGod());
+    mustEl('x-stop').addEventListener('click', () => this.stopAivai());
+    mustEl('x-flip').addEventListener('click', () => { this.flip = !this.flip; this.redraw(); });
+    mustEl('x-sound').addEventListener('click', (e) => {
       this.audio.enabled = !this.audio.enabled;
       const btn = e.target as HTMLButtonElement;
       btn.textContent = this.audio.enabled ? '🔊 音效开' : '🔇 音效关';
@@ -627,8 +619,8 @@ export class XiangqiController {
   }
 
   private seg(id: string, fn: (v: string) => void): void {
-    const el = document.getElementById(id);
-    el?.querySelectorAll('button').forEach((b) => b.addEventListener('click', () => {
+    const el = mustEl(id);
+    el.querySelectorAll('button').forEach((b) => b.addEventListener('click', () => {
       el.querySelectorAll('button').forEach((x) => x.classList.remove('on'));
       b.classList.add('on');
       fn(b.dataset.v!);

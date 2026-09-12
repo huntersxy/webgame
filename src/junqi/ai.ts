@@ -21,13 +21,14 @@
 import type { Difficulty, GameMode, SearchResult } from '../types';
 import { COLS, HQS, PIECE_COUNTS, type Board, type JqMove, type PType, type Side } from './rules';
 import {
-  N, TI, TI_司令, TI_军长, TI_工兵, TI_炸弹, TI_地雷, TI_军旗,
+  N, TI_司令, TI_军长, TI_工兵, TI_炸弹, TI_地雷, TI_军旗,
   CODE_TI, CODE_ISB, CODE_MOVABLE, CODE_FLAG,
-  CAMP, ADJ_OFF, ADJ_TO, DIST, MAX_MOVES, MAX_PLY, REC, REC_N, WIN_FLAG, codeOf,
+  CAMP, ADJ_OFF, ADJ_TO, DIST, MAX_MOVES, MAX_PLY, REC, REC_N, WIN_FLAG,
   packBoard, genAll, makeFast, undoFast,
 } from './fast';
 import { Zobrist } from '../core/zobrist';
 import { TranspositionTable } from '../core/transposition';
+import { nowMs } from '../core/time';
 
 export const JQ_LEVEL_CONFIG: Record<Difficulty, { name: string; depth: number }> = {
   1: { name: '简单', depth: 1 },
@@ -305,7 +306,7 @@ let ttMode: boolean | null = null;
 function deadlineHit(ctx: Ctx): boolean {
   if (ctx.deadline === 0) return false;
   if ((ctx.nodes & 1023) !== 0) return false;
-  if (typeof performance === 'undefined' || performance.now() <= ctx.deadline) return false;
+  if (nowMs() <= ctx.deadline) return false;
   ctx.hitDeadline = true;
   return true;
 }
@@ -539,7 +540,7 @@ function rootSearch(
   if (runAtDepth(1)) {
     depth = 1;
     for (let d = 2; d <= maxDepth; d++) {
-      if (deadline !== 0 && typeof performance !== 'undefined' && performance.now() > deadline) break;
+      if (deadline !== 0 && nowMs() > deadline) break;
       ctx.hitDeadline = false;
       if (!runAtDepth(d)) break;
       depth = d;
@@ -556,7 +557,7 @@ export function findBestMove(
   flip: boolean,
   historyLength: number,
 ): SearchResult<JqMove> {
-  const t0 = typeof performance !== 'undefined' ? performance.now() : Date.now();
+  const t0 = nowMs();
   const cfg = JQ_LEVEL_CONFIG[difficulty];
   const demon = difficulty === 4;
   const { sq, hid } = packBoard(board);
@@ -597,7 +598,7 @@ export function findBestMove(
   const agg = new Float64Array(rn);
   for (let k = 0; k < rn; k++) agg[k] = rootVals[k];
 
-  const t1 = typeof performance !== 'undefined' ? performance.now() : Date.now();
+  const t1 = nowMs();
   const bestM = rootMoves[r.bestIdx];
   const scored: Array<{ from: number; to: number; v: number; ub: boolean }> = [];
   for (let k = 0; k < rn; k++) scored.push({ from: rootMoves[k] >>> 6, to: rootMoves[k] & 63, v: agg[k], ub: rootUb[k] === 1 });

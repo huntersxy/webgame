@@ -3,9 +3,10 @@
  * ──────────────────────────────────────────────────────────── */
 
 import type { GomokuBoard, GomokuPlayer } from '../types';
-import { BOARD_SIZE, WIN_LENGTH, DIRS, checkWin, generateCandidates, windowScore, other, inBounds } from '../gomoku/rules';
+import { BOARD_SIZE, WIN_LENGTH, DIRS, checkWin, windowScore, inBounds } from '../gomoku/rules';
 import { Zobrist } from '../core/zobrist';
 import { TranspositionTable } from '../core/transposition';
+import { nowMs } from '../core/time';
 
 export interface CampaignLevel {
   id: number;
@@ -54,7 +55,6 @@ export function firstPlayable(): number {
 /** Fortress evaluation: penalize player threats heavily, only reward own 4+ */
 function fortressEval(board: GomokuBoard): number {
   const me: GomokuPlayer = 2; // AI = White
-  const op: GomokuPlayer = 1; // Player = Black
   let s = 0;
 
   const evalWindow = (vals: number[]): void => {
@@ -126,7 +126,6 @@ function campaignCandidates(board: GomokuBoard, range: number, limit: number, fo
       if (near) set.add(y * BOARD_SIZE + x);
     }
 
-  const opp = other(forColor);
   const arr: { x: number; y: number; s: number }[] = [];
   for (const k of set) {
     const x = k % BOARD_SIZE, y = (k / BOARD_SIZE) | 0;
@@ -210,7 +209,7 @@ export interface CampaignSearchResult {
 export function campaignSearch(board: GomokuBoard, level: CampaignLevel): CampaignSearchResult {
   campaignNodes = 0;
   tt.clear();
-  const t0 = typeof performance !== 'undefined' ? performance.now() : Date.now();
+  const t0 = nowMs();
 
   // Immediate win/block
   const cands = campaignCandidates(board, 1, 20, 2);
@@ -232,6 +231,6 @@ export function campaignSearch(board: GomokuBoard, level: CampaignLevel): Campai
     if (v > bestV) { bestV = v; best = m; }
   }
 
-  const t1 = typeof performance !== 'undefined' ? performance.now() : Date.now();
+  const t1 = nowMs();
   return { move: best, nodes: campaignNodes, ms: Math.round(t1 - t0), depth: level.depth, eval: Math.round(bestV), instant: false, scores: scored.slice(0, 5) };
 }

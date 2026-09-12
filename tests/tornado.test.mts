@@ -1,12 +1,7 @@
 /* tornado 核心逻辑单测：成长公式、通关计数、可食性、screenToWorld */
 import { TornadoGame, TIERS, TORNADO_VIEW } from '../src/tornado/game';
+import { assert, finish } from './harness.mts';
 
-let pass = 0;
-let fail = 0;
-function assert(cond: boolean, msg: string): void {
-  if (cond) { pass++; console.log(`  ok  ${msg}`); }
-  else { fail++; console.error(`FAIL  ${msg}`); }
-}
 
 console.log('— TIERS 数据 —');
 assert(TIERS.length === 6, '六个量级');
@@ -254,5 +249,4 @@ console.log('— 粒子上限（防止越玩越卡）—');
   assert(ps.length <= 160, `反复爆量后仍在上限内（${ps.length}）`);
 }
 
-console.log(`\n${pass} passed, ${fail} failed`);
-if (fail > 0) process.exit(1);
+finish('tornado');

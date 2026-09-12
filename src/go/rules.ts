@@ -43,11 +43,6 @@ export interface GoConfig {
   superko: boolean;
 }
 
-export function defaultConfig(size = 9): GoConfig {
-  // 中国规则常见贴目：19 路 7.5 目，小棋盘惯例 7 目（半目避免和棋不必要地多）
-  return { size, komi: 7, ruleset: 'chinese', superko: true };
-}
-
 export function opponent(c: GoColor): GoColor {
   return c === BLACK ? WHITE : BLACK;
 }
@@ -175,12 +170,6 @@ export function libertyCountAt(stones: Uint8Array, geo: GoGeometry, start: numbe
   return floodGroup(stones, geo, start, groupBuf, libBuf).libLen;
 }
 
-/** start 所在棋块的棋子数 */
-export function groupSizeAt(stones: Uint8Array, geo: GoGeometry, start: number): number {
-  if (stones[start] === EMPTY) return 0;
-  return floodGroup(stones, geo, start, groupBuf, libBuf).groupLen;
-}
-
 /** 裸落子（模拟用）记录的被提点，供 koPointAfterMove 之类的调用方读取 */
 const rawCaptureBuf = new Int16Array(CAPTURE_BUF_SIZE);
 
@@ -235,24 +224,6 @@ export function applyMoveRaw(stones: Uint8Array, geo: GoGeometry, index: number,
 }
 
 /* ── 提子计数工具（给对局层的提子统计复用） ── */
-
-/** 单个棋块的完整信息快照（控制器做形势判断/显示用） */
-export interface GroupReport {
-  color: GoColor;
-  stones: number[];
-  liberties: number[];
-}
-
-export function groupReportAt(stones: Uint8Array, size: number, index: number): GroupReport | null {
-  const geo = geometryFor(size);
-  if (stones[index] === EMPTY) return null;
-  const info = floodGroup(stones, geo, index, groupBuf, libBuf);
-  return {
-    color: stones[index] as GoColor,
-    stones: Array.from(groupBuf.subarray(0, info.groupLen)),
-    liberties: Array.from(libBuf.subarray(0, info.libLen)),
-  };
-}
 
 /* ── 点数（区域 / 领地） ── */
 export interface GoScore {
@@ -379,53 +350,6 @@ export function scorePosition(
     whiteTerritory,
     neutral,
   };
-}
-
-/** 单点是否处于「只被一种颜色包围的空区」——棋盘绘制形势判断时可用 */
-export function territoryOwnership(stones: Uint8Array, size: number, deadMask?: Uint8Array | null): Float32Array {
-  const geo = geometryFor(size);
-  const area = geo.area;
-  const out = new Float32Array(area);
-  for (let i = 0; i < area; i++) {
-    if (stones[i] === BLACK) out[i] = 1;
-    else if (stones[i] === WHITE) out[i] = -1;
-  }
-  const work = deadMask ? new Uint8Array(area) : null;
-  if (work) {
-    work.set(stones);
-    for (let i = 0; i < area; i++) if (deadMask![i]) work[i] = EMPTY;
-  }
-  const src = work ?? stones;
-
-  for (let start = 0; start < area; start++) {
-    if (src[start] !== EMPTY || out[start] !== 0) continue;
-    // 空点：找同色相邻的棋子颜色（空区统一归属）
-    const stack = [start];
-    const seen = new Set<number>([start]);
-    let black = false;
-    let white = false;
-    const region: number[] = [];
-    while (stack.length) {
-      const p = stack.pop()!;
-      region.push(p);
-      const ns = geo.neighborStart[p];
-      const ne = geo.neighborStart[p + 1];
-      for (let i = ns; i < ne; i++) {
-        const q = geo.neighbors[i];
-        if (src[q] === EMPTY) {
-          if (!seen.has(q)) {
-            seen.add(q);
-            stack.push(q);
-          }
-        } else if (src[q] === BLACK) black = true;
-        else white = true;
-      }
-    }
-    if (black === white) continue;
-    const v = black ? 1 : -1;
-    for (const p of region) out[p] = v;
-  }
-  return out;
 }
 
 /* ── 局面对象 ── */

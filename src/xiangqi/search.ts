@@ -3,10 +3,11 @@
  * ──────────────────────────────────────────────────────────── */
 
 import type { XqBoard, XqMove, XqSide, Difficulty, GameMode, SearchResult } from '../types';
-import { COLS, ROWS, PIECE_VAL, typeOf, colorOf, isRed, findKing, pseudoMoves, legalMoves, makeMove, undoMoveOnBoard, inCheck, isAttacked, inB } from './rules';
+import { COLS, ROWS, PIECE_VAL, typeOf, colorOf, findKing, pseudoMoves, legalMoves, makeMove, undoMoveOnBoard, inCheck, isAttacked } from './rules';
 import { evaluate } from './eval';
 import { Zobrist } from '../core/zobrist';
 import { TranspositionTable } from '../core/transposition';
+import { nowMs as now } from '../core/time';
 
 export const LEVEL_CONFIG: Record<Difficulty, { name: string; depth: number; qd: number }> = {
   1: { name: '简单', depth: 1, qd: 1 },
@@ -32,11 +33,6 @@ const NEXT_ITER_FACTOR = 3.2;
 function difficultiesSoftBudget(difficulty: Difficulty, hardBudgetMs: number): number {
   if (difficulty !== 4 || !hardBudgetMs) return 0;
   return Math.min(DEMON_SOFT_BUDGET_MS, hardBudgetMs);
-}
-
-/** 单调时钟（performance.now 在 worker/主线程都有；退化到 Date.now） */
-function now(): number {
-  return typeof performance !== 'undefined' ? performance.now() : Date.now();
 }
 
 // Zobrist for Xiangqi: 9×10 board, 14 piece types
@@ -122,7 +118,7 @@ function quiesce(board: XqBoard, alpha: number, beta: number, turn: XqSide, qd: 
     ctx.hitNodeCap = true;
     return (turn === 'r' ? 1 : -1) * evaluate(board);
   }
-  if (ctx.deadline && typeof performance !== 'undefined' && performance.now() > ctx.deadline) {
+  if (ctx.deadline && now() > ctx.deadline) {
     ctx.hitDeadline = true;
     return (turn === 'r' ? 1 : -1) * evaluate(board);
   }
@@ -189,7 +185,7 @@ function alphaBeta(
     ctx.hitNodeCap = true;
     return (turn === 'r' ? 1 : -1) * evaluate(board);
   }
-  if (ctx.deadline && typeof performance !== 'undefined' && performance.now() > ctx.deadline) {
+  if (ctx.deadline && now() > ctx.deadline) {
     ctx.hitDeadline = true;
     return (turn === 'r' ? 1 : -1) * evaluate(board);
   }
@@ -283,7 +279,7 @@ export function findBestMove(
   skipOpeningRandom = false,
   timeBudgetMs?: number,
 ): SearchResult<XqMove> {
-  const t0 = typeof performance !== 'undefined' ? performance.now() : Date.now();
+  const t0 = now();
   const cfg = LEVEL_CONFIG[difficulty];
   let base = cfg.depth;
 
@@ -298,7 +294,7 @@ export function findBestMove(
     mode,
     curQD: cfg.qd,
     boost: false,
-    deadline: hardBudgetMs ? (typeof performance !== 'undefined' ? performance.now() + hardBudgetMs : 0) : undefined,
+    deadline: hardBudgetMs ? now() + hardBudgetMs : 0,
   };
 
   // Demon AI-vs-AI: deeper
@@ -419,7 +415,7 @@ export function findBestMove(
   if (demon && persist) warmDepth[side] = searchDepth;
   else if (!demon) { warmDepth.r = 0; warmDepth.b = 0; }
 
-  const t1 = typeof performance !== 'undefined' ? performance.now() : Date.now();
+  const t1 = now();
   if (rootOut) {
     rootOut.length = 0;
     for (const s of res.scored) rootOut.push(s);

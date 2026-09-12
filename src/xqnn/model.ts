@@ -43,12 +43,6 @@ function expect(cond: boolean, msg: string): void {
   if (!cond) throw new Error('象棋神经网络模型不匹配：' + msg);
 }
 
-function take(t: OnnxTensor | undefined, what: string): Float32Array {
-  expect(!!t, `缺少权重 ${what}`);
-  expect(t!.dtype === 'float32', `${what} 应是 float32，实际 ${t!.dtype}`);
-  return t!.data as Float32Array;
-}
-
 function sameShape(t: OnnxTensor, dims: number[]): boolean {
   return t.dims.length === dims.length && t.dims.every((d, i) => d === dims[i]);
 }

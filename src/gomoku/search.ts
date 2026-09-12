@@ -11,6 +11,7 @@
 import type { GomokuBoard, GomokuPlayer, Difficulty, GameMode, SearchResult, GomokuMove } from '../types';
 import { GomokuEngine, MATE, xOf, yOf, cellOf, ttClear } from './engine';
 import { probeOpening } from './book';
+import { nowMs as now } from '../core/time';
 
 export const LEVEL_CONFIG: Record<Difficulty, { name: string; depth: number; limit: number; timeMs: number }> = {
   1: { name: '简单', depth: 2, limit: 8, timeMs: 150 },
@@ -24,10 +25,6 @@ const engine = new GomokuEngine();
 /** Kept for controller compatibility; state now resets per search. */
 export function resetGomokuWarmDepth(): void {
   ttClear();
-}
-
-function now(): number {
-  return typeof performance !== 'undefined' ? performance.now() : Date.now();
 }
 
 function toMove(cell: number, v = 0): GomokuMove {

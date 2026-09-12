@@ -407,27 +407,3 @@ export function parseGoModel(data: Uint8Array): ParsedGoModel {
   };
 }
 
-/** 模型参数总量（用于日志/体积展示） */
-export function countModelParams(m: ParsedGoModel): number {
-  const conv = (c: ParsedConv): number => c.weights.length + c.outChannels;
-  const bn = (b: ParsedBatchNorm): number => b.channels * 2;
-  const mm = (m2: ParsedMatMul): number => m2.weights.length;
-  let n = 0;
-  n += conv(m.trunk.conv1) + mm(m.trunk.ginput);
-  for (const b of m.trunk.blocks) {
-    n += bn(b.preBN);
-    if (b.kind === 'ordinary') n += conv(b.w1) + bn(b.midBN) + conv(b.w2);
-    else if (b.kind === 'gpool') n += conv(b.w1a) + conv(b.w1b) + bn(b.gpoolBN) + mm(b.w1r) + bn(b.midBN) + conv(b.w2);
-    else {
-      n += conv(b.preConv) + bn(b.postBN) + conv(b.postConv);
-      for (const inner of b.blocks) {
-        n += bn(inner.preBN);
-        if (inner.kind === 'ordinary') n += conv(inner.w1) + bn(inner.midBN) + conv(inner.w2);
-      }
-    }
-  }
-  n += bn(m.trunk.tipBN);
-  n += conv(m.policy.p1) + conv(m.policy.g1) + bn(m.policy.g1BN) + mm(m.policy.gpoolToBias) + bn(m.policy.p1BN) + conv(m.policy.p2) + mm(m.policy.passMul);
-  n += conv(m.value.v1) + bn(m.value.v1BN) + mm(m.value.v2) + mm(m.value.v3) + mm(m.value.sv3) + conv(m.value.ownership);
-  return n;
-}

@@ -22,18 +22,8 @@ import { GoEvaluator, policyFromLogits } from '../src/go/evaluate';
 import { GoSearcher, defaultSearchOptions } from '../src/go/mcts';
 import { heuristicMove, mulberry32 } from '../src/go/heuristic';
 import { parseGoModel } from '../src/go/model';
+import { assert, finish } from './harness.mts';
 
-let pass = 0;
-let fail = 0;
-function assert(cond: boolean, msg: string): void {
-  if (cond) {
-    pass++;
-    console.log(`  ok  ${msg}`);
-  } else {
-    fail++;
-    console.error(`FAIL  ${msg}`);
-  }
-}
 function near(a: number, b: number, eps: number): boolean {
   return Math.abs(a - b) <= eps;
 }
@@ -412,8 +402,7 @@ async function main(): Promise<void> {
   testLife();
   await testGolden();
   await testSearch();
-  console.log(`\n${pass} passed, ${fail} failed`);
-  if (fail > 0) process.exit(1);
+  finish('go');
 }
 
 main().catch((err) => {

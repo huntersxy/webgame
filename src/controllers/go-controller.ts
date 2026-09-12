@@ -21,6 +21,7 @@ import { GoRenderer, type GoRenderState } from '../ui/go-renderer';
 import { appendLog, setStats, toggleProgress } from '../ui/format';
 import { applyDemonTheme } from '../ui/demon';
 import { GO_LEVELS } from '../go/engine';
+import { mustEl } from '../ui/dom';
 
 interface GoHistoryEntry {
   /** 落子索引，-1 = 虚手 */
@@ -53,7 +54,6 @@ export class GoController {
   private human: GoColor = 1;
   private level: GoLevel = 2;
   private over = false;
-  private resultText = '';
   private thinking = false;
   private hover = -1;
   private viz = false;
@@ -139,13 +139,13 @@ export class GoController {
         const backendName = r.backend === 'webgpu' ? 'WebGPU' : r.backend === 'webgl' ? 'WebGL' : r.backend === 'wasm' ? 'WASM' : 'CPU';
         this.setGlobalStatus('AI 就绪');
         appendLog(
-          document.getElementById('go-think-log'),
+          mustEl('go-think-log'),
           `🧠 <b>神经网络已就绪</b> · ${r.modelName ?? 'KataGo'} · 后端 <b>${backendName}</b>${r.backend === 'wasm' || r.backend === 'cpu' ? '（<span style="color:#d69a2e">无 GPU 加速，思考会明显变慢</span>）' : ''}`,
         );
       } else {
         this.setGlobalStatus('AI 就绪（常识棋兜底）');
         appendLog(
-          document.getElementById('go-think-log'),
+          mustEl('go-think-log'),
           `⚠️ <b>神经网络加载失败</b>：${r.error ?? '未知原因'}<br>已回退到内置常识棋 AI（棋力很弱，仅保证能对局）；刷新页面可重试。`,
         );
       }
@@ -154,29 +154,27 @@ export class GoController {
   }
 
   private setEngineLoad(pct: number, loaded: number, text: string): void {
-    const bar = document.getElementById('go-engine-bar');
-    const pctEl = document.getElementById('go-engine-pct');
-    const stateEl = document.getElementById('go-engine-state');
-    if (bar) bar.style.width = `${pct}%`;
-    if (stateEl) stateEl.textContent = text;
-    if (pctEl) pctEl.textContent = loaded ? `${pct}%` : '';
+    const bar = mustEl('go-engine-bar');
+    const pctEl = mustEl('go-engine-pct');
+    const stateEl = mustEl('go-engine-state');
+    bar.style.width = `${pct}%`;
+    stateEl.textContent = text;
+    pctEl.textContent = loaded ? `${pct}%` : '';
   }
 
   private showEngineLoad(on: boolean): void {
-    document.getElementById('go-engine-load')?.classList.toggle('hidden', !on);
+    mustEl('go-engine-load').classList.toggle('hidden', !on);
     if (on) this.setEngineLoad(0, 0, '神经网络加载中…');
   }
 
   /** 引擎区块：恶魔档需要神经网络就绪；不可用时禁用并说明 */
   private syncEngineUI(): void {
-    const note = document.getElementById('go-engine-note');
-    if (note) {
-      note.textContent = this._nnReady === true
-        ? `神经网络已就绪：${this.engineLabel()}。恶魔档为满火力搜索。`
-        : this._nnReady === false
-          ? '神经网络不可用：当前为内置常识棋 AI（棋力弱），恶魔档不可用；刷新可重试。'
-          : '神经网络加载中：先用内置常识棋应手，加载完成后自动切换。';
-    }
+    const note = mustEl('go-engine-note');
+    note.textContent = this._nnReady === true
+      ? `神经网络已就绪：${this.engineLabel()}。恶魔档为满火力搜索。`
+      : this._nnReady === false
+        ? '神经网络不可用：当前为内置常识棋 AI（棋力弱），恶魔档不可用；刷新可重试。'
+        : '神经网络加载中：先用内置常识棋应手，加载完成后自动切换。';
     this.paintSeg('go-engine', this.forceHeuristic ? 'heuristic' : 'auto');
     const demonBtn = document.querySelector<HTMLButtonElement>('#go-level button[data-v="4"]');
     if (demonBtn) {
@@ -213,7 +211,6 @@ export class GoController {
     this.history = [];
     this.seenHashes = new Set([this.board.hash]);
     this.over = false;
-    this.resultText = '';
     this.ownership = null;
     this.showOwnership = false;
     this.deadMask = null;
@@ -231,7 +228,7 @@ export class GoController {
     this.updatePanel();
     this.redraw();
     appendLog(
-      document.getElementById('go-think-log'),
+      mustEl('go-think-log'),
       `🆕 <b>新开局</b>：${this.size} 路 · 中国规则（数子）· 贴目 ${this.komi}${this.mode === 'aivai' ? ' · AI 互搏' : this.mode === 'ai' ? ` · 你执${this.human === 1 ? '黑' : '白'}` : ' · 双人对弈'}`,
     );
     this.maybeAIMove();
@@ -245,7 +242,7 @@ export class GoController {
       probe.koPoint = this.board.koPoint;
       if (!probe.play(index)) return false;
       if (this.seenHashes.has(probe.hash)) {
-        if (!silent) appendLog(document.getElementById('go-think-log'), '🚫 <b>禁止全局同形</b>（位置超级劫），请换个地方落子。');
+        if (!silent) appendLog(mustEl('go-think-log'), '🚫 <b>禁止全局同形</b>（位置超级劫），请换个地方落子。');
         return false;
       }
     }
@@ -284,11 +281,11 @@ export class GoController {
     const aiColor = this.board.toMove;
     this.thinking = true;
     this.showThinking(true);
-    toggleProgress(document.getElementById('go-think-progress'), true);
+    toggleProgress(mustEl('go-think-progress'), true);
     const cfg = GO_LEVELS[this.level];
     const who = aiColor === 1 ? '黑' : '白';
     this.setGlobalStatus(`AI 思考中…(${cfg.name})`);
-    setStats(document.getElementById('go-think-stats'), `⏳ <b>${who}·${cfg.name}</b> 搜索中…`);
+    setStats(mustEl('go-think-stats'), `⏳ <b>${who}·${cfg.name}</b> 搜索中…`);
     this.redraw();
 
     const seq = ++this._searchSeq;
@@ -310,7 +307,7 @@ export class GoController {
 
     this.thinking = false;
     this.showThinking(false);
-    toggleProgress(document.getElementById('go-think-progress'), false);
+    toggleProgress(mustEl('go-think-progress'), false);
     this.setGlobalStatus(this._warming ? this._loadText : 'AI 就绪');
 
     let move = res.move ? res.move.i : -1;
@@ -318,7 +315,7 @@ export class GoController {
     if (move >= 0 && (move >= this.board.area || !this.board.isLegal(move))) {
       const legal = this.board.legalMask();
       const alt = legal.indexOf(1);
-      appendLog(document.getElementById('go-think-log'), '⚠️ 引擎返回非法着法，已改用第一个合法点。');
+      appendLog(mustEl('go-think-log'), '⚠️ 引擎返回非法着法，已改用第一个合法点。');
       move = alt >= 0 ? alt : -1;
     }
 
@@ -328,10 +325,10 @@ export class GoController {
     const engineName = res.engine === 'go-nn' ? `神经网络${res.backend ? `·${res.backend === 'webgpu' ? 'WebGPU' : res.backend === 'webgl' ? 'WebGL' : res.backend === 'wasm' ? 'WASM' : 'CPU'}` : ''}` : '常识棋兜底';
     if (res.engine === 'go-nn' && !this._engineLogged) {
       this._engineLogged = true;
-      appendLog(document.getElementById('go-think-log'), `🧠 <b>KataGo 小网络</b>（${res.modelName ?? 'b6c96'}）已在本地运行 · 后端 ${res.backend ?? '未知'}`);
+      appendLog(mustEl('go-think-log'), `🧠 <b>KataGo 小网络</b>（${res.modelName ?? 'b6c96'}）已在本地运行 · 后端 ${res.backend ?? '未知'}`);
     }
     if (this.level === 4 && res.engine !== 'go-nn') {
-      appendLog(document.getElementById('go-think-log'), '⚠️ 恶魔档本手由兜底 AI 应手（神经网络未就绪）。');
+      appendLog(mustEl('go-think-log'), '⚠️ 恶魔档本手由兜底 AI 应手（神经网络未就绪）。');
     }
 
     const winPct = res.winProb !== undefined ? (res.winProb * 100).toFixed(1) : '—';
@@ -339,11 +336,11 @@ export class GoController {
     const coord = move < 0 ? '虚手' : this.coordOf(move);
     const top = this.candidates.slice(0, 4).map((c) => `${c.move >= this.board.area ? 'pass' : this.coordOf(c.move)}:${(c.winProb * 100).toFixed(0)}%`).join(' ');
     setStats(
-      document.getElementById('go-think-stats'),
+      mustEl('go-think-stats'),
       `✅ <b>${who}·${cfg.name}</b>〔${engineName}〕 访问 <b>${res.visits ?? 0}</b> · ${res.ms}ms · 胜率 <b>${winPct}%</b> · 目差 <b>${lead > 0 ? '+' : ''}${lead.toFixed(1)}</b> · 选 <b>${coord}</b>`,
     );
     appendLog(
-      document.getElementById('go-think-log'),
+      mustEl('go-think-log'),
       `🧠 ${who} → <b>${coord}</b> · ${engineName} · 访问${res.visits ?? 0} · ${res.ms}ms · 胜率${winPct}% · 目差${lead.toFixed(1)}${top ? `<br><span class="cand">${top}</span>` : ''}`,
     );
 
@@ -363,15 +360,13 @@ export class GoController {
     if (this.over || this._hintBusy) return;
     this._hintBusy = true;
     this.clearHint();
-    const btn = document.getElementById('go-hint') as HTMLButtonElement | null;
-    const btnText = btn?.textContent ?? '💡 求一着';
-    if (btn) {
-      btn.disabled = true;
-      btn.textContent = '🔎 计算中…';
-    }
+    const btn = mustEl<HTMLButtonElement>('go-hint');
+    const btnText = btn.textContent ?? '💡 求一着';
+    btn.disabled = true;
+    btn.textContent = '🔎 计算中…';
     this.showThinkingText('🔎 正在计算最佳点…（满配搜索）');
-    toggleProgress(document.getElementById('go-think-progress'), true);
-    setStats(document.getElementById('go-think-stats'), '🔎 <b>求一着</b> 满配搜索中… 正在展开候选');
+    toggleProgress(mustEl('go-think-progress'), true);
+    setStats(mustEl('go-think-stats'), '🔎 <b>求一着</b> 满配搜索中… 正在展开候选');
     this.setGlobalStatus('🔎 正在计算最佳点…');
 
     const seq = ++this._searchSeq;
@@ -380,12 +375,10 @@ export class GoController {
       res = await this.ai.searchGo(this.payload(), 4, { forceHeuristic: this.forceHeuristic });
     } finally {
       this._hintBusy = false;
-      if (btn) {
-        btn.disabled = false;
-        btn.textContent = btnText;
-      }
+      btn.disabled = false;
+      btn.textContent = btnText;
       this.showThinking(false);
-      toggleProgress(document.getElementById('go-think-progress'), false);
+      toggleProgress(mustEl('go-think-progress'), false);
     }
 
     if (seq !== this._searchSeq) return;
@@ -395,17 +388,17 @@ export class GoController {
     const winPct = res.winProb !== undefined ? (res.winProb * 100).toFixed(1) : '—';
     const lead = res.scoreLead ?? 0;
     if (move < 0) {
-      setStats(document.getElementById('go-think-stats'), `💡 建议：<b>虚手</b> · 访问 ${visits}`);
-      appendLog(document.getElementById('go-think-log'), '💡 建议：<b>虚手</b>（当前局面已无有价值的大场）');
+      setStats(mustEl('go-think-stats'), `💡 建议：<b>虚手</b> · 访问 ${visits}`);
+      appendLog(mustEl('go-think-log'), '💡 建议：<b>虚手</b>（当前局面已无有价值的大场）');
     } else {
       this.hintMove = move;
       const coord = this.coordOf(move);
       setStats(
-        document.getElementById('go-think-stats'),
+        mustEl('go-think-stats'),
         `💡 建议 <b>${coord}</b> · 访问 <b>${visits}</b> · ${res.ms}ms · 胜率 <b>${winPct}%</b> · 目差 <b>${lead.toFixed(1)}</b>`,
       );
       appendLog(
-        document.getElementById('go-think-log'),
+        mustEl('go-think-log'),
         `💡 建议落子 <b>${coord}</b> · 访问${visits} · 胜率${winPct}% · 目差${lead.toFixed(1)}（棋盘上已用绿圈标出）`,
       );
       this.startHintFlash();
@@ -451,13 +444,13 @@ export class GoController {
       this.godThinking = false;
       this._godDirty = false;
       this.stopGodPulse();
-      appendLog(document.getElementById('go-think-log'), '🛌 <b>送神离开</b>：不再显示最佳点。');
+      appendLog(mustEl('go-think-log'), '🛌 <b>送神离开</b>：不再显示最佳点。');
       this.syncGodUI();
       this.redraw();
       return;
     }
     appendLog(
-      document.getElementById('go-think-log'),
+      mustEl('go-think-log'),
       '🙏 <b>请神上身</b>：棋盘上会常驻标出当前最佳点（满配搜索），每落一手自动重算。',
     );
     // 请神标记本身就是最佳点，绿色「推荐」圈此时是重复信息，直接收掉
@@ -553,18 +546,15 @@ export class GoController {
 
   /** 请神按钮与「神在思考」浮层的状态同步 */
   private syncGodUI(): void {
-    const btn = document.getElementById('go-god');
-    if (btn) {
-      btn.classList.toggle('on', this.god);
-      btn.textContent = !this.god ? '🙏 请神上身' : this.godThinking ? '🙏 神算中…' : '🛌 送神离开';
-    }
-    document.getElementById('go-god-thinking')?.classList.toggle('hidden', !(this.god && this.godThinking));
+    const btn = mustEl('go-god');
+    btn.classList.toggle('on', this.god);
+    btn.textContent = !this.god ? '🙏 请神上身' : this.godThinking ? '🙏 神算中…' : '🛌 送神离开';
+    mustEl('go-god-thinking').classList.toggle('hidden', !(this.god && this.godThinking));
   }
 
   /** 形势判断按钮的状态同步（开着时按钮变「关闭」并高亮） */
   private syncEstimateUI(): void {
-    const btn = document.getElementById('go-estimate');
-    if (!btn) return;
+    const btn = mustEl('go-estimate');
     btn.classList.toggle('on', this.showOwnership);
     btn.textContent = this.showOwnership ? '📊 关闭判断' : '📊 形势判断';
   }
@@ -576,34 +566,30 @@ export class GoController {
     if (this.showOwnership) {
       this.showOwnership = false;
       this.syncEstimateUI();
-      appendLog(document.getElementById('go-think-log'), '📊 已关闭形势判断。');
+      appendLog(mustEl('go-think-log'), '📊 已关闭形势判断。');
       this.audio.select();
       this.redraw();
       return;
     }
     if (this.forceHeuristic) {
-      appendLog(document.getElementById('go-think-log'), 'ℹ️ 形势判断需要神经网络，当前为兜底 AI。');
+      appendLog(mustEl('go-think-log'), 'ℹ️ 形势判断需要神经网络，当前为兜底 AI。');
       return;
     }
-    const btn = document.getElementById('go-estimate') as HTMLButtonElement | null;
-    const btnText = btn?.textContent ?? '📊 形势判断';
-    if (btn) {
-      btn.disabled = true;
-      btn.textContent = '📊 计算中…';
-    }
+    const btn = mustEl<HTMLButtonElement>('go-estimate');
+    const btnText = btn.textContent ?? '📊 形势判断';
+    btn.disabled = true;
+    btn.textContent = '📊 计算中…';
     this.setGlobalStatus('📊 形势判断中…');
     let res;
     try {
       res = await this.ai.estimateGo(this.payload());
     } finally {
-      if (btn) {
-        btn.disabled = false;
-        btn.textContent = btnText;
-      }
+      btn.disabled = false;
+      btn.textContent = btnText;
     }
     this.setGlobalStatus('AI 就绪');
     if (!res.ownership) {
-      appendLog(document.getElementById('go-think-log'), '⚠️ 形势判断失败（神经网络未就绪）。');
+      appendLog(mustEl('go-think-log'), '⚠️ 形势判断失败（神经网络未就绪）。');
       return;
     }
     this.ownership = res.ownership;
@@ -611,7 +597,7 @@ export class GoController {
     const wp = res.winProb !== undefined ? (res.winProb * 100).toFixed(1) : '—';
     const lead = res.scoreLead ?? 0;
     appendLog(
-      document.getElementById('go-think-log'),
+      mustEl('go-think-log'),
       `📊 <b>形势判断</b>：黑方胜率 ${wp}% · 目差 ${lead > 0 ? '黑+' : '白+'}${Math.abs(lead).toFixed(1)}（再点一次可关闭；终局以数子为准）`,
     );
     this.audio.select();
@@ -632,7 +618,6 @@ export class GoController {
     }
     if (done === 0) return;
     this.over = false;
-    this.resultText = '';
     this.hideResult();
     this.lastMove = this.history.length > 0 ? this.history[this.history.length - 1].move : -1;
     this.candidates = [];
@@ -649,7 +634,7 @@ export class GoController {
     this.updatePanel();
     this.redraw();
     this.refreshGodIfMyTurn();
-    appendLog(document.getElementById('go-think-log'), `↩️ 悔棋 ${done} 手`);
+    appendLog(mustEl('go-think-log'), `↩️ 悔棋 ${done} 手`);
     // 悔到 AI 该走时补一手（例如人机模式悔两手后仍轮到玩家）
     if (!this.over && this.mode === 'ai' && this.board.toMove !== this.human) this.maybeAIMove();
   }
@@ -659,7 +644,7 @@ export class GoController {
     if (this.over || this.thinking) return;
     if (this.mode === 'ai' && this.board.toMove !== this.human) return;
     if (this.board.passes >= 1) {
-      appendLog(document.getElementById('go-think-log'), 'ℹ️ 双方连续虚手，终局数子。');
+      appendLog(mustEl('go-think-log'), 'ℹ️ 双方连续虚手，终局数子。');
     }
     this.playMove(-1);
     if (!this.over) this.maybeAIMove();
@@ -669,7 +654,7 @@ export class GoController {
     if (this.over) return;
     const loser = this.mode === 'pvp' ? this.board.toMove : this.human;
     this.finish(`${loser === 1 ? '黑' : '白'}方认输 · ${loser === 1 ? '白' : '黑'}方胜`, loser === 1 ? 2 : 1);
-    appendLog(document.getElementById('go-think-log'), `🏳️ ${loser === 1 ? '黑' : '白'}方认输`);
+    appendLog(mustEl('go-think-log'), `🏳️ ${loser === 1 ? '黑' : '白'}方认输`);
   }
 
   /** 连续虚手 → 数子 */
@@ -700,9 +685,9 @@ export class GoController {
     this.showOwnership = true;
     this.syncEstimateUI();
     if (dead) {
-      appendLog(document.getElementById('go-think-log'), '🧮 终局数子：已按神经网络死活判断扣除死子（如不认可可「继续下棋」）。');
+      appendLog(mustEl('go-think-log'), '🧮 终局数子：已按神经网络死活判断扣除死子（如不认可可「继续下棋」）。');
     } else {
-      appendLog(document.getElementById('go-think-log'), '🧮 终局数子：盘上棋子全部按活棋计算。');
+      appendLog(mustEl('go-think-log'), '🧮 终局数子：盘上棋子全部按活棋计算。');
     }
     const winner = adjusted.winner === 0 ? '和棋' : `${adjusted.winner === 1 ? '黑' : '白'}方胜`;
     this.finish(
@@ -715,14 +700,11 @@ export class GoController {
     this.over = true;
     this._aivaiRunning = false;
     this.thinking = false;
-    this.resultText = text;
-    const banner = document.getElementById('go-result');
-    if (banner) {
-      banner.textContent = text;
-      banner.classList.remove('hidden');
-    }
-    setStats(document.getElementById('go-think-stats'), `🏁 <b>${text}</b>`);
-    appendLog(document.getElementById('go-think-log'), `🏁 ${text}`);
+    const banner = mustEl('go-result');
+    banner.textContent = text;
+    banner.classList.remove('hidden');
+    setStats(mustEl('go-think-stats'), `🏁 <b>${text}</b>`);
+    appendLog(mustEl('go-think-log'), `🏁 ${text}`);
     if (winner === 0) this.audio.select();
     else if (this.mode === 'pvp' || winner === this.human) this.audio.win();
     else this.audio.lose();
@@ -738,7 +720,6 @@ export class GoController {
       this.undo();
     }
     this.over = false;
-    this.resultText = '';
     this.hideResult();
     this.deadMask = null;
     this.showOwnership = false;
@@ -783,16 +764,13 @@ export class GoController {
 
   private updatePanel(): void {
     const set = (id: string, text: string): void => {
-      const el = document.getElementById(id);
-      if (el) el.textContent = text;
+      mustEl(id).textContent = text;
     };
     const turnName = this.board.toMove === 1 ? '黑方' : '白方';
-    const turn = document.getElementById('go-turn');
-    if (turn) {
-      if (this.over) turn.textContent = '对局结束';
-      else if (this.mode === 'ai') turn.textContent = this.board.toMove === this.human ? `轮到你（${this.human === 1 ? '黑' : '白'}）` : `AI（${turnName}）思考中`;
-      else turn.textContent = `轮到 ${turnName} 落子`;
-    }
+    const turn = mustEl('go-turn');
+    if (this.over) turn.textContent = '对局结束';
+    else if (this.mode === 'ai') turn.textContent = this.board.toMove === this.human ? `轮到你（${this.human === 1 ? '黑' : '白'}）` : `AI（${turnName}）思考中`;
+    else turn.textContent = `轮到 ${turnName} 落子`;
     set('go-steps', String(this.history.length));
     set('go-capture-black', String(this.board.captures[0]));
     set('go-capture-white', String(this.board.captures[1]));
@@ -811,8 +789,7 @@ export class GoController {
       const w = this.board.stones.reduce((n, v) => n + (v === 2 ? 1 : 0), 0);
       blackShare = b + w > 0 ? b / (b + w) : 0.5;
     }
-    const bar = document.getElementById('go-score-bar');
-    if (bar) bar.style.width = `${(blackShare * 100).toFixed(1)}%`;
+    mustEl('go-score-bar').style.width = `${(blackShare * 100).toFixed(1)}%`;
     set('go-score-text', this.ownership ? `AI 判断黑 ${(blackShare * 100).toFixed(1)}%` : '（点「形势判断」看 AI 判断）');
   }
 
@@ -824,17 +801,16 @@ export class GoController {
   }
 
   private hideResult(): void {
-    document.getElementById('go-result')?.classList.add('hidden');
+    mustEl('go-result').classList.add('hidden');
   }
 
   private showThinking(on: boolean): void {
-    document.getElementById('go-thinking')?.classList.toggle('hidden', !on);
+    mustEl('go-thinking').classList.toggle('hidden', !on);
   }
 
   /** 显示计算提示层并写入文案（与 AI 落子共用同一个浮层） */
   private showThinkingText(text: string): void {
-    const el = document.getElementById('go-thinking');
-    if (!el) return;
+    const el = mustEl('go-thinking');
     el.innerHTML = `<div class="spinner"></div>${text}`;
     el.classList.remove('hidden');
   }
@@ -873,13 +849,13 @@ export class GoController {
   /* ══════════ 交互 ══════════ */
 
   private paintSeg(id: string, value: string): void {
-    document.getElementById(id)?.querySelectorAll<HTMLButtonElement>('button')
+    mustEl(id).querySelectorAll<HTMLButtonElement>('button')
       .forEach((b) => b.classList.toggle('on', b.dataset.v === value));
   }
 
   private segWire(id: string, fn: (v: string) => void): void {
-    const el = document.getElementById(id);
-    el?.querySelectorAll('button').forEach((b) => b.addEventListener('click', () => {
+    const el = mustEl(id);
+    el.querySelectorAll('button').forEach((b) => b.addEventListener('click', () => {
       el.querySelectorAll('button').forEach((x) => x.classList.remove('on'));
       b.classList.add('on');
       fn(b.dataset.v!);
@@ -939,19 +915,19 @@ export class GoController {
     this.segWire('go-level', (v) => {
       const lv = Number(v) as GoLevel;
       if (lv === 4 && (this._nnReady !== true || this._enginePref === 'heuristic')) {
-        appendLog(document.getElementById('go-think-log'), '🚫 <b>恶魔档不可用</b>：需要神经网络就绪。');
+        appendLog(mustEl('go-think-log'), '🚫 <b>恶魔档不可用</b>：需要神经网络就绪。');
         this.paintSeg('go-level', String(this.level));
         return;
       }
       this.level = lv;
       applyDemonTheme('go', this.level, this.audio);
-      setStats(document.getElementById('go-think-stats'), `难度切换 → <b>${GO_LEVELS[lv].name}</b> · 访问上限 ${GO_LEVELS[lv].visits} · 思考上限 ${(GO_LEVELS[lv].timeMs / 1000).toFixed(1)}s`);
-      appendLog(document.getElementById('go-think-log'), `⚙️ 难度切换 → <b>${GO_LEVELS[lv].name}</b>${lv === 4 ? ' · <span style="color:#ff6b6b">满火力</span>' : ''}`);
+      setStats(mustEl('go-think-stats'), `难度切换 → <b>${GO_LEVELS[lv].name}</b> · 访问上限 ${GO_LEVELS[lv].visits} · 思考上限 ${(GO_LEVELS[lv].timeMs / 1000).toFixed(1)}s`);
+      appendLog(mustEl('go-think-log'), `⚙️ 难度切换 → <b>${GO_LEVELS[lv].name}</b>${lv === 4 ? ' · <span style="color:#ff6b6b">满火力</span>' : ''}`);
       this.syncEngineUI();
     });
     this.segWire('go-size', (v) => {
       this.size = Number(v);
-      appendLog(document.getElementById('go-think-log'), `📐 棋盘切换 → <b>${this.size} 路</b>（贴目 ${defaultKomi(this.size)}）`);
+      appendLog(mustEl('go-think-log'), `📐 棋盘切换 → <b>${this.size} 路</b>（贴目 ${defaultKomi(this.size)}）`);
       this.newGame();
     });
     this.segWire('go-engine', (v) => {
@@ -962,7 +938,7 @@ export class GoController {
         applyDemonTheme('go', this.level, this.audio);
       }
       appendLog(
-        document.getElementById('go-think-log'),
+        mustEl('go-think-log'),
         this._enginePref === 'heuristic'
           ? '🔧 引擎切换 → <b>内置常识棋（弱）</b>：不加载、不等网络'
           : '🔧 引擎切换 → <b>KataGo 神经网络</b>（未就绪时先用常识棋应手）',
@@ -970,25 +946,25 @@ export class GoController {
       this.syncEngineUI();
     });
 
-    const viz = document.getElementById('go-viz') as HTMLInputElement | null;
-    viz?.addEventListener('change', (e) => {
+    const viz = mustEl<HTMLInputElement>('go-viz');
+    viz.addEventListener('change', (e) => {
       this.viz = (e.target as HTMLInputElement).checked;
       this.redraw();
     });
 
-    document.getElementById('go-new')?.addEventListener('click', () => this.newGame());
-    document.getElementById('go-undo')?.addEventListener('click', () => this.undo());
-    document.getElementById('go-pass')?.addEventListener('click', () => this.pass());
-    document.getElementById('go-resign')?.addEventListener('click', () => this.resign());
-    document.getElementById('go-hint')?.addEventListener('click', () => void this.hint());
-    document.getElementById('go-god')?.addEventListener('click', () => this.toggleGod());
-    document.getElementById('go-estimate')?.addEventListener('click', () => void this.estimate());
-    document.getElementById('go-resume')?.addEventListener('click', () => this.resume());
-    document.getElementById('go-stop')?.addEventListener('click', () => {
+    mustEl('go-new').addEventListener('click', () => this.newGame());
+    mustEl('go-undo').addEventListener('click', () => this.undo());
+    mustEl('go-pass').addEventListener('click', () => this.pass());
+    mustEl('go-resign').addEventListener('click', () => this.resign());
+    mustEl('go-hint').addEventListener('click', () => void this.hint());
+    mustEl('go-god').addEventListener('click', () => this.toggleGod());
+    mustEl('go-estimate').addEventListener('click', () => void this.estimate());
+    mustEl('go-resume').addEventListener('click', () => this.resume());
+    mustEl('go-stop').addEventListener('click', () => {
       this._aivaiRunning = false;
-      appendLog(document.getElementById('go-think-log'), '⏹ 已停止 AI 互搏（可继续手动落子）');
+      appendLog(mustEl('go-think-log'), '⏹ 已停止 AI 互搏（可继续手动落子）');
     });
-    document.getElementById('go-sound')?.addEventListener('click', (e) => {
+    mustEl('go-sound').addEventListener('click', (e) => {
       this.audio.enabled = !this.audio.enabled;
       const btn = e.target as HTMLButtonElement;
       btn.textContent = this.audio.enabled ? '🔊 音效开' : '🔇 音效关';

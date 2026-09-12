@@ -14,8 +14,7 @@ export function fmtEval(v: number, mate: number): string {
   return `${v}`;
 }
 
-export function appendLog(element: HTMLElement | null, html: string, max = 40): void {
-  if (!element) return;
+export function appendLog(element: HTMLElement, html: string, max = 40): void {
   const empty = element.querySelector('.empty');
   if (empty) empty.remove();
   const div = document.createElement('div');
@@ -25,10 +24,10 @@ export function appendLog(element: HTMLElement | null, html: string, max = 40): 
   while (element.children.length > max) element.lastChild?.remove();
 }
 
-export function setStats(element: HTMLElement | null, html: string): void {
-  if (element) element.innerHTML = html;
+export function setStats(element: HTMLElement, html: string): void {
+  element.innerHTML = html;
 }
 
-export function toggleProgress(element: HTMLElement | null, on: boolean): void {
-  element?.classList.toggle('hidden', !on);
+export function toggleProgress(element: HTMLElement, on: boolean): void {
+  element.classList.toggle('hidden', !on);
 }

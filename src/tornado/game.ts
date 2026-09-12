@@ -1160,17 +1160,6 @@ function css(rgb: [number, number, number]): string {
   return `rgb(${Math.round(rgb[0])},${Math.round(rgb[1])},${Math.round(rgb[2])})`;
 }
 
-/** patch 颜色：取调色板基准色，再按哈希做 ±5% 明暗抖动 */
-function biomeCss(col: GroundCol, kind: number, h: number): string {
-  let hex: string;
-  if (kind === BIOME.arable) hex = col.arable;
-  else if (kind === BIOME.forest) hex = col.forest;
-  else if (kind === BIOME.town) hex = col.town;
-  else if (kind === BIOME.water) hex = col.water;
-  else hex = col.base;
-  return shade(hex, (h - 0.5) * 0.1);
-}
-
 /** 按幅度把十六进制色调亮/调暗（amt > 0 提亮，< 0 压暗），永远只喂十六进制 */
 function shade(hex: string, amt: number): string {
   const c = hexRgb(hex);

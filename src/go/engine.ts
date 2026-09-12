@@ -10,7 +10,8 @@
  * ──────────────────────────────────────────────────────────── */
 
 import { GoBoard, type GoColor } from './rules';
-import { GoEvaluator, type GoBackend, type GoPositionInput } from './evaluate';
+import { errText } from '../core/errors';
+import { GoEvaluator, type GoPositionInput } from './evaluate';
 import { computeLadderFeatures } from './life';
 import { GoSearcher, defaultSearchOptions, type GoCandidateInfo, type GoSearchOptions } from './mcts';
 import { heuristicMove, mulberry32 } from './heuristic';
@@ -166,7 +167,7 @@ export class GoEngine {
         const info = await this.evaluator.loadBytes(bytes);
         return { ok: true, backend: info.backend, modelName: info.modelName };
       } catch (err) {
-        const message = String((err && (err as Error).message) || err);
+        const message = errText(err);
         console.error('[go] 神经网络装载失败：', err);
         // 允许下次重试
         this.loadPromise = null;

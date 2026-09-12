@@ -360,8 +360,4 @@ export class AIBridge {
     }
     this.failAllPending();
   }
-
-  get isBusy(): boolean {
-    return this.pending.size > 0;
-  }
 }

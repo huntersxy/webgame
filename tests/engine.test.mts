@@ -1,6 +1,8 @@
 /* Test harness for the rewritten Gomoku engine (run via esbuild bundle). */
-import { GomokuEngine, MATE } from '../src/gomoku/engine';
+import { GomokuEngine, MATE, ttClear } from '../src/gomoku/engine';
 import { findBestMove, LEVEL_CONFIG } from '../src/gomoku/search';
+import { nowMs } from '../src/core/time';
+import { check, finish } from './harness.mts';
 
 const N = 15;
 type Board = number[][];
@@ -9,11 +11,29 @@ const put = (b: Board, stones: Array<[number, number, number]>) => { for (const 
 const clone = (b: Board): Board => b.map((r) => [...r]);
 const histLen = (b: Board): number => b.flat().filter((v) => v !== 0).length;
 
-let pass = 0;
-let fail = 0;
-function check(name: string, cond: boolean, extra = ''): void {
-  if (cond) { pass++; console.log(`  ok  ${name}`); }
-  else { fail++; console.log(`FAIL  ${name} ${extra}`); }
+/** 与机器快慢无关的时限判据：档位预算 + 一层迭代的余量（慢机器上按预算等比放宽）。 */
+function budgetSlack(budgetMs: number): number {
+  return budgetMs * 1.5 + 300;
+}
+
+/**
+ * 这台机器有多快：定长整数/数组循环的 ops/ms。
+ * 只用来做「搜索吞吐 ÷ 机器基准」的比值判定——降频或调度让机器变慢时，两侧一起变慢。
+ */
+function machineOpsPerMs(): number {
+  const buf = new Int32Array(1 << 14);
+  for (let i = 0; i < buf.length; i++) buf[i] = (i * 2654435761) | 0;
+  let acc = 0;
+  for (let w = 0; w < 3; w++) for (let i = 0; i < buf.length; i++) acc += buf[i] | 0; // 预热 JIT
+  const rounds = 8000;
+  let best = 0;
+  for (let pass = 0; pass < 2; pass++) {
+    const t0 = nowMs();
+    for (let r = 0; r < rounds; r++) for (let i = 0; i < buf.length; i++) { buf[i] = (buf[i] + i) | 0; acc += buf[i] & 7; }
+    best = Math.max(best, (rounds * buf.length) / Math.max(1, nowMs() - t0));
+  }
+  void acc;
+  return best;
 }
 
 // ── brute-force reference evaluation ──
@@ -166,7 +186,7 @@ console.log('== defense stress ==');
   check('level2 blocks open three', m.x === 7 && (m.y === 6 || m.y === 10), JSON.stringify(m));
 }
 
-// ── 4) speed / depth probe on a quiet balanced position ──
+// ── 4) 搜索的确定性与吞吐：判据不依赖机器快慢 ──
 console.log('== speed ==');
 {
   const b = empty();
@@ -174,25 +194,50 @@ console.log('== speed ==');
     [7, 7, 1], [8, 8, 2], [8, 7, 1], [7, 8, 2], [6, 8, 1], [9, 7, 2],
     [6, 6, 1], [9, 6, 2], [10, 6, 1], [7, 5, 2], [9, 5, 1], [10, 7, 2],
   ]);
-  // raw engine throughput at fixed depth (bypasses VCF/instant shortcuts)
-  const eng = new GomokuEngine();
-  eng.load2D(clone(b));
-  eng.startSearch((typeof performance !== 'undefined' ? performance.now() : Date.now()) + 60000);
-  const s0 = Date.now();
-  const rr = eng.rootSearch(0, 8, 14);
-  const sMs = Math.max(1, Date.now() - s0);
-  console.log(`  raw search: d8 nodes=${eng.nodes} ${sMs}ms nps≈${(eng.nodes / sMs / 1000).toFixed(2)}M/s best=${rr.best}`);
-  check('raw search nps >= 100k/s', eng.nodes / sMs >= 100, `${Math.round(eng.nodes / sMs)}k nps`);
-  const t0 = Date.now();
+
+  // 固定深度的原始搜索（绕过开局库与必胜短路）。置换表是模块级共享的，
+  // 不清空就会被先前的搜索喂饱，节点数随调用顺序变化——所以每次都先 ttClear。
+  const rawProbe = (depth: number): { nodes: number; ms: number } => {
+    ttClear();
+    const eng = new GomokuEngine();
+    eng.load2D(clone(b));
+    eng.startSearch(nowMs() + 60_000); // 时限给足：测的是算法，不是时钟
+    const t0 = nowMs();
+    eng.rootSearch(0, depth, 14);
+    return { nodes: eng.nodes, ms: Math.max(1, nowMs() - t0) };
+  };
+
+  const calibBefore = machineOpsPerMs();
+  const d4 = rawProbe(4);
+  const d6 = rawProbe(6);
+  const calibAfter = machineOpsPerMs();
+  // 降频/调度只会让某一侧变慢，取快的一侧当基准
+  const calib = Math.max(calibBefore, calibAfter);
+  const nodesPerMs = d6.nodes / d6.ms;
+  // 「每个搜索节点折算多少次基准运算」：机器整体变慢时分子分母同步变小，这个值不变。
+  const opsPerNode = Math.round(calib / nodesPerMs);
+  console.log(`  raw search: d4 ${d4.nodes} 节点/${Math.round(d4.ms)}ms，d6 ${d6.nodes} 节点/${Math.round(d6.ms)}ms → ${Math.round(nodesPerMs)} 节点/ms；机器基准 ${Math.round(calib / 1000)}k ops/ms；每节点折算 ${opsPerNode} 次基准运算`);
+
+  // 节点数只由搜索本身决定，与机器快慢、调用顺序都无关：这是最灵敏的回归探针。
+  // 两个黄金值随评估表 / 剪枝 / 着法排序一起变——确认改动是有意的之后更新它们。
+  check('d4 节点数 = 17335（搜索确定性）', d4.nodes === 17335, `实际 ${d4.nodes}`);
+  check('d6 节点数 = 191523（搜索确定性）', d6.nodes === 191523, `实际 ${d6.nodes}`);
+  // 吞吐只做「灾难性回退」探针：阈值放到本机实测值的 10 倍以上，
+  // 不做精细性能考核（那件事交给上面的节点数黄金值）。
+  check('每节点折算机器运算量 < 40000', opsPerNode < 40_000, `${opsPerNode} 次/节点（本机约 3700）`);
+
+  // 恶魔档：在自己的时间预算内交卷（预算 + 一层迭代的余量，不写死秒数）
+  const t0 = nowMs();
   const res = findBestMove(clone(b), 1, 4, 'ai', 12);
-  const ms = Date.now() - t0;
+  const ms = Math.round(nowMs() - t0);
   console.log(`  demon move: depth=${res.depth} nodes=${res.nodes} wall=${ms}ms eval=${res.eval} instant=${!!res.instant} → (${res.move?.x},${res.move?.y})`);
-  check('demon respects time budget (< 3.4s)', ms < 3400, `${ms}ms`);
+  check('恶魔档在预算余量内交卷', ms < budgetSlack(LEVEL_CONFIG[4].timeMs), `${ms}ms / 预算 ${LEVEL_CONFIG[4].timeMs}ms`);
   check('demon proves win or reaches depth >= 8', !!res.instant || res.depth >= 8, `depth=${res.depth}`);
-  // normal level must feel instant
-  const t1 = Date.now();
+
+  // 普通档必须秒答
+  const t1 = nowMs();
   const r2 = findBestMove(clone(b), 2, 2, 'ai', 12);
-  check('普通 answers in < 700ms', Date.now() - t1 < 700, `${Date.now() - t1}ms d${r2.depth}`);
+  check('普通档在预算余量内交卷', nowMs() - t1 < budgetSlack(LEVEL_CONFIG[2].timeMs), `${Math.round(nowMs() - t1)}ms d${r2.depth}`);
 }
 
 // ── 5) self-play: level 3 vs level 2, must terminate with a winner ──
@@ -215,7 +260,8 @@ console.log('== self-play (level3 B vs level2 W) ==');
   }
   console.log(`  finished in ${moves} plies, ${((Date.now() - t0) / 1000).toFixed(1)}s wall, winner=${winner === 0 ? 'unfinished' : 'B' + winner}`);
   check('self-play terminates cleanly (winner or 40-ply cap)', winner === 1 || winner === 2 || winner === 0);
-  check('avg move time sane (< 1.5s)', totalMs / moves < 1500, `${Math.round(totalMs / moves)}ms`);
+  // 自对弈用的是 1/2 档，按档位预算给余量（不写死秒数）
+  check('平均每手时间在档位预算量级', totalMs / moves < LEVEL_CONFIG[2].timeMs * 3, `${Math.round(totalMs / moves)}ms`);
 }
 
 // ── 6) strength sanity: real search runs (book moved away from 天元) ──
@@ -320,5 +366,4 @@ console.log('== rapfi YXBOARD 命令构建 ==');
     buildYxBoardCmd(empty(), [], 1) === 'YXBOARD DONE');
 }
 
-console.log(`\n${pass} passed, ${fail} failed`);
-process.exit(fail ? 1 : 0);
+finish('engine');

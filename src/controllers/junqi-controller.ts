@@ -24,6 +24,7 @@ import { AIBridge } from '../ai/ai-bridge';
 import type { AudioEngine } from '../ui/audio';
 import { Stats } from '../ui/stats';
 import { appendLog, setStats, toggleProgress } from '../ui/format';
+import { mustEl } from '../ui/dom';
 
 type PlayStyle = 'open' | 'flip';
 type Phase = 'setup' | 'battle';
@@ -93,7 +94,7 @@ export class JunqiController {
     this.thinking = false;
     this.cancelAnim();
     this.showThinking(false);
-    toggleProgress(document.getElementById('jq-think-progress'), false);
+    toggleProgress(mustEl('jq-think-progress'), false);
     this.sel = null;
     this.targets = [];
     this.lastMove = null;
@@ -115,8 +116,8 @@ export class JunqiController {
       this.flipView = this.human === 'b';
       this.setupErr = null;
       this.board = new Array(60).fill(null);
-      const log = document.getElementById('jq-log');
-      if (log) log.innerHTML = '<div class="empty">摆阵完成后开始对战</div>';
+      const log = mustEl('jq-log');
+      log.innerHTML = '<div class="empty">摆阵完成后开始对战</div>';
       this.updatePanel();
       this.redraw();
     }
@@ -141,10 +142,10 @@ export class JunqiController {
     this.redraw();
     const styleName = this.style === 'flip' ? '揭棋' : '明棋';
     if (this.mode === 'aivai') {
-      appendLog(document.getElementById('jq-log'), `🤖 <b>AI 互搏观战开始</b>（${styleName} · ${JQ_LEVEL_CONFIG[this.level].name}），红先蓝后恶战到底`);
+      appendLog(mustEl('jq-log'), `🤖 <b>AI 互搏观战开始</b>（${styleName} · ${JQ_LEVEL_CONFIG[this.level].name}），红先蓝后恶战到底`);
       this.scheduleAi(650);
     } else {
-      appendLog(document.getElementById('jq-log'), `⚔ <b>对战开始</b>（${styleName} · 你执${sideName(this.human)}，${JQ_LEVEL_CONFIG[this.level].name} AI）`);
+      appendLog(mustEl('jq-log'), `⚔ <b>对战开始</b>（${styleName} · 你执${sideName(this.human)}，${JQ_LEVEL_CONFIG[this.level].name} AI）`);
       if (this.turn !== this.human) this.scheduleAi(650);
     }
   }
@@ -338,7 +339,7 @@ export class JunqiController {
     this.moveNo++;
     this.lastMove = { from, to };
     if (combat) this.lastCaptureAt = this.moveNo;
-    appendLog(document.getElementById('jq-log'),
+    appendLog(mustEl('jq-log'),
       `<b style="color:${sideTag(att.side)}">${this.moveNo}.${sideName(att.side)}</b> ${text}`);
     if (!combat) this.audio.move();
     else if (!rec.flag) this.audio.capture();
@@ -393,9 +394,9 @@ export class JunqiController {
     const side = this.turn;
     this.thinking = true;
     this.showThinking(true);
-    toggleProgress(document.getElementById('jq-think-progress'), true);
+    toggleProgress(mustEl('jq-think-progress'), true);
     const cfg = JQ_LEVEL_CONFIG[this.level];
-    setStats(document.getElementById('jq-think-stats'),
+    setStats(mustEl('jq-think-stats'),
       `⏳ <b>${sideName(side)}·${cfg.name}</b> 运算中… depth${cfg.depth}${this.style === 'flip' ? ' · 揭棋：己方全知，对方暗子按编制先验' : ''}`);
     this.redraw();
     const delay = this.level === 4 ? 80 : 40;
@@ -404,7 +405,7 @@ export class JunqiController {
       if (seq !== this.aiSeq || this.phase !== 'battle' || this.over || this.turn !== side) { this.thinking = false; return; }
       this.thinking = false;
       this.showThinking(false);
-      toggleProgress(document.getElementById('jq-think-progress'), false);
+      toggleProgress(mustEl('jq-think-progress'), false);
       this.setGlobalStatus('AI 就绪');
       if (!res.move) { this.finish(other(side), 'noMoves'); return; }
       this.logThink(side, cfg.name, res);
@@ -420,13 +421,13 @@ export class JunqiController {
     const m = res.move!;
     const ev = res.eval >= JQ_MATE - 1000 ? '扛旗必胜' : res.eval <= -JQ_MATE + 1000 ? '局势危殆' : (res.eval > 0 ? `+${res.eval}` : `${res.eval}`);
     const pv = (res.pv || []).map((x) => describeMove(this.board, x)).join(' → ') || describeMove(this.board, m);
-    setStats(document.getElementById('jq-think-stats'),
+    setStats(mustEl('jq-think-stats'),
       `✅ <b>${sideName(side)}·${name}</b> depth${res.depth} · 节点 <b>${res.nodes.toLocaleString()}</b> · ${res.ms}ms · 评估 <b>${ev}</b><br>主变：${pv}`);
     // 根节点 PVS 下未过线的候选只拿到上界，标成 ≤ 以免看起来与最优着同分
     const top = (res.scores || []).slice(0, 4)
       .map((s) => `${describeMove(this.board, s)}:${s.v >= JQ_MATE - 1000 ? '扛旗' : `${s.ub ? '≤' : ''}${Math.round(s.v)}`}`)
       .join(' · ');
-    appendLog(document.getElementById('jq-think-log'),
+    appendLog(mustEl('jq-think-log'),
       `🧠 depth<b>${res.depth}</b> · 节点${res.nodes.toLocaleString()} · ${res.ms}ms · 评估${ev} · 选<b>${describeMove(this.board, m)}</b><br><span class="cand">${top}</span>`);
   }
 
@@ -437,8 +438,8 @@ export class JunqiController {
     this.cancelAnim();
     this.thinking = false;
     this.showThinking(false);
-    toggleProgress(document.getElementById('jq-think-progress'), false);
-    if (!this.over) appendLog(document.getElementById('jq-log'), '⏹ <b>已暂停 AI 互搏</b>，可悔棋或重新开局');
+    toggleProgress(mustEl('jq-think-progress'), false);
+    if (!this.over) appendLog(mustEl('jq-log'), '⏹ <b>已暂停 AI 互搏</b>，可悔棋或重新开局');
     this.updatePanel();
     this.setGlobalStatus('AI 就绪');
   }
@@ -452,14 +453,14 @@ export class JunqiController {
     this.cancelAnim();
     this.thinking = false;
     this.showThinking(false);
-    toggleProgress(document.getElementById('jq-think-progress'), false);
+    toggleProgress(mustEl('jq-think-progress'), false);
     this.sel = null;
     this.targets = [];
     this.hintMove = null;
     if (this.mode === 'aivai') {
       this._haltAivai = true;
       this.restore(this.history.pop()!);
-      if (!this.over) appendLog(document.getElementById('jq-log'), '↩ 悔一手 · <b>互搏已暂停</b>');
+      if (!this.over) appendLog(mustEl('jq-log'), '↩ 悔一手 · <b>互搏已暂停</b>');
     } else {
       this.restore(this.history.pop()!);
       if (this.turn !== this.human && this.history.length) this.restore(this.history.pop()!);
@@ -490,7 +491,7 @@ export class JunqiController {
     if (this.turn !== this.human) return;
     const seq = ++this.aiSeq;
     this.thinking = true; // 独占 Worker：避免与 AI 搜索请求重叠
-    setStats(document.getElementById('jq-think-stats'), '👉 恶魔正在附体算招… depth8 全开，请稍候');
+    setStats(mustEl('jq-think-stats'), '👉 恶魔正在附体算招… depth8 全开，请稍候');
     setTimeout(async () => {
       try {
         const res = await this.ai.hintJq(this.cloneBoard(), this.turn, this.mode, this.style === 'flip', this.moveNo);
@@ -499,9 +500,9 @@ export class JunqiController {
         if (m) {
           this.hintMove = m;
           const ev = res.eval >= JQ_MATE - 1000 ? '扛旗在望' : res.eval;
-          appendLog(document.getElementById('jq-think-log'),
+          appendLog(mustEl('jq-think-log'),
             `💡 <b>恶魔支招</b> depth${res.depth} · 推荐<b>${describeMove(this.board, m)}</b> · 评估${ev} · 节点${res.nodes.toLocaleString()}`);
-          setStats(document.getElementById('jq-think-stats'),
+          setStats(mustEl('jq-think-stats'),
             `💡 恶魔支招 depth${res.depth} · 推荐 ${describeMove(this.board, m)} · ${res.ms}ms`);
           this.audio.hint();
           this.redraw();
@@ -521,22 +522,20 @@ export class JunqiController {
     this.over = true;
     this.draw = winner === null;
     this.winner = winner;
-    const banner = document.getElementById('jq-result');
-    if (banner) {
-      banner.classList.remove('hidden');
-      if (winner === null) {
-        banner.textContent = reason === 'noCapture'
-          ? `🤝 连续 ${DRAW_NO_CAPTURE} 歒无吃子，判和！`
-          : `🤝 双方鏖战 ${MAX_MOVES} 手，判和！`;
+    const banner = mustEl('jq-result');
+    banner.classList.remove('hidden');
+    if (winner === null) {
+      banner.textContent = reason === 'noCapture'
+        ? `🤝 连续 ${DRAW_NO_CAPTURE} 歒无吃子，判和！`
+        : `🤝 双方鏖战 ${MAX_MOVES} 手，判和！`;
+    } else {
+      const byMove = reason === 'flag' ? '扛旗致胜' : '对手无子可动';
+      if (this.mode === 'aivai') {
+        banner.textContent = `🤖 互搏结束！${sideName(winner)}方 AI 获胜（${byMove}）`;
+      } else if (winner === this.human) {
+        banner.textContent = `🎉 你执${sideName(this.human)}战胜了 AI！（${byMove}）`;
       } else {
-        const byMove = reason === 'flag' ? '扛旗致胜' : '对手无子可动';
-        if (this.mode === 'aivai') {
-          banner.textContent = `🤖 互搏结束！${sideName(winner)}方 AI 获胜（${byMove}）`;
-        } else if (winner === this.human) {
-          banner.textContent = `🎉 你执${sideName(this.human)}战胜了 AI！（${byMove}）`;
-        } else {
-          banner.textContent = `🤖 AI（${sideName(winner)}方）获胜（${byMove}）`;
-        }
+        banner.textContent = `🤖 AI（${sideName(winner)}方）获胜（${byMove}）`;
       }
     }
     if (this.mode === 'ai' && !this.draw) {
@@ -547,7 +546,7 @@ export class JunqiController {
       this.audio.win();
     }
     this.showThinking(false);
-    toggleProgress(document.getElementById('jq-think-progress'), false);
+    toggleProgress(mustEl('jq-think-progress'), false);
     this.updatePanel();
   }
 
@@ -581,16 +580,14 @@ export class JunqiController {
   private updatePanel(): void {
     const setup = this.phase === 'setup';
     const c = this.counts();
-    const turnEl = document.getElementById('jq-turn');
-    if (turnEl) {
-      let t: string;
-      if (setup) t = `摆阵中 · ${sideName(this.human)}方布阵`;
-      else if (this.over) t = this.draw ? '和棋' : `${sideName(this.winner!)}方获胜`;
-      else t = `轮到 ${sideName(this.turn)}方 走棋${this.mode === 'aivai' ? ' · AI 互搏' : ''}${this.thinking ? ' · 思考中' : ''}`;
-      turnEl.textContent = t;
-      turnEl.classList.toggle('red', setup ? this.human === 'r' : this.turn === 'r');
-    }
-    const set = (id: string, v: string) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+    const turnEl = mustEl('jq-turn');
+    let t: string;
+    if (setup) t = `摆阵中 · ${sideName(this.human)}方布阵`;
+    else if (this.over) t = this.draw ? '和棋' : `${sideName(this.winner!)}方获胜`;
+    else t = `轮到 ${sideName(this.turn)}方 走棋${this.mode === 'aivai' ? ' · AI 互搏' : ''}${this.thinking ? ' · 思考中' : ''}`;
+    turnEl.textContent = t;
+    turnEl.classList.toggle('red', setup ? this.human === 'r' : this.turn === 'r');
+    const set = (id: string, v: string): void => { mustEl(id).textContent = v; };
     set('jq-rcount', String(c.r));
     set('jq-bcount', String(c.b));
     set('jq-moves', String(this.moveNo));
@@ -599,35 +596,31 @@ export class JunqiController {
     // 摆阵面板 / 对战控制显隐（人机模式下明棋 / 揭棋都可摆阵）
     const setupOnly = this.mode === 'ai';
     const showSetup = setupOnly && this.phase === 'setup';
-    document.getElementById('jq-setup')?.classList.toggle('hidden', !showSetup);
-    document.getElementById('jq-color-row')?.classList.toggle('hidden', this.mode === 'aivai');
-    const start = document.getElementById('jq-start') as HTMLButtonElement | null;
+    mustEl('jq-setup').classList.toggle('hidden', !showSetup);
+    mustEl('jq-color-row').classList.toggle('hidden', this.mode === 'aivai');
+    const start = mustEl<HTMLButtonElement>('jq-start');
     if (showSetup) {
       const err = validateLayout(this.board, this.human);
       const done = layoutComplete(this.board, this.human);
-      if (start) start.disabled = !done;
-      const msg = document.getElementById('jq-setup-msg');
-      if (msg) {
-        if (err) { msg.textContent = `⚠️ ${err}`; msg.className = 'setup-msg err'; }
-        else if (this.setupErr) { msg.textContent = `⚠️ ${this.setupErr}`; msg.className = 'setup-msg err'; }
-        else if (done) { msg.textContent = '✅ 布阵完成，可以开始对战'; msg.className = 'setup-msg ok'; }
-        else { msg.textContent = `已放 ${this.countPlaced()}/25 枚${this.hand ? ` · 手持：${this.hand}` : ''}`; msg.className = 'setup-msg'; }
-      }
+      start.disabled = !done;
+      const msg = mustEl('jq-setup-msg');
+      if (err) { msg.textContent = `⚠️ ${err}`; msg.className = 'setup-msg err'; }
+      else if (this.setupErr) { msg.textContent = `⚠️ ${this.setupErr}`; msg.className = 'setup-msg err'; }
+      else if (done) { msg.textContent = '✅ 布阵完成，可以开始对战'; msg.className = 'setup-msg ok'; }
+      else { msg.textContent = `已放 ${this.countPlaced()}/25 枚${this.hand ? ` · 手持：${this.hand}` : ''}`; msg.className = 'setup-msg'; }
       this.renderTray();
     }
     // 对战控制按钮
-    document.getElementById('jq-undo')?.classList.toggle('hidden', showSetup);
-    document.getElementById('jq-hint')?.classList.toggle('hidden', this.mode === 'aivai');
-    document.getElementById('jq-stop')?.classList.toggle('hidden', !(this.mode === 'aivai' && !this.over && !this._haltAivai));
+    mustEl('jq-undo').classList.toggle('hidden', showSetup);
+    mustEl('jq-hint').classList.toggle('hidden', this.mode === 'aivai');
+    mustEl('jq-stop').classList.toggle('hidden', !(this.mode === 'aivai' && !this.over && !this._haltAivai));
     // 提示行
-    const hintEl = document.getElementById('jq-hint-line');
-    if (hintEl) {
-      hintEl.textContent = setup
-        ? '点击下方兵种放入棋盘 · 点击已放的子可取回'
-        : this.style === 'flip'
-          ? '揭棋：只可见己方棋子 · 攻方胜不亮、守方胜亮 · 司令阵亡亮军旗'
-          : '点击棋子查看可走位置 · 再点目标落子';
-    }
+    const hintEl = mustEl('jq-hint-line');
+    hintEl.textContent = setup
+      ? '点击下方兵种放入棋盘 · 点击已放的子可取回'
+      : this.style === 'flip'
+        ? '揭棋：只可见己方棋子 · 攻方胜不亮、守方胜亮 · 司令阵亡亮军旗'
+        : '点击棋子查看可走位置 · 再点目标落子';
   }
 
   private countPlaced(): number {
@@ -637,8 +630,7 @@ export class JunqiController {
   }
 
   private renderTray(): void {
-    const tray = document.getElementById('jq-tray');
-    if (!tray) return;
+    const tray = mustEl('jq-tray');
     const need = this.trayNeed();
     tray.innerHTML = '';
     for (const [t] of PIECE_COUNTS) {
@@ -658,17 +650,17 @@ export class JunqiController {
   }
 
   private showThinking(on: boolean): void {
-    document.getElementById('jq-thinking')?.classList.toggle('hidden', !on);
+    mustEl('jq-thinking').classList.toggle('hidden', !on);
   }
   private hideResult(): void {
-    document.getElementById('jq-result')?.classList.add('hidden');
+    mustEl('jq-result').classList.add('hidden');
   }
   private clearLogs(): void {
-    const log = document.getElementById('jq-log');
-    if (log) log.innerHTML = '<div class="empty">暂无棋谱</div>';
-    const think = document.getElementById('jq-think-log');
-    if (think) think.innerHTML = '<div class="empty">对局时自动输出深度 / 节点 / 评估 / 主变</div>';
-    setStats(document.getElementById('jq-think-stats'), '等待 AI 行棋…');
+    const log = mustEl('jq-log');
+    log.innerHTML = '<div class="empty">暂无棋谱</div>';
+    const think = mustEl('jq-think-log');
+    think.innerHTML = '<div class="empty">对局时自动输出深度 / 节点 / 评估 / 主变</div>';
+    setStats(mustEl('jq-think-stats'), '等待 AI 行棋…');
   }
   private setGlobalStatus(t: string): void { (window as any).setGlobalStatus?.(t); }
 
@@ -690,23 +682,23 @@ export class JunqiController {
     this.seg('jq-level', (v) => {
       this.level = +v as Difficulty;
       const cfg = JQ_LEVEL_CONFIG[this.level];
-      setStats(document.getElementById('jq-think-stats'), `难度切换 → <b>${cfg.name}</b> · 迭代加深至 depth${cfg.depth}`);
-      appendLog(document.getElementById('jq-think-log'), `⚙️ 难度切换 → <b>${cfg.name}</b> · 迭代加深至 depth${cfg.depth}${this.level === 4 ? ' · 恶魔全开（2.6s 预算）' : ''}`);
+      setStats(mustEl('jq-think-stats'), `难度切换 → <b>${cfg.name}</b> · 迭代加深至 depth${cfg.depth}`);
+      appendLog(mustEl('jq-think-log'), `⚙️ 难度切换 → <b>${cfg.name}</b> · 迭代加深至 depth${cfg.depth}${this.level === 4 ? ' · 恶魔全开（2.6s 预算）' : ''}`);
     });
 
-    document.getElementById('jq-new')?.addEventListener('click', () => this.resetGame());
-    document.getElementById('jq-undo')?.addEventListener('click', () => this.undo());
-    document.getElementById('jq-hint')?.addEventListener('click', () => void this.hint());
-    document.getElementById('jq-stop')?.addEventListener('click', () => this.stopAivai());
-    document.getElementById('jq-random')?.addEventListener('click', () => this.setupRandom());
-    document.getElementById('jq-clear')?.addEventListener('click', () => this.setupClear());
-    document.getElementById('jq-autofill')?.addEventListener('click', () => this.setupAutofill());
-    document.getElementById('jq-start')?.addEventListener('click', () => {
+    mustEl('jq-new').addEventListener('click', () => this.resetGame());
+    mustEl('jq-undo').addEventListener('click', () => this.undo());
+    mustEl('jq-hint').addEventListener('click', () => void this.hint());
+    mustEl('jq-stop').addEventListener('click', () => this.stopAivai());
+    mustEl('jq-random').addEventListener('click', () => this.setupRandom());
+    mustEl('jq-clear').addEventListener('click', () => this.setupClear());
+    mustEl('jq-autofill').addEventListener('click', () => this.setupAutofill());
+    mustEl('jq-start').addEventListener('click', () => {
       if (!layoutComplete(this.board, this.human)) return;
       this.audio.select();
       this.startBattle(false);
     });
-    document.getElementById('jq-sound')?.addEventListener('click', (e) => {
+    mustEl('jq-sound').addEventListener('click', (e) => {
       this.audio.enabled = !this.audio.enabled;
       const b = e.currentTarget as HTMLElement;
       b.classList.toggle('on', this.audio.enabled);
@@ -715,8 +707,8 @@ export class JunqiController {
   }
 
   private seg(id: string, fn: (v: string) => void): void {
-    const el = document.getElementById(id);
-    el?.querySelectorAll('button').forEach((b) => b.addEventListener('click', () => {
+    const el = mustEl(id);
+    el.querySelectorAll('button').forEach((b) => b.addEventListener('click', () => {
       el.querySelectorAll('button').forEach((x) => x.classList.remove('on'));
       b.classList.add('on');
       fn(b.dataset.v!);

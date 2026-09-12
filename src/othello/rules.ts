@@ -27,11 +27,6 @@ import type { OthBoard, OthDisc, Pt } from '../types';
 export const SIZE = 8;
 export const CELLS = SIZE * SIZE;
 
-/** x != 7 的位（防止向左移位绕到下一行）；位序大端，一行 8 位 */
-const NOT_COL7 = 0xfefefefe;
-/** x != 0 的位（防止向右移位绕到上一行） */
-const NOT_COL0 = 0x7f7f7f7f;
-
 type Word = [number, number];
 
 export interface OthPosition {
@@ -71,12 +66,6 @@ const SHIFT: ReadonlyArray<(lo: number, hi: number) => Word> = [
   (lo, hi) => shiftRight(...shiftDown(lo, hi)),
   (lo, hi) => shiftLeft(...shiftUp(lo, hi)),
   (lo, hi) => shiftRight(...shiftUp(lo, hi)),
-];
-
-/** 各方向的反方向（索引与 SHIFT 对齐），供合法点计算从对方棋回望 */
-const INV: ReadonlyArray<(lo: number, hi: number) => Word> = [
-  SHIFT[1], SHIFT[0], SHIFT[3], SHIFT[2],
-  SHIFT[7], SHIFT[6], SHIFT[5], SHIFT[4],
 ];
 
 /** 方向表的 (dx, dy)，供界面与候选排序使用 */
@@ -303,10 +292,6 @@ export function discCount(pos: OthPosition, side: OthDisc): number {
   return popcount(b[0]) + popcount(b[1]);
 }
 
-export function totalPopcount(pos: OthPosition): number {
-  return discCount(pos, 1) + discCount(pos, 2);
-}
-
 export function popcount(v: number): number {
   let x = v >>> 0;
   x = x - ((x >>> 1) & 0x55555555);
@@ -317,10 +302,6 @@ export function popcount(v: number): number {
 
 export function other(side: OthDisc): OthDisc {
   return side === 1 ? 2 : 1;
-}
-
-export function xyOf(index: number): Pt {
-  return { x: index & 7, y: index >>> 3 };
 }
 
 export function indexOf(x: number, y: number): number {

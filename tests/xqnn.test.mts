@@ -14,13 +14,8 @@ import { XqSearcher, XQNN_LEVELS } from '../src/xqnn/search';
 import { createInitialBoard, legalMoves, makeMove, inCheck, findKing, ROWS, COLS } from '../src/xiangqi/rules';
 import { boardToFen } from '../src/xiangqi/fen';
 import type { XqBoard, XqMove, XqSide } from '../src/types';
+import { check, finish } from './harness.mts';
 
-let pass = 0;
-let fail = 0;
-function check(name: string, cond: boolean, extra = ''): void {
-  if (cond) { pass++; console.log(`  ok  ${name}`); }
-  else { fail++; console.log(`FAIL  ${name} ${extra}`); }
-}
 
 const MODEL = 'public/xqnn/chess_model.onnx';
 const buf = readFileSync(MODEL);
@@ -184,5 +179,4 @@ const net = new XqNet(weights);
   check('恶魔档网络窗口 ≤ 30 分（不会顶掉战术着法）', XQNN_LEVELS[4].window <= 30, String(XQNN_LEVELS[4].window));
 }
 
-console.log(`\n${pass} passed, ${fail} failed`);
-if (fail) process.exit(1);
+finish('xqnn');

@@ -3,15 +3,10 @@
 import { createInitialBoard, legalMoves, makeMove } from '../src/xiangqi/rules';
 import { findBestMove, resetXqWarmDepth } from '../src/xiangqi/search';
 import type { GameMode, XqBoard, XqMove } from '../src/types';
+import { check, finish } from './harness.mts';
 
 const PVP: GameMode = 'pvp';
 
-let pass = 0;
-let fail = 0;
-function check(name: string, cond: boolean, extra = ''): void {
-  if (cond) { pass++; console.log(`  ok  ${name}`); }
-  else { fail++; console.log(`FAIL  ${name} ${extra}`); }
-}
 
 /** 红先 炮二平五（(7,7)→(4,7)）之后轮到黑方；此时黑炮 (1,2) 可用红炮 (1,7) 当炮架吃 (1,9) 的红马，
  *  但红车 a0 能吃回 —— 交换下来黑方亏（炮 300 换 马 270）。 */
@@ -79,5 +74,4 @@ function withFakeClock<T>(stepMs: number, fn: () => T): T {
   check('恶魔档在预算被掐断时仍走出一步杀 i6-i9', !!res.move && res.move.fx === 8 && res.move.fy === 3 && res.move.tx === 8 && res.move.ty === 0);
 }
 
-console.log(`\n${pass} passed, ${fail} failed`);
-if (fail) process.exit(1);
+finish('xqsearch');

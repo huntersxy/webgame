@@ -3,7 +3,7 @@
  *  Coordinates board state, AI bridge, rendering, and UI panel.
  * ──────────────────────────────────────────────────────────── */
 
-import type { GomokuBoard, GomokuPlayer, Difficulty, GameMode, Pt, GomokuMove, SearchResult } from '../types';
+import type { GomokuBoard, GomokuPlayer, Difficulty, GameMode, Pt, GomokuMove } from '../types';
 import { createBoard, cloneBoard, checkWin, isBoardFull, other, inBounds } from '../gomoku/rules';
 import { evaluateBoard } from '../gomoku/eval';
 import { LEVEL_CONFIG, resetGomokuWarmDepth } from '../gomoku/search';
@@ -14,6 +14,7 @@ import { renderGomoku, pxToCellGomoku, gomokuScorePercent, type GomokuRenderStat
 import { appendLog, setStats, toggleProgress, fmtEval } from '../ui/format';
 import { applyDemonTheme } from '../ui/demon';
 import { detectWinningOpening } from '../gomoku/book';
+import { mustEl } from '../ui/dom';
 
 interface HistoryEntry { x: number; y: number; c: GomokuPlayer; }
 
@@ -54,7 +55,6 @@ export class GomokuController {
   private _posSeq = 0;
   private _aiTimer: ReturnType<typeof setTimeout> | null = null;
   private _haltAivai = false;
-  private _animFrame: number | null = null;
   private _down: { x: number; y: number } | null = null;
   private _openingWarned = false;
   /** 搜索代次：每次重置局面 +1，用于作废「重置前发出、重置后才返回」的旧结果 */
@@ -90,7 +90,7 @@ export class GomokuController {
   }
 
   private paintSeg(id: string, value: string): void {
-    document.getElementById(id)?.querySelectorAll<HTMLButtonElement>('button')
+    mustEl(id).querySelectorAll<HTMLButtonElement>('button')
       .forEach((b) => b.classList.toggle('on', b.dataset.v === value));
   }
 
@@ -102,11 +102,11 @@ export class GomokuController {
   private syncEngineUI(): void {
     const demonForced = this.level === 4;                 // 恶魔档固定 Rapfi，不可切换
     this.paintSeg('g-engine', demonForced ? 'auto' : this.enginePref);
-    document.getElementById('g-engine')?.querySelectorAll<HTMLButtonElement>('button')
+    mustEl('g-engine').querySelectorAll<HTMLButtonElement>('button')
       .forEach((b) => { b.disabled = demonForced; });
 
-    const note = document.getElementById('g-engine-note');
-    if (note) note.textContent = this.engineNote(demonForced);
+    const note = mustEl('g-engine-note');
+    note.textContent = this.engineNote(demonForced);
 
     const demonBtn = document.querySelector<HTMLButtonElement>('#g-level button[data-v="4"]');
     if (demonBtn) {
@@ -130,14 +130,12 @@ export class GomokuController {
 
   /** 「神在思考」提示 + 按钮态 + 进度条：让玩家知道在算、大概等多久。 */
   private syncGodUI(): void {
-    const btn = document.getElementById('g-god');
-    if (btn) {
-      btn.classList.toggle('on', this.god);
-      btn.textContent = !this.god ? '🙏 请神上身' : (this.godThinking ? '🙏 神算中…' : '🛌 送神离开');
-    }
+    const btn = mustEl('g-god');
+    btn.classList.toggle('on', this.god);
+    btn.textContent = !this.god ? '🙏 请神上身' : (this.godThinking ? '🙏 神算中…' : '🛌 送神离开');
     const busy = this.god && this.godThinking;
-    document.getElementById('gomoku-god-thinking')?.classList.toggle('hidden', !busy);
-    toggleProgress(document.getElementById('g-think-progress'), busy || this._hintBusy || this.thinking);
+    mustEl('gomoku-god-thinking').classList.toggle('hidden', !busy);
+    toggleProgress(mustEl('g-think-progress'), busy || this._hintBusy || this.thinking);
     this.updatePanel();
   }
 
@@ -167,9 +165,9 @@ export class GomokuController {
       if (godMark || this.hintPos || (this.viz && this.thinkCandidates.length > 0 && !this.over)) {
         this.redraw();
       }
-      this._animFrame = requestAnimationFrame(loop);
+      requestAnimationFrame(loop);
     };
-    this._animFrame = requestAnimationFrame(loop);
+    requestAnimationFrame(loop);
   }
 
   redraw(): void { renderGomoku(this.canvas, this.state); }
@@ -196,7 +194,7 @@ export class GomokuController {
     this.redraw();
     const cfg = LEVEL_CONFIG[this.level];
     const modeName = this.mode === 'aivai' ? '🤖AI互搏观战' : (this.mode === 'pvp' ? '双人对战' : '人机对战');
-    setStats(document.getElementById('g-think-stats'), `新对局 · ${modeName} · 难度 <b>${cfg.name}</b> · 等待行棋…`);
+    setStats(mustEl('g-think-stats'), `新对局 · ${modeName} · 难度 <b>${cfg.name}</b> · 等待行棋…`);
     if (this.mode === 'ai' && this.human === 2) this.aiMove();
     else if (this.mode === 'aivai') this.aiMove();
     else this.refreshGod();
@@ -240,11 +238,11 @@ export class GomokuController {
   private async aiMove(): Promise<void> {
     this.thinking = true;
     this.showThinking(true);
-    toggleProgress(document.getElementById('g-think-progress'), true);
+    toggleProgress(mustEl('g-think-progress'), true);
     const cfg = LEVEL_CONFIG[this.level];
     this.setGlobalStatus(`AI 思考中…(${cfg.name})`);
     this.redraw();
-    setStats(document.getElementById('g-think-stats'), `⏳ <b>${cfg.name}</b> 运算中… 正在展开候选…`);
+    setStats(mustEl('g-think-stats'), `⏳ <b>${cfg.name}</b> 运算中… 正在展开候选…`);
     const delay = this.level === 4 ? 60 : (this.level === 3 ? 40 : 20);
     const seq = ++this._searchSeq;
     this._aiTimer = setTimeout(async () => {
@@ -262,34 +260,34 @@ export class GomokuController {
       if (m && (!inBounds(m.x, m.y) || this.board[m.y][m.x] !== 0)) {
         const alt = (res.scores || []).find((s) => inBounds(s.x, s.y) && this.board[s.y][s.x] === 0);
         const fix = alt ?? this.firstEmptyNear(m.x, m.y);
-        appendLog(document.getElementById('g-think-log'),
+        appendLog(mustEl('g-think-log'),
           `⚠️ 引擎返回非法落点 (${m.x},${m.y})，已改用 ${fix ? `(${fix.x},${fix.y})` : '无可用空点'}`);
         m = fix ?? null;
       }
       this.thinkCandidates = (res.scores || []).map((s, i) => ({ ...s, rank: i + 1 }));
       this.thinking = false;
       this.showThinking(false);
-      toggleProgress(document.getElementById('g-think-progress'), false);
+      toggleProgress(mustEl('g-think-progress'), false);
 
       const who = aiPlayer === 1 ? '黑' : '白';
       const engineName = res.engine === 'rapfi-multi' ? '🧩Rapfi·多线程' : res.engine === 'rapfi-single' ? '🧩Rapfi·单线程' : res.engine === 'js' ? '内置引擎' : '';
       if ((res.engine === 'rapfi-multi' || res.engine === 'rapfi-single') && !this._engineLogged) {
         this._engineLogged = true;
-        appendLog(document.getElementById('g-think-log'), `🧩 <b>Rapfi WASM 引擎已接入</b>（${res.engine === 'rapfi-multi' ? '多线程构建' : '单线程构建 · 服务器未启用 COOP/COEP 时自动降级'}）`);
+        appendLog(mustEl('g-think-log'), `🧩 <b>Rapfi WASM 引擎已接入</b>（${res.engine === 'rapfi-multi' ? '多线程构建' : '单线程构建 · 服务器未启用 COOP/COEP 时自动降级'}）`);
       }
       // 恶魔档只该与 Rapfi 对局：若它不可用而退回了内置引擎，必须让玩家知道
       // （加载中的情况下面已有专门的文案，不重复播报）
       if (this.level === 4 && res.engine === 'js' && !this._warming && !this._demonFallbackWarned) {
         this._demonFallbackWarned = true;
-        appendLog(document.getElementById('g-think-log'),
+        appendLog(mustEl('g-think-log'),
           '⚠️ <b>Rapfi 引擎不可用</b>，本局恶魔档已临时改用内置 JS 引擎应手（刷新页面可重试加载）。');
       }
       if (res.opening) {
-        setStats(document.getElementById('g-think-stats'), `⚡ <b>${who}</b> 开局速答 (${m?.x},${m?.y})${engineName ? ' · ' + engineName : ''}`);
-        appendLog(document.getElementById('g-think-log'), `⚡ 开局速答 [${who}] → (${m?.x},${m?.y})${engineName ? ` · ${engineName}` : ''}（开局谱固定应手，未启动搜索）`);
+        setStats(mustEl('g-think-stats'), `⚡ <b>${who}</b> 开局速答 (${m?.x},${m?.y})${engineName ? ' · ' + engineName : ''}`);
+        appendLog(mustEl('g-think-log'), `⚡ 开局速答 [${who}] → (${m?.x},${m?.y})${engineName ? ` · ${engineName}` : ''}（开局谱固定应手，未启动搜索）`);
       } else if (res.instant) {
-        setStats(document.getElementById('g-think-stats'), `⚡ <b>${who}·${cfg.name}</b> 秒断胜负手 (${m?.x},${m?.y}) · 直接成五/堵五${engineName ? ' · ' + engineName : ''}`);
-        appendLog(document.getElementById('g-think-log'), `⚡ <b>即时胜负手</b> [${who}] → (${m?.x},${m?.y}) · depth${res.depth}免搜索`);
+        setStats(mustEl('g-think-stats'), `⚡ <b>${who}·${cfg.name}</b> 秒断胜负手 (${m?.x},${m?.y}) · 直接成五/堵五${engineName ? ' · ' + engineName : ''}`);
+        appendLog(mustEl('g-think-log'), `⚡ <b>即时胜负手</b> [${who}] → (${m?.x},${m?.y}) · depth${res.depth}免搜索`);
       } else {
         const top = (res.scores || []).slice(0, 5).map((s, i) => `#${i + 1}(${s.x},${s.y}):${s.v > 99999 ? '胜' : s.v}`).join(' ');
         const ev = fmtEval(res.eval, 100000);
@@ -297,8 +295,8 @@ export class GomokuController {
         const pending = res.engine === 'js' && this._warming
           ? ' <span style="color:#d69a2e">· 引擎加载中，本手先用内置引擎</span>' : '';
         const boost = res.boosted ? ` <span style="color:#ff6b6b">·劣势加深→depth${res.depth}</span>` : '';
-        setStats(document.getElementById('g-think-stats'), `✅ <b>${who}·${cfg.name}</b>${engineName ? `〔${engineName}〕` : ''} depth${res.depth} · 节点 <b>${res.nodes.toLocaleString()}</b> · ${res.ms}ms · 评估 <b>${ev}</b> · 选 (${m?.x},${m?.y})${boost}${pending}`);
-        appendLog(document.getElementById('g-think-log'), `🧠${engineName ? `<b>${engineName}</b>·` : ''} depth<b>${res.depth}</b> · 节点${res.nodes.toLocaleString()} · ${res.ms}ms · 评估${ev} · 选<b>(${m?.x},${m?.y})</b>${res.boosted ? ' · <span style="color:#ff6b6b">劣势加深</span>' : ''}${pending}<br><span class="cand">${top}</span>`);
+        setStats(mustEl('g-think-stats'), `✅ <b>${who}·${cfg.name}</b>${engineName ? `〔${engineName}〕` : ''} depth${res.depth} · 节点 <b>${res.nodes.toLocaleString()}</b> · ${res.ms}ms · 评估 <b>${ev}</b> · 选 (${m?.x},${m?.y})${boost}${pending}`);
+        appendLog(mustEl('g-think-log'), `🧠${engineName ? `<b>${engineName}</b>·` : ''} depth<b>${res.depth}</b> · 节点${res.nodes.toLocaleString()} · ${res.ms}ms · 评估${ev} · 选<b>(${m?.x},${m?.y})</b>${res.boosted ? ' · <span style="color:#ff6b6b">劣势加深</span>' : ''}${pending}<br><span class="cand">${top}</span>`);
       }
 
       if (m) {
@@ -327,7 +325,7 @@ export class GomokuController {
   stopAivai(): void {
     this._haltAivai = true;
     if (this._aiTimer) { clearTimeout(this._aiTimer); this._aiTimer = null; }
-    if (!this.over) appendLog(document.getElementById('g-think-log'), '⏹ <b>已停止AI互搏</b>，可悔棋/新开一局');
+    if (!this.over) appendLog(mustEl('g-think-log'), '⏹ <b>已停止AI互搏</b>，可悔棋/新开一局');
     this.updatePanel();
     this.setGlobalStatus('AI 就绪');
   }
@@ -376,7 +374,7 @@ export class GomokuController {
     this._hintBusy = true;
     this.syncGodUI();          // 亮进度条，别让玩家以为没反应
     const seq = this._posSeq;
-    setStats(document.getElementById('g-think-stats'), '👉 恶魔正在附体算招… depth4全开，请稍候');
+    setStats(mustEl('g-think-stats'), '👉 恶魔正在附体算招… depth4全开，请稍候');
     setTimeout(async () => {
       try {
         const moves = this.history.map((h) => ({ x: h.x, y: h.y, c: h.c }));
@@ -387,8 +385,8 @@ export class GomokuController {
         if (m) {
           const engineName = res.engine === 'rapfi-multi' ? '🧩Rapfi·多线程' : res.engine === 'rapfi-single' ? '🧩Rapfi·单线程' : res.engine === 'js' ? '内置引擎' : '';
           this.thinkCandidates = (res.scores || []).map((s, i) => ({ ...s, rank: i + 1 }));
-          appendLog(document.getElementById('g-think-log'), `💡 <b>恶魔支招</b>${engineName ? `〔${engineName}〕` : ''} depth${res.depth} · 推荐<b>(${m.x},${m.y})</b> · 评估${fmtEval(res.eval, 100000)} · 节点${res.nodes.toLocaleString()} · ${res.ms}ms`);
-          setStats(document.getElementById('g-think-stats'), `💡 恶魔支招 depth${res.depth} · 推荐 (${m.x},${m.y}) · 节点${res.nodes.toLocaleString()} · ${res.ms}ms${engineName ? ' · ' + engineName : ''}`);
+          appendLog(mustEl('g-think-log'), `💡 <b>恶魔支招</b>${engineName ? `〔${engineName}〕` : ''} depth${res.depth} · 推荐<b>(${m.x},${m.y})</b> · 评估${fmtEval(res.eval, 100000)} · 节点${res.nodes.toLocaleString()} · ${res.ms}ms`);
+          setStats(mustEl('g-think-stats'), `💡 恶魔支招 depth${res.depth} · 推荐 (${m.x},${m.y}) · 节点${res.nodes.toLocaleString()} · ${res.ms}ms${engineName ? ' · ' + engineName : ''}`);
           this.hintPos = { x: m.x, y: m.y };
           this.redraw();
           this.audio.hint();
@@ -404,14 +402,14 @@ export class GomokuController {
   toggleGod(): void {
     this.god = !this.god;
     if (this.god) {
-      appendLog(document.getElementById('g-think-log'), '🙏 <b>恶魔附体！请神上身成功</b>，每手都将用 depth4 给你指 👇 最佳点');
+      appendLog(mustEl('g-think-log'), '🙏 <b>恶魔附体！请神上身成功</b>，每手都将用 depth4 给你指 👇 最佳点');
       this.syncGodUI();
       this.refreshGod();
     } else {
       this.godMove = null;
       this.godThinking = false;
       this._godDirty = false;
-      appendLog(document.getElementById('g-think-log'), '🛌 已送神，神指消失');
+      appendLog(mustEl('g-think-log'), '🛌 已送神，神指消失');
       this.syncGodUI();
       this.redraw();
     }
@@ -440,19 +438,19 @@ export class GomokuController {
   }
 
   private onGameEnd(winner: GomokuPlayer | 0): void {
-    const banner = document.getElementById('gomoku-result');
-    banner?.classList.remove('hidden');
-    if (winner === 0) { if (banner) banner.textContent = '🤝 和棋！棋盘已满，旗鼓相当。'; this.audio.win(); Stats.add(false); }
-    else if (this.mode === 'aivai') { if (banner) banner.textContent = `🤖 互搏结束！${winner === 1 ? '黑方AI' : '白方AI'} 五连获胜！`; this.audio.win(); }
+    const banner = mustEl('gomoku-result');
+    banner.classList.remove('hidden');
+    if (winner === 0) { banner.textContent = '🤝 和棋！棋盘已满，旗鼓相当。'; this.audio.win(); Stats.add(false); }
+    else if (this.mode === 'aivai') { banner.textContent = `🤖 互搏结束！${winner === 1 ? '黑方AI' : '白方AI'} 五连获胜！`; this.audio.win(); }
     else if (this.mode === 'ai' && winner === this.human) {
       const opening = detectWinningOpening(this.history, this.human);
-      if (banner) banner.textContent = opening
+      banner.textContent = opening
         ? `🏆 你用「${opening.name}」${opening.exact ? '必胜定式' : '必胜起手式'}击败了 AI！`
         : '🎉 恭喜！你击败了 AI！';
       this.audio.lose(); Stats.add(true);
     }
-    else if (this.mode === 'ai') { if (banner) banner.textContent = '🤖 AI 获胜，再接再厉！点「🔄 新开一局」再来。'; this.audio.lose(); Stats.add(false); }
-    else { if (banner) banner.textContent = `🏆 ${winner === 1 ? '黑方' : '白方'} 五连获胜！`; this.audio.win(); Stats.add(true); }
+    else if (this.mode === 'ai') { banner.textContent = '🤖 AI 获胜，再接再厉！点「🔄 新开一局」再来。'; this.audio.lose(); Stats.add(false); }
+    else { banner.textContent = `🏆 ${winner === 1 ? '黑方' : '白方'} 五连获胜！`; this.audio.win(); Stats.add(true); }
   }
 
   /** Warn once per game when the human (playing black) opens with a known
@@ -462,28 +460,28 @@ export class GomokuController {
     const op = detectWinningOpening(this.history, this.human);
     if (!op) return;
     this._openingWarned = true;
-    appendLog(document.getElementById('g-think-log'), `⚠️ <b>人类正在使用「${op.name}」${op.exact ? '必胜定式' : '必胜起手式'}</b>（黑棋先手必胜）！恶魔已进入戒备与学习模式。`);
-    setStats(document.getElementById('g-think-stats'), `⚠️ 检测到黑棋必胜开局「${op.name}」 — 恶魔加强戒备`);
+    appendLog(mustEl('g-think-log'), `⚠️ <b>人类正在使用「${op.name}」${op.exact ? '必胜定式' : '必胜起手式'}</b>（黑棋先手必胜）！恶魔已进入戒备与学习模式。`);
+    setStats(mustEl('g-think-stats'), `⚠️ 检测到黑棋必胜开局「${op.name}」 — 恶魔加强戒备`);
   }
 
   // ── UI helpers ──
   private updatePanel(): void {
     const modeTag = this.mode === 'aivai' ? '🤖互搏' : (this.thinking ? 'AI 思考中…' : (this.godThinking ? '👇神算中…' : '对弈中'));
-    const turnEl = document.getElementById('gomoku-turn');
-    if (turnEl) turnEl.textContent = this.over ? '对局结束' : `轮到 ${this.turn === 1 ? '黑方' : '白方'} 落子${this.mode === 'aivai' ? ' · AI互搏中' : ''}${this.god ? ' · 神附体👇' : ''}`;
-    const stepsEl = document.getElementById('g-steps');
-    if (stepsEl) stepsEl.textContent = String(this.history.length);
-    const statusEl = document.getElementById('g-status');
-    if (statusEl) statusEl.textContent = this.over ? '已结束' : modeTag;
+    const turnEl = mustEl('gomoku-turn');
+    turnEl.textContent = this.over ? '对局结束' : `轮到 ${this.turn === 1 ? '黑方' : '白方'} 落子${this.mode === 'aivai' ? ' · AI互搏中' : ''}${this.god ? ' · 神附体👇' : ''}`;
+    const stepsEl = mustEl('g-steps');
+    stepsEl.textContent = String(this.history.length);
+    const statusEl = mustEl('g-status');
+    statusEl.textContent = this.over ? '已结束' : modeTag;
     const pct = gomokuScorePercent(this.board, this.human);
-    const barEl = document.getElementById('g-score-bar');
-    if (barEl) barEl.style.width = pct + '%';
+    const barEl = mustEl('g-score-bar');
+    barEl.style.width = pct + '%';
     const v = evaluateBoard(this.board, this.human);
-    const scoreText = document.getElementById('g-score-text');
-    if (scoreText) scoreText.textContent = v > 1500 ? '我方大优' : v > 400 ? '我方稍优' : v < -1500 ? 'AI 大优' : v < -400 ? 'AI 稍优' : '均势';
+    const scoreText = mustEl('g-score-text');
+    scoreText.textContent = v > 1500 ? '我方大优' : v > 400 ? '我方稍优' : v < -1500 ? 'AI 大优' : v < -400 ? 'AI 稍优' : '均势';
   }
 
-  private showThinking(on: boolean): void { document.getElementById('gomoku-thinking')?.classList.toggle('hidden', !on); }
+  private showThinking(on: boolean): void { mustEl('gomoku-thinking').classList.toggle('hidden', !on); }
 
   /**
    * 预热 Rapfi 引擎。进入五子棋页面时调用：首次需下载 wasm + NNUE 权重
@@ -513,12 +511,12 @@ export class GomokuController {
       this.showEngineLoad(false);
       if (ok) {
         this.setGlobalStatus('AI 就绪');
-        appendLog(document.getElementById('g-think-log'),
+        appendLog(mustEl('g-think-log'),
           `🧩 <b>Rapfi 引擎已预加载</b>（${variant === 'multi' ? '多线程构建' : '单线程构建'}）· 落子无需等待`);
         this._engineLogged = true; // 避免首次搜索时重复播报
       } else {
         this.setGlobalStatus('AI 就绪（内置引擎）');
-        appendLog(document.getElementById('g-think-log'),
+        appendLog(mustEl('g-think-log'),
           '⚠️ <b>Rapfi 引擎加载失败</b>，已回退内置 JS 引擎；<b>恶魔模式暂不可用</b>（刷新页面可重试）。');
       }
       this.syncEngineUI();
@@ -527,20 +525,20 @@ export class GomokuController {
 
   /** 引擎加载进度条：只在画布可见时才有意义，收起来时就清掉百分比 */
   private setEngineLoad(pct: number, loaded: number, text: string): void {
-    const bar = document.getElementById('g-engine-bar');
-    const pctEl = document.getElementById('g-engine-pct');
-    const stateEl = document.getElementById('g-engine-state');
-    if (bar) bar.style.width = `${pct}%`;
-    if (stateEl) stateEl.textContent = text;
-    if (pctEl) pctEl.textContent = loaded ? `${pct}%` : '';
+    const bar = mustEl('g-engine-bar');
+    const pctEl = mustEl('g-engine-pct');
+    const stateEl = mustEl('g-engine-state');
+    bar.style.width = `${pct}%`;
+    stateEl.textContent = text;
+    pctEl.textContent = loaded ? `${pct}%` : '';
   }
 
   private showEngineLoad(on: boolean): void {
-    document.getElementById('gomoku-engine-load')?.classList.toggle('hidden', !on);
+    mustEl('gomoku-engine-load').classList.toggle('hidden', !on);
     if (on) this.setEngineLoad(0, 0, '引擎加载中…');
   }
 
-  private hideResult(): void { document.getElementById('gomoku-result')?.classList.add('hidden'); }
+  private hideResult(): void { mustEl('gomoku-result').classList.add('hidden'); }
   private setGlobalStatus(t: string): void { (window as any).setGlobalStatus?.(t); }
 
   // ── Event wiring ──
@@ -571,40 +569,40 @@ export class GomokuController {
     this.canvas.addEventListener('pointercancel', () => { this._down = null; this.hover = null; this.redraw(); });
 
     // Segmented controls
-    this.segWire('g-mode', (v) => { this.mode = v as GameMode; if (v === 'aivai') appendLog(document.getElementById('g-think-log'), '🤖 <b>AI互搏观战开始</b>，双方都用当前难度恶战到底'); this.newGame(); });
+    this.segWire('g-mode', (v) => { this.mode = v as GameMode; if (v === 'aivai') appendLog(mustEl('g-think-log'), '🤖 <b>AI互搏观战开始</b>，双方都用当前难度恶战到底'); this.newGame(); });
     this.segWire('g-color', (v) => { this.human = +v as GomokuPlayer; this.newGame(); });
     this.segWire('g-level', (v) => {
       const lv = +v as Difficulty;
       // 恶魔档只能与 Rapfi 对局：引擎没就绪就不放行（按钮已禁用，这里再兜一层）
       if (lv === 4 && this._rapfiReady !== true) {
-        appendLog(document.getElementById('g-think-log'), '🚫 <b>恶魔模式不可用</b>：Rapfi 引擎尚未就绪。');
+        appendLog(mustEl('g-think-log'), '🚫 <b>恶魔模式不可用</b>：Rapfi 引擎尚未就绪。');
         this.paintSeg('g-level', String(this.level));
         return;
       }
       this.level = lv;
       applyDemonTheme('g', this.level, this.audio);
       const cfg = LEVEL_CONFIG[this.level];
-      setStats(document.getElementById('g-think-stats'), `难度切换 → <b>${cfg.name}</b> · 棋力档 ${cfg.depth <= 2 ? '低' : cfg.depth >= 30 ? '满' : '中'}`);
-      appendLog(document.getElementById('g-think-log'), `⚙️ 难度切换 → <b>${cfg.name}</b>${this.level === 4 ? ' · <span style="color:#ff6b6b">恶魔全开，不留情面</span>' : ''}`);
+      setStats(mustEl('g-think-stats'), `难度切换 → <b>${cfg.name}</b> · 棋力档 ${cfg.depth <= 2 ? '低' : cfg.depth >= 30 ? '满' : '中'}`);
+      appendLog(mustEl('g-think-log'), `⚙️ 难度切换 → <b>${cfg.name}</b>${this.level === 4 ? ' · <span style="color:#ff6b6b">恶魔全开，不留情面</span>' : ''}`);
       this.syncEngineUI();
     });
     this.segWire('g-engine', (v) => {
       this.enginePref = v === 'js' ? 'js' : 'auto';
-      appendLog(document.getElementById('g-think-log'), this.enginePref === 'js'
+      appendLog(mustEl('g-think-log'), this.enginePref === 'js'
         ? '🔧 引擎切换 → <b>内置 JS 引擎（简单）</b>（不再加载、不再等待 Rapfi）'
         : '🔧 引擎切换 → <b>自动（Rapfi·高难）</b>（不可用时回退内置引擎·简单）');
       this.syncEngineUI();
     });
 
-    const gv = document.getElementById('g-viz') as HTMLInputElement | null;
-    gv?.addEventListener('change', (e) => { this.viz = (e.target as HTMLInputElement).checked; this.redraw(); });
+    const gv = mustEl<HTMLInputElement>('g-viz');
+    gv.addEventListener('change', (e) => { this.viz = (e.target as HTMLInputElement).checked; this.redraw(); });
 
-    document.getElementById('g-new')?.addEventListener('click', () => this.newGame());
-    document.getElementById('g-undo')?.addEventListener('click', () => this.undo());
-    document.getElementById('g-hint')?.addEventListener('click', () => this.showHint());
-    document.getElementById('g-god')?.addEventListener('click', () => this.toggleGod());
-    document.getElementById('g-stop')?.addEventListener('click', () => this.stopAivai());
-    document.getElementById('g-sound')?.addEventListener('click', (e) => {
+    mustEl('g-new').addEventListener('click', () => this.newGame());
+    mustEl('g-undo').addEventListener('click', () => this.undo());
+    mustEl('g-hint').addEventListener('click', () => this.showHint());
+    mustEl('g-god').addEventListener('click', () => this.toggleGod());
+    mustEl('g-stop').addEventListener('click', () => this.stopAivai());
+    mustEl('g-sound').addEventListener('click', (e) => {
       this.audio.enabled = !this.audio.enabled;
       const btn = e.target as HTMLButtonElement;
       btn.textContent = this.audio.enabled ? '🔊 音效开' : '🔇 音效关';
@@ -615,8 +613,8 @@ export class GomokuController {
   }
 
   private segWire(id: string, fn: (v: string) => void): void {
-    const el = document.getElementById(id);
-    el?.querySelectorAll('button').forEach((b) => b.addEventListener('click', () => {
+    const el = mustEl(id);
+    el.querySelectorAll('button').forEach((b) => b.addEventListener('click', () => {
       el.querySelectorAll('button').forEach((x) => x.classList.remove('on'));
       b.classList.add('on');
       fn(b.dataset.v!);

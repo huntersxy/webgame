@@ -291,7 +291,7 @@ export class GoSearcher {
 
     // ── 选点 ──
     const candidates = this.rootCandidates(root, area);
-    const move = this.pickRootMove(root, candidates, area);
+    const move = this.pickRootMove(candidates, area);
     const best = candidates.find((c) => c.move === move);
     const pv = this.extractPv(root, area, 8);
 
@@ -482,7 +482,7 @@ export class GoSearcher {
   }
 
   /** 最终选点：温度 0 取访问最多，温度 >0 按访问次数采样 */
-  private pickRootMove(root: GoNode, candidates: GoCandidateInfo[], area: number): number {
+  private pickRootMove(candidates: GoCandidateInfo[], area: number): number {
     if (candidates.length === 0) return area; // 只能虚手
     const temp = this.options.moveTemperature;
     if (temp <= 0) return candidates[0].move;

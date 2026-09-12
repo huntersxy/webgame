@@ -131,7 +131,7 @@ export function renderJunqi(canvas: HTMLCanvasElement, st: JunqiRenderState): vo
 
   // 三座木板桥（在连线之下，供铁路横跨）
   const bridgeNodes: Array<[number, number]> = [[5, 0], [5, 2], [5, 4]];
-  for (const [r, c] of bridgeNodes) {
+  for (const [, c] of bridgeNodes) {
     const bx = px(c);
     ctx.beginPath();
     ctx.roundRect(bx - 13, ry0 - 3, 26, ry1 - ry0 + 6, 5);
@@ -294,7 +294,7 @@ export function renderJunqi(canvas: HTMLCanvasElement, st: JunqiRenderState): vo
     const p = st.board[i];
     if (!p) continue;
     if (st.anim && i === st.anim.from) continue; // 飞行中的棋子最后画
-    drawTile(ctx, dnode(i, st.flipView), p, i === st.sel, faceDown(p, st.viewer), false);
+    drawTile(ctx, dnode(i, st.flipView), p, i === st.sel, faceDown(p, st.viewer));
   }
   // 飞行中的棋子（动画）：放大 + 深影，压在所有棋子之上
   if (st.anim) {
@@ -304,14 +304,14 @@ export function renderJunqi(canvas: HTMLCanvasElement, st: JunqiRenderState): vo
     const ease = 1 - Math.pow(1 - t, 3);
     const x = a.x + (b.x - a.x) * ease;
     const y = a.y + (b.y - a.y) * ease - Math.sin(t * Math.PI) * 8; // 轻微跃起
-    drawTile(ctx, { x, y }, st.anim.piece, false, faceDown(st.anim.piece, st.viewer), false, 1.08);
+    drawTile(ctx, { x, y }, st.anim.piece, false, faceDown(st.anim.piece, st.viewer), 1.08);
   }
 }
 
 /** 长方形军牌 */
 function drawTile(
   ctx: CanvasRenderingContext2D, { x, y }: { x: number; y: number },
-  p: Piece, selected: boolean, faceDown: boolean, idle = true, scale = 1,
+  p: Piece, selected: boolean, faceDown: boolean, scale = 1,
 ): void {
   const red = p.side === 'r';
   const w = TW * scale;

@@ -14,6 +14,7 @@ import { GoEngine } from '../go/engine';
 import { findBestMove as othSearch, findHintMove as othHint } from '../othello/search';
 import { EgaroucidEngine } from '../othello/egaroucid';
 import { EGAROUCID_HINT_LEVEL } from '../othello/egaroucid-assets';
+import { errText } from '../core/errors';
 
 /** Rapfi WASM 引擎（gomocup 级，五子棋）。wasm 加载失败时回退
  *  gomoku/search.ts 里的内置 JS 引擎。 */
@@ -38,9 +39,10 @@ const egar = new EgaroucidEngine();
  *  权重没就绪时 engine 内部会自动落到常识棋兜底。 */
 const go = new GoEngine();
 
-/** 回带请求 id：主线程靠它把结果配回发起它的那次请求（见 ai-bridge.ts）。 */
-function reply(req: WorkerRequest, result: SearchResult<GomokuMove | XqMove | JqMove | GoMove>): void {
-  post({ type: 'search-result', id: req.id, result });
+/** 回带请求 id：主线程靠它把结果配回发起它的那次请求（见 ai-bridge.ts）。
+ *  入参按各棋种的具体结果类型推导，只有出站这一处放宽到联合类型。 */
+function reply<T extends GomokuMove | XqMove | JqMove | GoMove>(req: WorkerRequest, result: SearchResult<T>): void {
+  post({ type: 'search-result', id: req.id, result: result as SearchResult<GomokuMove | XqMove | JqMove | GoMove> });
 }
 
 self.onmessage = (e: MessageEvent<WorkerRequest>) => {
@@ -53,7 +55,7 @@ self.onmessage = (e: MessageEvent<WorkerRequest>) => {
       const { difficulty, mode, historyLength, moves, forceJs } = req;
       // 玩家在 UI 里选了「内置 JS 引擎」：直接走 JS，连 Rapfi 的排队都不进
       if (forceJs) {
-        reply(req, { ...gomokuSearch(board, player, difficulty, mode, historyLength), engine: 'js' } as any);
+        reply(req, { ...gomokuSearch(board, player, difficulty, mode, historyLength), engine: 'js' });
         break;
       }
       rapfi
@@ -61,7 +63,7 @@ self.onmessage = (e: MessageEvent<WorkerRequest>) => {
           ...gomokuSearch(board, player, difficulty, mode, historyLength),
           engine: 'js' as const,
         }))
-        .then((result) => reply(req, result as any));
+        .then((result) => reply(req, result));
       break;
     }
     case 'gomoku-warmup': {
@@ -69,7 +71,7 @@ self.onmessage = (e: MessageEvent<WorkerRequest>) => {
       rapfi.warmUp(req.dataBuffer).then(
         () => post({ type: 'warmup-done', ok: true, variant: rapfi.variant ?? undefined, game: 'gomoku' }),
         (err) => {
-          const reason = String((err && (err as Error).message) || err);
+          const reason = errText(err);
           console.error('[rapfi] 预热失败：', err);
           post({ type: 'warmup-done', ok: false, game: 'gomoku', error: reason });
         },
@@ -81,7 +83,7 @@ self.onmessage = (e: MessageEvent<WorkerRequest>) => {
       const player = req.player as GomokuPlayer;
       const { mode, historyLength, moves, forceJs } = req;
       if (forceJs) {
-        reply(req, { ...gomokuHint(board, player, mode, historyLength), engine: 'js' } as any);
+        reply(req, { ...gomokuHint(board, player, mode, historyLength), engine: 'js' });
         break;
       }
       rapfi
@@ -89,7 +91,7 @@ self.onmessage = (e: MessageEvent<WorkerRequest>) => {
           ...gomokuHint(board, player, mode, historyLength),
           engine: 'js' as const,
         }))
-        .then((result) => reply(req, result as any));
+        .then((result) => reply(req, result));
       break;
     }
     case 'xq-search': {
@@ -99,23 +101,23 @@ self.onmessage = (e: MessageEvent<WorkerRequest>) => {
       const fallback = () => ({ ...xqSearch(board, side, difficulty, mode, historyLength), engine: 'js' as const });
       // 玩家选了「经典引擎」：走 XQWLight，失败时它自己回退
       if (engineKind === 'classic') {
-        xqwlight.findMove(board, side, difficulty, mode, historyLength, fallback).then((result) => reply(req, result as any));
+        xqwlight.findMove(board, side, difficulty, mode, historyLength, fallback).then((result) => reply(req, result));
         break;
       }
       // 神经网络还没就绪：先让内置引擎立刻应手，网络在后台继续加载
       if (!xqnn.ready) {
         void xqnn.warmUp().catch(() => undefined);
-        reply(req, fallback() as any);
+        reply(req, fallback());
         break;
       }
       const runXq = () => xqnn.findMove(board, side, difficulty, mode, historyLength);
       const task = xqnnChain.then(runXq, runXq);
       xqnnChain = task.catch(() => undefined);
       task.then(
-        (result) => reply(req, result as any),
+        (result) => reply(req, result),
         (err) => {
           console.warn('[xqnn] 搜索失败，回退内置引擎：', err);
-          reply(req, fallback() as any);
+          reply(req, fallback());
         },
       );
       break;
@@ -133,7 +135,7 @@ self.onmessage = (e: MessageEvent<WorkerRequest>) => {
           }),
         (err) => {
           // 预热失败的原因必须落到 console——否则静默回退，查无日志
-          const reason = String((err && (err as Error).message) || err);
+          const reason = errText(err);
           console.error('[xqnn] 预热失败：', err);
           post({ type: 'warmup-done', ok: false, game: 'xq', error: reason });
         },
@@ -146,12 +148,12 @@ self.onmessage = (e: MessageEvent<WorkerRequest>) => {
       const { mode, historyLength, engineKind } = req;
       const fallback = () => ({ ...xqHint(board, side, mode, historyLength), engine: 'js' as const });
       if (engineKind === 'classic') {
-        xqwlight.findMove(board, side, 4, mode, historyLength, fallback, HINT_BUDGET_MS).then((result) => reply(req, result as any));
+        xqwlight.findMove(board, side, 4, mode, historyLength, fallback, HINT_BUDGET_MS).then((result) => reply(req, result));
         break;
       }
       if (!xqnn.ready) {
         void xqnn.warmUp().catch(() => undefined);
-        reply(req, fallback() as any);
+        reply(req, fallback());
         break;
       }
       // 提示走恶魔档配置，但用短预算：请神要的是体验，不跟着恶魔一起等 10 秒
@@ -159,10 +161,10 @@ self.onmessage = (e: MessageEvent<WorkerRequest>) => {
       const hintTask = xqnnChain.then(runHint, runHint);
       xqnnChain = hintTask.catch(() => undefined);
       hintTask.then(
-        (result) => reply(req, result as any),
+        (result) => reply(req, result),
         (err) => {
           console.warn('[xqnn] 提示搜索失败，回退内置引擎：', err);
-          reply(req, fallback() as any);
+          reply(req, fallback());
         },
       );
       break;
@@ -177,10 +179,10 @@ self.onmessage = (e: MessageEvent<WorkerRequest>) => {
       if (req.engineKind === 'egar') {
         egar
           .findMove(board, side, req.difficulty, req.mode, fallback)
-          .then((r) => reply(req, r as any));
+          .then((r) => reply(req, r));
         break;
       }
-      reply(req, fallback() as any);
+      reply(req, fallback());
       break;
     }
     case 'oth-hint': {
@@ -194,10 +196,10 @@ self.onmessage = (e: MessageEvent<WorkerRequest>) => {
         // 提示走中上强度档位：满档 24 在单线程 wasm 里可能要十几秒
         egar
           .findMove(board, side, 3, req.mode, fallback, EGAROUCID_HINT_LEVEL)
-          .then((r) => reply(req, r as any));
+          .then((r) => reply(req, r));
         break;
       }
-      reply(req, fallback() as any);
+      reply(req, fallback());
       break;
     }
     case 'oth-warmup': {
@@ -205,7 +207,7 @@ self.onmessage = (e: MessageEvent<WorkerRequest>) => {
       egar.warmUp().then(
         () => post({ type: 'warmup-done', ok: true, game: 'oth', modelName: `Egaroucid Web (wasm 内存 ${egar.memMB ?? '?'}MB)` }),
         (err) => {
-          const reason = String((err && (err as Error).message) || err);
+          const reason = errText(err);
           console.error('[egaroucid] 预热失败：', err);
           post({ type: 'warmup-done', ok: false, game: 'oth', error: reason });
         },
@@ -214,12 +216,12 @@ self.onmessage = (e: MessageEvent<WorkerRequest>) => {
     }
     case 'junqi-search': {
       const board = req.board as JqBoard;
-      reply(req, jqSearch(board, req.side as JqSide, req.difficulty, req.mode, req.flip, req.historyLength) as any);
+      reply(req, jqSearch(board, req.side as JqSide, req.difficulty, req.mode, req.flip, req.historyLength));
       break;
     }
     case 'junqi-hint': {
       const board = req.board as JqBoard;
-      reply(req, jqHint(board, req.side as JqSide, req.mode, req.flip, req.historyLength) as any);
+      reply(req, jqHint(board, req.side as JqSide, req.mode, req.flip, req.historyLength));
       break;
     }
     case 'go-warmup': {
@@ -234,7 +236,7 @@ self.onmessage = (e: MessageEvent<WorkerRequest>) => {
             modelName: r.modelName,
           }),
         (err) => {
-          const reason = String((err && (err as Error).message) || err);
+          const reason = errText(err);
           console.error('[go] 预热失败：', err);
           post({ type: 'warmup-done', ok: false, game: 'go', error: reason });
         },

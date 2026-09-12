@@ -3,11 +3,12 @@
  * ──────────────────────────────────────────────────────────── */
 
 import type { GomokuBoard, GomokuPlayer, Pt } from '../types';
-import { createBoard, cloneBoard, checkWin, isBoardFull, other, inBounds, BOARD_SIZE } from '../gomoku/rules';
-import { LEVELS, loadProgress, saveProgress, firstPlayable, campaignSearch, type CampaignLevel, type CampaignSearchResult } from '../campaign/engine';
+import { createBoard, cloneBoard, checkWin, isBoardFull, other, inBounds } from '../gomoku/rules';
+import { LEVELS, loadProgress, saveProgress, firstPlayable, campaignSearch, type CampaignLevel } from '../campaign/engine';
 import { AudioEngine } from '../ui/audio';
-import { renderGomoku, pxToCellGomoku, GOMOKU_CANVAS_SIZE, type GomokuRenderState } from '../ui/gomoku-renderer';
+import { renderGomoku, pxToCellGomoku, type GomokuRenderState } from '../ui/gomoku-renderer';
 import { appendLog, setStats, toggleProgress } from '../ui/format';
+import { mustEl } from '../ui/dom';
 
 interface CampHistoryEntry { x: number; y: number; c: GomokuPlayer; }
 
@@ -70,8 +71,8 @@ export class CampaignController {
     this.hover = null;
     this.thinking = false;
     this.hideBanner();
-    setStats(document.getElementById('camp-stats'), `⚔️ 对阵 <b>${lv.emoji} ${lv.name}</b> · 你执黑先手 · depth${lv.depth}`);
-    appendLog(document.getElementById('camp-log'), `🏰 关卡 ${id + 1}：<b>${lv.name}</b> —— ${lv.title}。${lv.desc}`);
+    setStats(mustEl('camp-stats'), `⚔️ 对阵 <b>${lv.emoji} ${lv.name}</b> · 你执黑先手 · depth${lv.depth}`);
+    appendLog(mustEl('camp-log'), `🏰 关卡 ${id + 1}：<b>${lv.name}</b> —— ${lv.title}。${lv.desc}`);
     this.renderLevels();
     this.updateTurn();
     this.redraw();
@@ -97,12 +98,12 @@ export class CampaignController {
 
   private aiMove(): void {
     this.thinking = true;
-    toggleProgress(document.getElementById('camp-thinking'), true);
-    setStats(document.getElementById('camp-stats'), `⏳ <b>${this.currentLevel.name}</b> 布防中…`);
+    toggleProgress(mustEl('camp-thinking'), true);
+    setStats(mustEl('camp-stats'), `⏳ <b>${this.currentLevel.name}</b> 布防中…`);
     this.aiTimer = setTimeout(() => {
       const r = campaignSearch(cloneBoard(this.board), this.currentLevel);
       this.thinking = false;
-      toggleProgress(document.getElementById('camp-thinking'), false);
+      toggleProgress(mustEl('camp-thinking'), false);
       const ai: GomokuPlayer = 2;
       if (r.move) {
         this.board[r.move.y][r.move.x] = ai;
@@ -111,11 +112,11 @@ export class CampaignController {
         const w = checkWin(this.board, r.move.x, r.move.y);
         const who = this.currentLevel.name;
         if (r.instant) {
-          setStats(document.getElementById('camp-stats'), `⚡ <b>${who}</b> 秒断你的杀棋 (${r.move.x},${r.move.y}) · 免搜索`);
-          appendLog(document.getElementById('camp-log'), `⚡ <b>秒断杀棋</b> → (${r.move.x},${r.move.y})`);
+          setStats(mustEl('camp-stats'), `⚡ <b>${who}</b> 秒断你的杀棋 (${r.move.x},${r.move.y}) · 免搜索`);
+          appendLog(mustEl('camp-log'), `⚡ <b>秒断杀棋</b> → (${r.move.x},${r.move.y})`);
         } else {
-          setStats(document.getElementById('camp-stats'), `✅ <b>${who}</b> · depth${r.depth} · 节点 <b>${r.nodes.toLocaleString()}</b> · ${r.ms}ms · 评估 <b>${r.eval}</b> · 落子 (${r.move.x},${r.move.y})`);
-          appendLog(document.getElementById('camp-log'), `🧠 depth<b>${r.depth}</b> · 节点${r.nodes.toLocaleString()} · ${r.ms}ms · 评估${r.eval} · 选 <b>(${r.move.x},${r.move.y})</b>`);
+          setStats(mustEl('camp-stats'), `✅ <b>${who}</b> · depth${r.depth} · 节点 <b>${r.nodes.toLocaleString()}</b> · ${r.ms}ms · 评估 <b>${r.eval}</b> · 落子 (${r.move.x},${r.move.y})`);
+          appendLog(mustEl('camp-log'), `🧠 depth<b>${r.depth}</b> · 节点${r.nodes.toLocaleString()} · ${r.ms}ms · 评估${r.eval} · 选 <b>(${r.move.x},${r.move.y})</b>`);
         }
         if (w) { this.endGame(ai, w); }
         else if (isBoardFull(this.board)) { this.endGame(0, null); }
@@ -150,14 +151,14 @@ export class CampaignController {
       const cleared = Math.max(loadProgress(), this.level + 1);
       saveProgress(cleared);
       this.showBanner(`🏆 <b>破防成功！通关「${lv.emoji} ${lv.name}」</b>`);
-      setStats(document.getElementById('camp-stats'), `🏆 你击败了 <b>${lv.name}</b> · 已通关 ${cleared}/${LEVELS.length}`);
-      appendLog(document.getElementById('camp-log'), `🏆 <b>通关！</b>${lv.name} 的防线被击破`);
+      setStats(mustEl('camp-stats'), `🏆 你击败了 <b>${lv.name}</b> · 已通关 ${cleared}/${LEVELS.length}`);
+      appendLog(mustEl('camp-log'), `🏆 <b>通关！</b>${lv.name} 的防线被击破`);
       this.audio.win();
       this.renderLevels();
     } else if (winner === 2) {
       this.showBanner(`🏰 <b>被「${lv.name}」挡住了…</b><br>它封死了你所有进攻线路，再想想怎么破防`);
-      setStats(document.getElementById('camp-stats'), `💀 你的攻势被 <b>${lv.name}</b> 全部拦截`);
-      appendLog(document.getElementById('camp-log'), `💀 <b>落败</b> —— ${lv.name} 的城墙没有缺口`);
+      setStats(mustEl('camp-stats'), `💀 你的攻势被 <b>${lv.name}</b> 全部拦截`);
+      appendLog(mustEl('camp-log'), `💀 <b>落败</b> —— ${lv.name} 的城墙没有缺口`);
       this.audio.lose();
     } else {
       this.showBanner(`🤝 <b>棋盘满了，和棋</b>`);
@@ -168,20 +169,19 @@ export class CampaignController {
 
   // ── UI ──
   private updateTurn(): void {
-    const el = document.getElementById('camp-turn');
-    if (el) el.textContent = this.over ? '对局结束' : `轮到 ${this.turn === 1 ? '黑方(你)' : '白方(AI)'} 落子`;
+    mustEl('camp-turn').textContent = this.over ? '对局结束' : `轮到 ${this.turn === 1 ? '黑方(你)' : '白方(AI)'} 落子`;
   }
 
   private showBanner(html: string): void {
-    const el = document.getElementById('camp-result');
-    if (el) { el.innerHTML = html; el.classList.toggle('hidden', !html); }
+    const el = mustEl('camp-result');
+    el.innerHTML = html;
+    el.classList.toggle('hidden', !html);
   }
 
   private hideBanner(): void { this.showBanner(''); }
 
   private renderLevels(): void {
-    const el = document.getElementById('camp-list');
-    if (!el) return;
+    const el = mustEl('camp-list');
     const cleared = loadProgress();
     el.innerHTML = '';
     LEVELS.forEach((lv, i) => {
@@ -194,31 +194,24 @@ export class CampaignController {
       if (!lv.locked) btn.addEventListener('click', () => this.startLevel(i));
       el.appendChild(btn);
     });
-    const pt = document.getElementById('camp-progress-text');
-    if (pt) pt.textContent = `已通关 ${cleared} / ${LEVELS.length}`;
-    const pb = document.getElementById('camp-progress-bar');
-    if (pb) pb.style.width = (cleared / LEVELS.length * 100) + '%';
+    mustEl('camp-progress-text').textContent = `已通关 ${cleared} / ${LEVELS.length}`;
+    mustEl('camp-progress-bar').style.width = (cleared / LEVELS.length * 100) + '%';
     this.updateAICard();
   }
 
   private updateAICard(): void {
     const lv = this.currentLevel;
-    const card = document.getElementById('camp-ai-card');
-    if (!card) return;
+    const card = mustEl('camp-ai-card');
     if (lv.locked) {
       card.innerHTML = `<div class="camp-ai-head"><span class="camp-ai-emoji">🔒</span><div><b>未解锁</b><small>击败上一关解锁</small></div></div>`;
       return;
     }
     const emojiEl = card.querySelector('.camp-ai-emoji');
     if (emojiEl) emojiEl.textContent = lv.emoji;
-    const nameEl = document.getElementById('camp-ai-name');
-    if (nameEl) nameEl.textContent = lv.name;
-    const styleEl = document.getElementById('camp-ai-style');
-    if (styleEl) styleEl.textContent = lv.title || lv.name;
-    const descEl = document.getElementById('camp-ai-desc');
-    if (descEl) descEl.textContent = lv.desc;
-    const tags = document.getElementById('camp-ai-tags');
-    if (tags) tags.innerHTML = lv.tags.map((t) => `<span>${t}</span>`).join('');
+    mustEl('camp-ai-name').textContent = lv.name;
+    mustEl('camp-ai-style').textContent = lv.title || lv.name;
+    mustEl('camp-ai-desc').textContent = lv.desc;
+    mustEl('camp-ai-tags').innerHTML = lv.tags.map((t) => `<span>${t}</span>`).join('');
   }
 
   private wireEvents(): void {
@@ -239,7 +232,7 @@ export class CampaignController {
       this.place(c.x, c.y);
     });
     this.canvas.addEventListener('pointercancel', () => { this._down = null; });
-    document.getElementById('camp-new')?.addEventListener('click', () => this.newGame());
-    document.getElementById('camp-undo')?.addEventListener('click', () => this.undo());
+    mustEl('camp-new').addEventListener('click', () => this.newGame());
+    mustEl('camp-undo').addEventListener('click', () => this.undo());
   }
 }

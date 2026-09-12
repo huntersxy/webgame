@@ -16,9 +16,15 @@
  *  violations, see buildYxBoardCmd) is sent through one YXBOARD command,
  *  while the engine instance itself persists to keep its transposition
  *  table warm.
+ *
+ *  worker 的起停与超时兜底在 core/worker-engine.ts；本文件只剩 Gomocup
+ *  协议这件事（摆盘命令、stdout 解析、构建降级）。
  * ──────────────────────────────────────────────────────────── */
 
 import type { GomokuBoard, GomokuPlayer, Difficulty, GameMode, SearchResult, GomokuMove, GomokuHistoryMove } from '../types';
+import { nowMs as now } from '../core/time';
+import { WorkerEngine, type EngineMessage } from '../core/worker-engine';
+import { RAPFI_ASSET_VERSION } from './rapfi-assets';
 
 /** Mate-scale used by the bundled engine & UI (fmtEval thresholds at 100000). */
 const MATE_SCALE = 100_000;
@@ -31,15 +37,10 @@ export const RAPFI_LEVELS: Record<Difficulty, { strength: number; turnMs: number
   4: { strength: 100, turnMs: 2800 },
 };
 
-type EngineMsg = {
-  type: 'ready' | 'stdout' | 'stderr' | 'error' | 'exit' | 'load-progress';
-  data?: unknown;
-};
-
-import { RAPFI_ASSET_VERSION } from './rapfi-assets';
-
 /** 版本号定义在 rapfi-assets.ts（主线程预取与 worker 必须用同一个）。 */
 const ASSET_VERSION = RAPFI_ASSET_VERSION;
+
+type RapfiMsg = EngineMessage & { loaded?: number; total?: number };
 
 /** Parse an rapfi EVAL token ("+M5", "-M3", plain integer) to UI scale. */
 function parseEval(tok: string): number {
@@ -164,126 +165,86 @@ class OutputParser {
   }
 }
 
-export class RapfiEngine {
-  private worker: Worker | null = null;
-  private readyPromise: Promise<void> | null = null;
-  private onLine: ((line: string) => void) | null = null;
+export class RapfiEngine extends WorkerEngine<void, RapfiMsg> {
+  protected readonly label = '[rapfi]';
+  /** wasm + 10MB 权重包，弱网下一分多钟；超时按「多久没有进展」算（keepAlive） */
+  protected readonly readyTimeoutMs = 120_000;
+  protected readonly keepAliveOnMessage = true;
+
   /** 'multi' | 'single' once the engine has booted */
   variant: 'multi' | 'single' | null = null;
   private threads = 1;
-  /** 同一局里引擎连续失败后不再重试，直接走内置 JS 引擎 */
-  private disabled = false;
-  private searchFailures = 0;
   /** 已经失败过的构建，重建时优先换另一个（多线程 → 单线程）*/
   private failedVariants = new Set<'multi' | 'single'>();
   /** 最近的引擎 stderr，失败时一并打印用于定位 */
   private stderrTail: string[] = [];
   /** serialization so concurrent requests never interleave stdout */
   private chain: Promise<unknown> = Promise.resolve();
+  /** 上次初始化失败的时刻：45s 内不重试 */
+  private lastInitFail = 0;
 
-  private startWorker(dataBuffer?: ArrayBuffer): Promise<void> {
-    return new Promise<void>((resolve, reject) => {
-      let w: Worker;
-      try {
-        // public/rapfi/ files are served verbatim from the site root. Build
-        // the URL from BASE_URL instead of `new URL(x, import.meta.url)` so
-        // Vite does NOT bundle this classic worker (its importScripts
-        // resolves relative to its own /rapfi/ location). The ?v= busts
-        // browser heuristically-cached copies after an engine update.
-        const base = import.meta.env.BASE_URL || '/';
-        w = new Worker(
-          new URL(base + 'rapfi/engine-worker.js?v=' + ASSET_VERSION, self.location.href).href,
-        );
-      } catch (err) {
-        reject(err instanceof Error ? err : new Error(String(err)));
-        return;
-      }
-      let settled = false;
-      // 超时语义是「多久没有进展」，不是「总共用了多久」：数据包有 10MB，
-      // 弱网（约 1.2Mbps 及以下）下要下一分多钟，用固定总时长判定会把正常
-      // 下载误判为失败，用户每次进对局都静默掉到内置引擎。
-      // 所以每收到一次下载进度/输出就重新计时。
-      let timer: ReturnType<typeof setTimeout>;
-      function arm(): void {
-        clearTimeout(timer);
-        timer = setTimeout(() => finish(new Error('rapfi engine init timeout (无进展)')), 120_000);
-      }
-      arm();
-      function finish(err?: Error): void {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timer);
-        if (err) reject(err);
-        else resolve();
-      }
-      w.onmessage = (e: MessageEvent<EngineMsg>) => {
-        // 已经换过 worker 的迟到消息必须丢弃：terminate() 只能阻止后续投递，
-        // 已在事件队列里的消息仍会送达。否则旧 worker 的 exit/error 会把刚建好的
-        // 新 worker 误判为死亡并 terminate 掉。
-        if (this.worker !== w) return;
-        const msg = e.data;
-        switch (msg.type) {
-          case 'ready': {
-            const variant = typeof msg.data === 'string' ? msg.data : '';
-            this.variant = variant.includes('multi') ? 'multi' : 'single';
-            this.threads = this.variant === 'multi'
-              ? Math.max(1, Math.min(4, (self.navigator?.hardwareConcurrency || 2) - 1))
-              : 1;
-            console.info(`[rapfi] 引擎就绪：${this.variant} 构建 · 线程 ${this.threads}`);
-            finish();
-            break;
-          }
-          case 'stdout':
-            arm();
-            this.onLine?.(String(msg.data));
-            break;
-          case 'stderr':
-            arm();
-            this.noteStderr(String(msg.data));
-            break;
-          case 'load-progress': {
-            arm(); // 下载推进中，说明引擎活着，别让超时误杀
-            const d = msg.data as { loaded?: number; total?: number } | undefined;
-            if (d && d.total) this.onLoadProgress?.(d.loaded ?? 0, d.total);
-            break;
-          }
-          case 'error':
-            if (!settled) finish(new Error(String(msg.data)));
-            else this.markDead('引擎报错：' + String(msg.data));
-            break;
-          case 'exit':
-            // stdin 队列读空或崩溃都会走到这里。启动阶段算失败；运行期必须
-            // 立刻标记死亡——否则 readyPromise 仍是已完成状态，之后每一手都
-            // 会把命令发给死引擎、白等满超时才回退到内置引擎。
-            if (!settled) finish(new Error('引擎在初始化阶段退出'));
-            else this.markDead('引擎中途退出（stdin 读空或崩溃）');
-            break;
-          default:
-            break;
-        }
-      };
-      w.onerror = (e) => {
-        if (this.worker !== w) return;
-        const err = new Error('rapfi worker error: ' + (e.message || 'unknown'));
-        if (!settled) finish(err);
-        else this.markDead(err.message);
-      };
-      // variant 让客户端能指定构建：多线程挂掉后重建时改传 'single'
-      // dataBuffer：主线程已下完的权重，注入 getPreloadedPackage 后不再二次 fetch
-      w.postMessage(
-        { type: 'init', version: ASSET_VERSION, variant: this.nextVariant(), dataBuffer },
-        dataBuffer ? [dataBuffer] : [],
-      );
-      this.worker = w;
-    });
+  /** 引擎侧上报的数据包下载进度（有预取时通常一闪而过） */
+  onLoadProgress: ((loaded: number, total: number) => void) | null = null;
+  private onLine: ((line: string) => void) | null = null;
+
+  /** 本客户端不走一问一答：着法来自引擎 stdout，由 _search 自己解析 */
+  protected emptyReply(): void {}
+
+  protected workerUrl(): string {
+    // public/rapfi/ 的文件按站点根目录原样分发。URL 用 BASE_URL 手拼而不是
+    // `new URL(x, import.meta.url)`，Vite 才不会去打包这个 classic worker
+    // （它的 importScripts 相对自己所在的 /rapfi/ 解析）。?v= 顶掉引擎更新后
+    // 浏览器对旧文件的启发式缓存。
+    const base = import.meta.env.BASE_URL || '/';
+    return new URL(base + 'rapfi/engine-worker.js?v=' + ASSET_VERSION, self.location.href).href;
   }
 
-  /**
-   * Lazy init. A failed attempt is retried at most once every 60s (a slow
-   * 10MB data fetch on a cold CDN edge may fail early), otherwise falls
-   * through to the JS engine for that search.
-   */
-  private lastInitFail = 0;
+  protected initMessage(extra?: unknown): { message: unknown; transfer?: Transferable[] } {
+    const dataBuffer = extra as ArrayBuffer | undefined;
+    return {
+      // variant 让客户端能指定构建：多线程挂掉后重建时改传 'single'
+      // dataBuffer：主线程已下完的权重，注入 getPreloadedPackage 后不再二次 fetch
+      message: { type: 'init', version: ASSET_VERSION, variant: this.nextVariant(), dataBuffer },
+      transfer: dataBuffer ? [dataBuffer] : [],
+    };
+  }
+
+  protected onReadyMessage(msg: RapfiMsg): void {
+    const variant = typeof msg.data === 'string' ? msg.data : '';
+    this.variant = variant.includes('multi') ? 'multi' : 'single';
+    this.threads = this.variant === 'multi'
+      ? Math.max(1, Math.min(4, (self.navigator?.hardwareConcurrency || 2) - 1))
+      : 1;
+    console.info(`[rapfi] 引擎就绪：${this.variant} 构建 · 线程 ${this.threads}`);
+  }
+
+  protected onEngineMessage(msg: RapfiMsg): void {
+    switch (msg.type) {
+      case 'stdout':
+        this.onLine?.(String(msg.data));
+        break;
+      case 'stderr':
+        this.noteStderr(String(msg.data));
+        break;
+      case 'load-progress':
+        if (msg.total) this.onLoadProgress?.(msg.loaded ?? 0, msg.total);
+        break;
+      default:
+        break;
+    }
+  }
+
+  /** 记住是哪个构建挂的，重建时优先换另一个；顺带把 stderr 末尾打出来定位 */
+  protected onDead(_why: string): void {
+    if (this.variant) this.failedVariants.add(this.variant);
+    if (this.stderrTail.length) {
+      console.warn('[rapfi] 引擎 stderr 末尾：\n' + this.stderrTail.join('\n'));
+    }
+  }
+
+  protected stopNote(): string {
+    return `（${this.variant ?? '未知'} 构建）`;
+  }
 
   /** 记下最近的引擎 stderr，失败时一并打印，便于定位根因 */
   private noteStderr(line: string): void {
@@ -292,61 +253,33 @@ export class RapfiEngine {
     if (this.stderrTail.length > 8) this.stderrTail.shift();
   }
 
-  /**
-   * 标记引擎已不可用：清掉 readyPromise，让下一次搜索重建实例而不是把
-   * 命令继续发给死进程。同时记住是哪个构建挂的，重建时优先换另一个。
-   */
-  private markDead(why: string): void {
-    if (!this.readyPromise && !this.worker) return; // 已经处理过
-    const v = this.variant;
-    if (v) this.failedVariants.add(v);
-    console.warn(`[rapfi] 引擎停止（${v ?? '未知'} 构建）：${why}`);
-    if (this.stderrTail.length) {
-      console.warn('[rapfi] 引擎 stderr 末尾：\n' + this.stderrTail.join('\n'));
-    }
-    this.readyPromise = null;
-    this.variant = null;
-    this.worker?.terminate();
-    this.worker = null;
-  }
-
   /** 重建时用哪个构建：多线程挂过、单线程没挂过，就换单线程 */
   private nextVariant(): 'auto' | 'single' {
     if (this.failedVariants.has('multi') && !this.failedVariants.has('single')) return 'single';
     return 'auto';
   }
 
-  private ensureReady(dataBuffer?: ArrayBuffer): Promise<void> {
-    if (this.disabled) return Promise.reject(new Error('引擎已在本局停用'));
-    if (this.readyPromise) return this.readyPromise;
-    if (Date.now() - this.lastInitFail < 45_000) return Promise.reject(new Error('rapfi init cooldown'));
-    this.readyPromise = this.startWorker(dataBuffer).catch((err) => {
-      this.readyPromise = null;
-      this.lastInitFail = Date.now();
-      if (this.variant) this.failedVariants.add(this.variant);
-      this.variant = null;
-      this.worker?.terminate();
-      this.worker = null;
-      throw err;
-    });
-    return this.readyPromise;
-  }
-
   /**
    * 预热：提前开始加载 wasm 与 NNUE 权重。dataBuffer 为主线程已下完的权重包。
    * 进入对局页面时调用，把首次加载挪到玩家思考首手的时间里。
+   *
+   * 失败后 45s 内不重试：CDN 冷边缘上 10MB 的数据包可能早失败，反复重试只会
+   * 让每一手都白等；这期间照常走内置 JS 引擎。
    */
   warmUp(dataBuffer?: ArrayBuffer): Promise<void> {
-    return this.ensureReady(dataBuffer);
+    if (Date.now() - this.lastInitFail < 45_000) return Promise.reject(new Error('rapfi init cooldown'));
+    return this.start(dataBuffer).catch((err) => {
+      this.lastInitFail = Date.now();
+      if (this.variant) this.failedVariants.add(this.variant);
+      this.variant = null;
+      throw err;
+    });
   }
 
   /** 引擎是否已实例化完成（UI 可据此提示） */
   get isReady(): boolean {
     return this.variant !== null;
   }
-
-  /** 引擎侧上报的数据包下载进度（有预取时通常一闪而过） */
-  onLoadProgress: ((loaded: number, total: number) => void) | null = null;
 
   private cmd(c: string): void {
     this.worker?.postMessage({ type: 'cmd', data: c });
@@ -366,6 +299,7 @@ export class RapfiEngine {
     moves: GomokuHistoryMove[],
     fallback: () => SearchResult<GomokuMove>,
   ): Promise<SearchResult<GomokuMove>> {
+    // 并发请求（AI 落子与「请神」）串行化：stdout 只有一条，交错会串味
     const task = this.chain.then(
       () => this._search(board, player, difficulty, mode, historyLength, moves, fallback),
       () => this._search(board, player, difficulty, mode, historyLength, moves, fallback),
@@ -384,7 +318,7 @@ export class RapfiEngine {
     fallback: () => SearchResult<GomokuMove>,
   ): Promise<SearchResult<GomokuMove>> {
     // ── Opening shortcuts (instant, keeps aivai varied) ──
-    // 开局两手是固定应手，与引擎无关，所以必须排在 ensureReady() 之前。
+    // 开局两手是固定应手，与引擎无关，所以必须排在「等引擎」之前。
     // 否则玩家落下第一个子后，要等整个 wasm + NNUE 权重（约 11MB）下载并
     // 实例化完，才见到本可瞬间给出的应手——这正是「下第一个子加载很久」。
     // 引擎改由进入对局页面时的 warmUp() 提前加载，把这段时间藏进玩家思考里。
@@ -397,20 +331,10 @@ export class RapfiEngine {
       return { move: mv, depth: 1, nodes: 1, ms: 0, eval: 0, scores: [mv], opening: true, engine: this.engineTag() };
     }
 
-    // ── 引擎还在加载时，不要卡住这一手 ──
-    // 首次进对局那 10MB 可能要几秒到几十秒，而玩家随时可能已经落子到第 3 手；
-    // 此时若照旧 await ensureReady()，AI 会一直等到加载完成才应手，玩家看到的
-    // 就是「明明开局很快，第三手开始卡死」。所以没就绪就先让内置 JS 引擎立刻
-    // 给出着法，加载在后台继续，下一手通常就能接上 WASM 引擎。
-    // 覆盖两种情况：正在加载，以及连续失败后已被停用（variant 为 null）。
+    // isReady 为真即「worker 已 boot 且 variant 已置位」，此后没有等待加载的必要：
+    // 引擎中途死亡时 markDead() 会把 variant 清回 null，又落回这条分支。
     if (!this.isReady) {
       void this.warmUp().catch(() => undefined); // 幂等：确保加载已经启动
-      return fallback();
-    }
-
-    try {
-      await this.ensureReady();
-    } catch {
       return fallback();
     }
 
@@ -485,8 +409,7 @@ export class RapfiEngine {
       const bestKey = `${best.x},${best.y}`;
       const bestBlock =
         finals.find((b) => b.line[0] === bestKey) ?? finals[0] ?? parser.blocks[parser.blocks.length - 1] ?? null;
-      const bestV = bestBlock?.eval ?? 0;
-      const mv: GomokuMove = { x: best.x, y: best.y, v: bestV };
+      const mv: GomokuMove = { x: best.x, y: best.y, v: bestBlock?.eval ?? 0 };
       return {
         move: mv,
         depth: bestBlock?.depth || 0,
@@ -497,16 +420,10 @@ export class RapfiEngine {
         engine: this.engineTag(),
       };
     } catch (err) {
-      this.searchFailures++;
       console.warn(`[rapfi] 搜索失败（${this.variant ?? '未知'} 构建），回退内置引擎：`, err);
-      if (this.stderrTail.length) {
-        console.warn('[rapfi] 引擎 stderr 末尾：\n' + this.stderrTail.join('\n'));
-      }
+      // markDead 会把实例清掉（含 stderr 末尾），下一手重建或改用内置引擎
       this.markDead('搜索超时未产出着法');
-      if (this.searchFailures >= 2) {
-        this.disabled = true;
-        console.warn('[rapfi] 引擎连续失败，本局改用内置 JS 引擎（刷新页面可重试）');
-      }
+      this.noteFailure();
       return fallback();
     } finally {
       this.onLine = null;
@@ -520,10 +437,6 @@ export class RapfiEngine {
 }
 
 /* ── helpers ── */
-
-function now(): number {
-  return typeof performance !== 'undefined' ? performance.now() : Date.now();
-}
 
 function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));

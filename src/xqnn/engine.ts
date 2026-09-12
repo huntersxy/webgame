@@ -10,6 +10,7 @@ import type { Difficulty, GameMode, SearchResult, XqBoard, XqMove, XqSide } from
 import { XqnnEvaluator, type XqnnBackend } from './evaluate';
 import { XqSearcher } from './search';
 import { prefetchXqnnModel, XQNN_MODEL_LABEL } from './model-assets';
+import { errText } from '../core/errors';
 
 export interface XqnnWarmUpResult {
   ok: boolean;
@@ -50,7 +51,7 @@ export class XqnnEngine {
         return { ok: true, backend, modelName: this.modelLabel };
       } catch (err) {
         console.error('[xqnn] 网络载入失败：', err);
-        return { ok: false, error: String((err && (err as Error).message) || err) };
+        return { ok: false, error: errText(err) };
       } finally {
         this.loading = null;
       }

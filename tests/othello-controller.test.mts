@@ -4,6 +4,7 @@
 import { CELLS } from '../src/othello/rules';
 import { OthelloController } from '../src/controllers/othello-controller';
 import type { OthMove, SearchResult } from '../src/types';
+import { check, finish } from './harness.mts';
 
 /* ── 最小 DOM / Canvas 替身 ── */
 
@@ -115,12 +116,6 @@ function makeBridge() {
 
 const audio = { enabled: false, move: () => undefined, undo: () => undefined, hint: () => undefined, win: () => undefined, lose: () => undefined, startBGM: () => undefined, stopBGM: () => undefined };
 
-let pass = 0;
-let fail = 0;
-function check(name: string, cond: boolean, extra = ''): void {
-  if (cond) { pass++; console.log(`  ok  ${name}`); }
-  else { fail++; console.log(`FAIL  ${name} ${extra}`); }
-}
 
 /** 每次落子后的通用不变量 */
 function invariants(board: Uint8Array): string | null {
@@ -213,7 +208,4 @@ console.log('== 停手与终局 ==');
   check('构造局面自身合法', inv === null, String(inv));
 }
 
-console.log(`\n${fail === 0 ? '✅' : '❌'} othello-controller: ${pass} passed, ${fail} failed`);
-// 控制器内部启动了动画循环（requestAnimationFrame 替身 = setTimeout），
-// 不无条件退出的话 node 会因为待处理定时器一直挂着。
-process.exit(fail ? 1 : 0);
+finish('othello-controller');

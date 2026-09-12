@@ -1,20 +1,17 @@
 /* ────────────────────────────────────────────────────────────
  *  othello/egaroucid.ts — Egaroucid（GPL-3.0）引擎客户端
  *
- *  与 xiangqi/xqwlight.ts 同一套路：真身在 public/egaroucid/engine-worker.js
- *  的独立 worker 里，这里只负责起 worker、发请求、超时兜底与合法性校验。
- *  未就绪或出错时一律回落到内置 JS 引擎（调用方传进来的 fallback）。
+ *  真身在 public/egaroucid/engine-worker.js 的独立 **module** worker 里，
+ *  这里只负责发请求与合法性校验；worker 生命周期与超时兜底见
+ *  core/worker-engine.ts。未就绪或出错时一律回落到内置 JS 引擎（调用方传进来的
+ *  fallback）。
  * ──────────────────────────────────────────────────────────── */
 
 import type { OthBoard, OthDisc, Difficulty, GameMode, OthMove, SearchResult } from '../types';
 import { legalMoves, place } from './rules';
 import type { OthPosition } from './rules';
-import { EGAROUCID_ASSET_VERSION, EGAROUCID_HINT_LEVEL, EGAROUCID_LEVELS } from './egaroucid-assets';
-
-type EngineMsg =
-  | { type: 'ready'; memMB?: number }
-  | { type: 'result'; id?: number; move: number; coord?: { file: number; rank: number }; eval: number; ms: number; book: boolean }
-  | { type: 'error'; id?: number; data: string };
+import { EGAROUCID_ASSET_VERSION, EGAROUCID_LEVELS } from './egaroucid-assets';
+import { WorkerEngine, type EngineMessage } from '../core/worker-engine';
 
 interface Reply {
   move: number | null;
@@ -27,112 +24,64 @@ interface Reply {
   debug?: string;
 }
 
-export class EgaroucidEngine {
-  private worker: Worker | null = null;
-  private readyPromise: Promise<void> | null = null;
-  private readonly pending = new Map<number, (r: Reply) => void>();
-  private nextId = 0;
-  private failures = 0;
-  /** 连续失败后不再重试，直接走内置引擎 */
-  private disabled = false;
-  ready = false;
+type EgarMsg = EngineMessage & {
+  memMB?: number;
+  move?: number;
+  coord?: { file: number; rank: number };
+  eval?: number;
+  ms?: number;
+  book?: boolean;
+  debug?: string;
+};
+
+export class EgaroucidEngine extends WorkerEngine<Reply, EgarMsg> {
+  protected readonly label = '[egaroucid]';
+  /** 首次加载要下 1.4MB wasm + 初始化评估表/开局库，给足时间 */
+  protected readonly readyTimeoutMs = 30_000;
+  /** egar.js 是 ES module，必须按 module worker 起 */
+  protected readonly workerType = 'module';
+
   /** 引擎实际声明/增长到的内存（MB），供界面展示 */
   memMB: number | null = null;
 
-  static isSupported(): boolean {
-    return typeof Worker !== 'undefined';
+  protected workerUrl(): string {
+    const base = import.meta.env.BASE_URL || '/';
+    // 必须是 **module** worker：egar.js 内部用 import.meta.url 找同目录的
+    // egar.wasm（见 engine-worker.js 顶部说明）。
+    return new URL(base + 'egaroucid/engine-worker.js?v=' + EGAROUCID_ASSET_VERSION, self.location.href).href;
+  }
+
+  protected initMessage(): { message: unknown } {
+    return { message: { type: 'init' } };
+  }
+
+  protected emptyReply(): Reply {
+    return { move: null, eval: 0, ms: 0, book: false };
+  }
+
+  protected onReadyMessage(msg: EgarMsg): void {
+    this.memMB = msg.memMB ?? null;
+    console.info(`[egaroucid] 引擎就绪（wasm 内存 ${this.memMB ?? '?'}MB）`);
+  }
+
+  protected onEngineMessage(msg: EgarMsg): void {
+    if (msg.type !== 'result') return;
+    this.settle(msg.id, {
+      move: msg.move ?? null,
+      eval: msg.eval ?? 0,
+      ms: msg.ms ?? 0,
+      book: !!msg.book,
+      debug: msg.debug,
+    });
+  }
+
+  protected quitMessage(): unknown {
+    return { type: 'quit' };
   }
 
   /** 起 worker 并等就绪。已就绪时返回同一个 promise。 */
   warmUp(): Promise<void> {
-    if (this.disabled) return Promise.reject(new Error('Egaroucid 已停用'));
-    if (this.readyPromise) return this.readyPromise;
-    this.readyPromise = new Promise<void>((resolve, reject) => {
-      let w: Worker;
-      try {
-        const base = import.meta.env.BASE_URL || '/';
-        // 必须是 **module** worker：egar.js 是 ES module，内部用 import.meta.url
-        // 找同目录的 egar.wasm（见 engine-worker.js 顶部说明）。
-        w = new Worker(
-          new URL(base + 'egaroucid/engine-worker.js?v=' + EGAROUCID_ASSET_VERSION, self.location.href).href,
-          { type: 'module' },
-        );
-      } catch (err) {
-        reject(err instanceof Error ? err : new Error(String(err)));
-        return;
-      }
-      // 首次加载要下 1.4MB wasm + 初始化评估表/开局库，给足时间
-      const timer = setTimeout(() => fail(new Error('Egaroucid 初始化超时')), 30_000);
-      const fail = (err: Error): void => {
-        clearTimeout(timer);
-        this.readyPromise = null;
-        this.worker?.terminate();
-        this.worker = null;
-        reject(err);
-      };
-      w.onmessage = (e: MessageEvent<EngineMsg>) => {
-        if (this.worker !== w) return;
-        const msg = e.data;
-        if (msg.type === 'ready') {
-          clearTimeout(timer);
-          this.ready = true;
-          this.memMB = msg.memMB ?? null;
-          console.info(`[egaroucid] 引擎就绪（wasm 内存 ${this.memMB ?? '?'}MB）`);
-          resolve();
-          return;
-        }
-        if (msg.type === 'result') {
-          const cb = msg.id !== undefined ? this.pending.get(msg.id) : undefined;
-          if (cb && msg.id !== undefined) {
-            this.pending.delete(msg.id);
-            cb({ move: msg.move, eval: msg.eval, ms: msg.ms, book: msg.book, debug: (msg as unknown as { debug?: string }).debug });
-          }
-          return;
-        }
-        if (msg.type === 'error') {
-          console.error('[egaroucid] 引擎报错：', msg.data);
-          if (!this.ready) fail(new Error(String(msg.data)));
-          else this.markDead(String(msg.data));
-        }
-      };
-      w.onerror = (e) => {
-        if (this.worker !== w) return;
-        const err = new Error('egaroucid worker error: ' + (e.message || 'unknown'));
-        if (!this.ready) fail(err);
-        else this.markDead(err.message);
-      };
-      this.worker = w;
-      w.postMessage({ type: 'init' });
-    });
-    return this.readyPromise;
-  }
-
-  private markDead(why: string): void {
-    console.warn(`[egaroucid] 引擎停止：${why}`);
-    this.readyPromise = null;
-    this.ready = false;
-    this.worker?.terminate();
-    this.worker = null;
-    for (const cb of this.pending.values()) cb({ move: null, eval: 0, ms: 0, book: false });
-    this.pending.clear();
-  }
-
-  private go(cells: OthBoard, side: OthDisc, level: number, timeoutMs: number): Promise<Reply> {
-    return new Promise<Reply>((resolve) => {
-      if (!this.worker) {
-        resolve({ move: null, eval: 0, ms: 0, book: false });
-        return;
-      }
-      const id = ++this.nextId;
-      const timer = setTimeout(() => {
-        if (this.pending.delete(id)) resolve({ move: null, eval: 0, ms: 0, book: false });
-      }, timeoutMs);
-      this.pending.set(id, (r) => {
-        clearTimeout(timer);
-        resolve(r);
-      });
-      this.worker.postMessage({ type: 'go', id, board: cells, aiPlayer: side, level });
-    });
+    return this.start();
   }
 
   /**
@@ -147,7 +96,7 @@ export class EgaroucidEngine {
     fallback: () => SearchResult<OthMove>,
     levelOverride?: number,
   ): Promise<SearchResult<OthMove>> {
-    if (this.disabled) return fallback();
+    if (this.isDisabled) return fallback();
     if (!this.ready) {
       // 加载中不要卡住这一手：先让内置引擎立刻应手，加载在后台继续
       void this.warmUp().catch(() => undefined);
@@ -162,53 +111,31 @@ export class EgaroucidEngine {
     const jitter = mode === 'aivai' ? (Math.random() < 0.5 ? 0 : 1) : 0;
     const useLevel = Math.min(60, level + jitter);
 
-    try {
-      const reply = await this.go(cells, side, useLevel, 60_000);
-      if (reply.move == null) return fallback();
-      // 引擎坐标 → 我们的索引：恒等映射（「真相矩阵」实验：16/16 命中）。
-      // 若上游坐标缺省，退回已算好的 move 字段。
-      const raw = reply.coord
-        ? (((8 - reply.coord.rank) * 8 + reply.coord.file) | 0)
-        : reply.move;
-      const idx = raw;
-      const mapped = legal.includes(idx) ? idx : mapBySymmetry(idx, legal);
-      if (mapped == null) {
-        console.warn('[egaroucid] 引擎着法经对称映射后仍不合法，回退内置引擎：', idx);
-        this.failures++;
-        if (this.failures >= 2) this.disabled = true;
-        return fallback();
-      }
-      this.failures = 0;
-      const pt = ptFromIndex(idx);
-      return {
-        move: { ...pt, v: reply.eval, f: flipCount(cells, side, idx) },
-        depth: useLevel,
-        nodes: 0,
-        ms: reply.ms,
-        eval: reply.eval,
-        scores: [{ ...pt, v: reply.eval }],
-        book: reply.book,
-        engine: 'egaroucid',
-      };
-    } catch (err) {
-      console.warn('[egaroucid] 搜索异常，回退内置引擎：', err);
-      this.failures++;
-      if (this.failures >= 2) this.disabled = true;
+    const reply = await this.request({ type: 'go', board: cells, aiPlayer: side, level: useLevel }, 60_000);
+    if (reply.move == null) return fallback();
+
+    // 引擎坐标 → 我们的索引：恒等映射（「真相矩阵」实验：16/16 命中）。
+    // 若上游坐标缺省，退回已算好的 move 字段。
+    const idx = reply.coord ? (((8 - reply.coord.rank) * 8 + reply.coord.file) | 0) : reply.move;
+    const mapped = legal.includes(idx) ? idx : mapBySymmetry(idx, legal);
+    if (mapped == null) {
+      console.warn('[egaroucid] 引擎着法经对称映射后仍不合法，回退内置引擎：', idx);
+      this.noteFailure();
       return fallback();
     }
-  }
+    this.noteSuccess();
 
-  /** 提示：固定用中上档位 */
-  hintLevel(): number {
-    return EGAROUCID_HINT_LEVEL;
-  }
-
-  dispose(): void {
-    this.worker?.postMessage({ type: 'quit' });
-    this.worker?.terminate();
-    this.worker = null;
-    this.ready = false;
-    this.readyPromise = null;
+    const pt = ptFromIndex(idx);
+    return {
+      move: { ...pt, v: reply.eval, f: flipCount(cells, side, idx) },
+      depth: useLevel,
+      nodes: 0,
+      ms: reply.ms,
+      eval: reply.eval,
+      scores: [{ ...pt, v: reply.eval }],
+      book: reply.book,
+      engine: 'egaroucid',
+    };
   }
 }
 

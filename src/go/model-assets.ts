@@ -19,9 +19,6 @@ export const GO_MODEL_FILE = 'g170-b6c96-s175395328-d26788732.bin.gz';
 /** 权重包字节数（用于响应头未到时的进度条占位） */
 export const GO_MODEL_BYTES = 3_827_339;
 
-/** 人类可读的网络名（界面展示用） */
-export const GO_MODEL_LABEL = 'KataGo b6c96';
-
 /** TF.js WASM 后端所需文件所在目录（同源） */
 export function goWasmPathPrefix(): string {
   const base = (import.meta.env && import.meta.env.BASE_URL) || '/';

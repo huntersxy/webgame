@@ -50,9 +50,6 @@ for (let c = 1; c < 26; c++) {
   CODE_FLAG[c] = CODE_TI[c] === TI_军旗 ? 1 : 0;
   CODE_GB[c] = CODE_TI[c] === TI_工兵 ? 1 : 0;
 }
-/** 各方军旗编码：索引 0 = 红, 1 = 蓝 */
-export const FLAG_CODE = [codeOf(TI_军旗, 0), codeOf(TI_军旗, 1)];
-
 /* ── 邻接 ───────────────────────────────────────────────────
  * 铁路边必为正交（横线 / 竖线 / 桥），用「节点×4方向」表直接索引，
  * 滑行时按方向一路 next 即可；公路边含行营斜线（8 个方向），
@@ -142,10 +139,6 @@ export function packBoard(board: Board): Packed {
   }
   return { sq, hid };
 }
-
-export const mvFrom = (m: number): number => m >>> 6;
-export const mvTo = (m: number): number => m & 63;
-export const mkMv = (from: number, to: number): number => (from << 6) | to;
 
 /* ── 落点合法性 ───────────────────────────────────────────── */
 
@@ -240,16 +233,6 @@ export function genAll(sq: Uint8Array, isB: number, out: Int32Array, off = 0, ca
     for (let j = 0; j < k; j++) out[off + n++] = (i << 6) | scratch[j];
   }
   return n;
-}
-
-/** 该方是否还有棋可走（提前退出，供终局判定） */
-export function hasMove(sq: Uint8Array, isB: number): boolean {
-  for (let i = 0; i < N; i++) {
-    const code = sq[i];
-    if (code === 0 || CODE_ISB[code] !== isB) continue;
-    if (genMoves(sq, i, scratch, 0) > 0) return true;
-  }
-  return false;
 }
 
 /* ── 可逆走子 ─────────────────────────────────────────────── */

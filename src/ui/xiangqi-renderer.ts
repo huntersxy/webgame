@@ -3,8 +3,7 @@
  * ──────────────────────────────────────────────────────────── */
 
 import type { XqBoard, XqMove, XqSide, Pt } from '../types';
-import { COLS, ROWS, PIECE_NAME, isRed, typeOf, colorOf, inB } from '../xiangqi/rules';
-import type { XqSearchContext } from '../xiangqi/search';
+import { COLS, ROWS, PIECE_NAME, isRed, typeOf, colorOf } from '../xiangqi/rules';
 
 const CW = 560;
 const CH = 620;

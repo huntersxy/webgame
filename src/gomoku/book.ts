@@ -11,20 +11,6 @@
 import type { GomokuBoard, GomokuPlayer } from '../types';
 import { inBounds } from './rules';
 
-/** A reply described as offsets from 黑1 (7,7) — but in, say, canonical-ish
- *  orientation; we try all 8 orientations and accept the first that lands on
- *  an empty near-stone cell. This avoids needing transform inversion. */
-const REPLIES: Array<{ x: number; y: number }> = [
-  { x: 1, y: 0 },
-  { x: -1, y: 0 },
-  { x: 0, y: 1 },
-  { x: 0, y: -1 },
-  { x: 1, y: 1 },
-  { x: 1, y: -1 },
-  { x: -1, y: 1 },
-  { x: -1, y: -1 },
-];
-
 const ORIENT: Array<(dx: number, dy: number) => { x: number; y: number }> = [
   (dx, dy) => ({ x: dx, y: dy }),
   (dx, dy) => ({ x: -dx, y: dy }),

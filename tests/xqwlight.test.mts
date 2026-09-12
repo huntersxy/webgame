@@ -6,13 +6,8 @@ import { createInitialBoard, legalMoves, makeMove, inCheck, ROWS, COLS } from '.
 import { boardToFen, uciToXqMove } from '../src/xiangqi/fen';
 import { XQWLIGHT_LEVELS } from '../src/xiangqi/xqwlight';
 import type { XqBoard, XqMove, XqSide } from '../src/types';
+import { check, finish } from './harness.mts';
 
-let pass = 0;
-let fail = 0;
-function check(name: string, cond: boolean, extra = ''): void {
-  if (cond) { pass++; console.log(`  ok  ${name}`); }
-  else { fail++; console.log(`FAIL  ${name} ${extra}`); }
-}
 
 /* ── 在 vm 里按 public/xqwlight/engine-worker.js 的方式加载引擎 ── */
 const DIR = 'public/xqwlight/';
@@ -143,5 +138,4 @@ check('开局库 BOOK_DAT 已加载', Array.isArray((ctx as { BOOK_DAT?: unknown
 check('四档难度都配了时限与深度上限', [1, 2, 3, 4].every((l) => XQWLIGHT_LEVELS[l as 1 | 2 | 3 | 4].millis > 0 && XQWLIGHT_LEVELS[l as 1 | 2 | 3 | 4].depth >= 4));
 check('时限随难度递增', XQWLIGHT_LEVELS[1].millis < XQWLIGHT_LEVELS[2].millis && XQWLIGHT_LEVELS[2].millis < XQWLIGHT_LEVELS[3].millis && XQWLIGHT_LEVELS[3].millis < XQWLIGHT_LEVELS[4].millis);
 
-console.log(`\n${pass} passed, ${fail} failed`);
-if (fail) process.exit(1);
+finish('xqwlight');

@@ -7,6 +7,7 @@
 import { TornadoGame, TIERS, TORNADO_VIEW } from '../tornado/game';
 import type { AudioEngine } from '../ui/audio';
 import { Stats } from '../ui/stats';
+import { mustEl } from '../ui/dom';
 
 const KEY_BEST = 'tornado.best.v1';
 const MOVE_KEYS = new Set(['arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'w', 'a', 's', 'd']);
@@ -15,7 +16,6 @@ export class TornadoController {
   private game = new TornadoGame();
   private keys = new Set<string>();
   private ptr: { x: number; y: number } | null = null;
-  private raf = 0;
   private last = 0;
   private best = +(localStorage.getItem(KEY_BEST) ?? '0') || 0;
   private winCounted = false;
@@ -26,7 +26,7 @@ export class TornadoController {
   constructor(private canvas: HTMLCanvasElement, private audio: AudioEngine) {
     // 调试/自动化用：暴露当前局面（转场连续性冒烟脚本会读它）
     (window as any).__tornadoGame = this.game;
-    this.section = document.getElementById('view-tornado');
+    this.section = mustEl('view-tornado');
     this.applyDpr();
     this.bind();
     this.game.onEat = (big) => { if (big) this.audio.check(); else this.audio.capture(); };
@@ -40,15 +40,13 @@ export class TornadoController {
       this.audio.win();
       if (!this.winCounted) { this.winCounted = true; Stats.add(true); }
       this.saveBest();
-      const el = document.getElementById('t-result');
-      if (el) {
-        el.classList.remove('hidden');
-        el.textContent = `🌍 你卷走了整个地球！最终得分 ${this.game.score.toLocaleString()}`;
-      }
+      const el = mustEl('t-result');
+      el.classList.remove('hidden');
+      el.textContent = `🌍 你卷走了整个地球！最终得分 ${this.game.score.toLocaleString()}`;
     };
     this.buildTierList();
     this.last = performance.now();
-    this.raf = requestAnimationFrame(this.loop);
+    requestAnimationFrame(this.loop);
     window.addEventListener('resize', () => this.applyDpr());
   }
 
@@ -98,14 +96,14 @@ export class TornadoController {
     this.canvas.addEventListener('pointerup', end);
     this.canvas.addEventListener('pointercancel', end);
 
-    document.getElementById('t-restart')?.addEventListener('click', () => this.restart());
-    document.getElementById('t-restart-tier')?.addEventListener('click', () => {
+    mustEl('t-restart').addEventListener('click', () => this.restart());
+    mustEl('t-restart-tier').addEventListener('click', () => {
       this.game.restartTier();
       // 通关统计不因「本关重置」清零，避免重复刷 Stats；完整重新开始才重置
-      document.getElementById('t-result')?.classList.add('hidden');
+      mustEl('t-result').classList.add('hidden');
       this.audio.undo();
     });
-    document.getElementById('t-sound')?.addEventListener('click', (e) => {
+    mustEl('t-sound').addEventListener('click', (e) => {
       this.audio.enabled = !this.audio.enabled;
       const b = e.currentTarget as HTMLElement;
       b.classList.toggle('on', this.audio.enabled);
@@ -116,13 +114,13 @@ export class TornadoController {
   restart(): void {
     this.game.reset();
     this.winCounted = false;
-    document.getElementById('t-result')?.classList.add('hidden');
+    mustEl('t-result').classList.add('hidden');
     this.audio.select();
   }
 
   // ── loop ──
   private loop = (now: number): void => {
-    this.raf = requestAnimationFrame(this.loop);
+    requestAnimationFrame(this.loop);
     const dt = Math.min(0.05, (now - this.last) / 1000);
     this.last = now;
     if (!this.isVisible() || !this.canvas.offsetParent) return;
@@ -152,8 +150,8 @@ export class TornadoController {
   private updateHud(): void {
     const g = this.game;
     const set = (id: string, v: string) => {
-      const el = document.getElementById(id);
-      if (el && el.textContent !== v) el.textContent = v;
+      const el = mustEl(id);
+      if (el.textContent !== v) el.textContent = v;
     };
     set('t-tier', `${TIERS[Math.min(g.tier, TIERS.length - 1)].name} · ${Math.min(g.tier + 1, TIERS.length)}/6`);
     set('t-eaten', `${g.eaten} / ${g.total}`);
@@ -161,11 +159,11 @@ export class TornadoController {
     set('t-radius', this.radiusLabel(g.r));
     set('t-best', this.best.toLocaleString());
     set('t-status', g.state === 'zoom' ? '镜头拉远中…' : g.state === 'win' ? '通关！' : g.r >= 200 ? '已是灭世级' : '吞噬中…');
-    const pill = document.getElementById('t-turn');
-    if (pill) pill.textContent = g.state === 'win' ? '🌍 通关' : `当前量级 ${TIERS[Math.min(g.tier, 5)].name}`;
+    const pill = mustEl('t-turn');
+    pill.textContent = g.state === 'win' ? '🌍 通关' : `当前量级 ${TIERS[Math.min(g.tier, 5)].name}`;
     // 进度条
-    const bar = document.getElementById('t-progress');
-    if (bar) bar.style.width = `${g.total ? Math.min(100, (g.eaten / g.total) * 100) : 0}%`;
+    const bar = mustEl('t-progress');
+    bar.style.width = `${g.total ? Math.min(100, (g.eaten / g.total) * 100) : 0}%`;
     // 量级列表状态
     document.querySelectorAll('#t-tier-list .tier-item').forEach((el, i) => {
       el.classList.toggle('current', i === g.tier && g.state !== 'win');
@@ -191,8 +189,7 @@ export class TornadoController {
   }
 
   private buildTierList(): void {
-    const wrap = document.getElementById('t-tier-list');
-    if (!wrap) return;
+    const wrap = mustEl('t-tier-list');
     wrap.innerHTML = '';
     TIERS.forEach((t, i) => {
       const d = document.createElement('div');

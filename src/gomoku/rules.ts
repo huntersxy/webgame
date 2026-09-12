@@ -193,32 +193,3 @@ export function windowScore(own: number, empty: number): number {
   return 0;
 }
 
-/**
- * Find an immediate winning or blocking move.
- * Returns the move that either wins immediately or blocks opponent's win.
- */
-export function findImmediate(
-  board: GomokuBoard,
-  color: GomokuPlayer,
-): { x: number; y: number } | null {
-  const cands = generateCandidates(board, 1, 20, color);
-
-  // Win immediately
-  for (const m of cands) {
-    board[m.y][m.x] = color;
-    const w = checkWin(board, m.x, m.y);
-    board[m.y][m.x] = 0;
-    if (w) return m;
-  }
-
-  // Block opponent win
-  const opp = other(color);
-  for (const m of cands) {
-    board[m.y][m.x] = opp;
-    const w = checkWin(board, m.x, m.y);
-    board[m.y][m.x] = 0;
-    if (w) return m;
-  }
-
-  return null;
-}

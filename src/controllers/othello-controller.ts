@@ -24,6 +24,7 @@ import { Stats } from '../ui/stats';
 import { renderOth, pxToCellOth, othScorePercent, type OthRenderState } from '../ui/othello-renderer';
 import { appendLog, setStats, toggleProgress } from '../ui/format';
 import { applyDemonTheme, DEMON_NAME } from '../ui/demon';
+import { mustEl } from '../ui/dom';
 
 interface HistoryEntry {
   /** 落点对外索引；停一手用 -1 */
@@ -69,7 +70,6 @@ export class OthelloController {
   private _searchSeq = 0;
   private _aiTimer: ReturnType<typeof setTimeout> | null = null;
   private _haltAivai = false;
-  private _animFrame: number | null = null;
   private _down: { x: number; y: number } | null = null;
   private _passNotice = '';
   /**
@@ -135,9 +135,9 @@ export class OthelloController {
         if (!animating && this.flipping.length) this.flipping = [];
         this.redraw();
       }
-      this._animFrame = requestAnimationFrame(loop);
+      requestAnimationFrame(loop);
     };
-    this._animFrame = requestAnimationFrame(loop);
+    requestAnimationFrame(loop);
   }
 
   redraw(): void {
@@ -183,7 +183,7 @@ export class OthelloController {
     this.redraw();
     const cfg = LEVEL_CONFIG[this.level];
     const modeName = this.mode === 'aivai' ? '🤖AI互搏观战' : (this.mode === 'pvp' ? '双人对战' : '人机对战');
-    setStats(document.getElementById('o-think-stats'), `新对局 · ${modeName} · 难度 <b>${cfg.name}</b> · 黑先`);
+    setStats(mustEl('o-think-stats'), `新对局 · ${modeName} · 难度 <b>${cfg.name}</b> · 黑先`);
     if (this.mode === 'aivai') this.aiMove();
     else if (this.mode === 'ai' && this.turn !== this.human) this.aiMove();
     else this.refreshGod();
@@ -199,7 +199,7 @@ export class OthelloController {
       this.turn = other(side);
       this._passNotice = `${side === 1 ? '黑' : '白'}方无子可下，停一手`;
       if (!silent) {
-        appendLog(document.getElementById('o-think-log'), `⏸ <b>${side === 1 ? '黑' : '白'}方停一手</b>（无合法落点）`);
+        appendLog(mustEl('o-think-log'), `⏸ <b>${side === 1 ? '黑' : '白'}方停一手</b>（无合法落点）`);
         this.audio.hint();
       }
       this.afterMoveCommon();
@@ -240,7 +240,7 @@ export class OthelloController {
     if (!nextLegal.length) {
       const side = this.turn;
       this._passNotice = `${side === 1 ? '黑' : '白'}方无子可下，自动停一手`;
-      appendLog(document.getElementById('o-think-log'), `⏸ <b>${side === 1 ? '黑' : '白'}方无子可下</b>，自动停一手`);
+      appendLog(mustEl('o-think-log'), `⏸ <b>${side === 1 ? '黑' : '白'}方无子可下</b>，自动停一手`);
       this.history.push({ index: -1, side, flipped: 0, flippedCells: [], before: this.board.slice() });
       this.turn = other(side);
       const gg = result(this.position());
@@ -254,30 +254,30 @@ export class OthelloController {
     this.over = true;
     this.winner = winner;
     const { black, white } = counts(this.board);
-    const banner = document.getElementById('o-result');
-    if (banner) banner.classList.remove('hidden');
+    const banner = mustEl('o-result');
+    banner.classList.remove('hidden');
     const score = `黑 ${black} : ${white} 白`;
     const modeName = this.mode === 'aivai' ? 'AI互搏' : this.mode === 'pvp' ? '' : '';
     void modeName;
     void RESULTS_OVERRIDE;
     if (winner === 0) {
-      if (banner) banner.textContent = `🤝 和棋！${score}`;
+      banner.textContent = `🤝 和棋！${score}`;
       this.audio.win();
       Stats.add(false);
     } else if (this.mode === 'ai') {
       const humanWon = winner === this.human;
-      if (banner) banner.textContent = humanWon ? `🎉 你赢了！${score}` : `🤖 AI 获胜，${score}，再接再厉`;
+      banner.textContent = humanWon ? `🎉 你赢了！${score}` : `🤖 AI 获胜，${score}，再接再厉`;
       if (humanWon) this.audio.lose(); else this.audio.lose();
       Stats.add(humanWon);
     } else if (this.mode === 'pvp') {
-      if (banner) banner.textContent = `🏆 ${winner === 1 ? '黑方' : '白方'} 获胜！${score}`;
+      banner.textContent = `🏆 ${winner === 1 ? '黑方' : '白方'} 获胜！${score}`;
       this.audio.win();
       Stats.add(true);
     } else {
-      if (banner) banner.textContent = `🤖 互搏结束：${winner === 1 ? '黑方 AI' : '白方 AI'} 获胜（${score}）`;
+      banner.textContent = `🤖 互搏结束：${winner === 1 ? '黑方 AI' : '白方 AI'} 获胜（${score}）`;
       this.audio.win();
     }
-    appendLog(document.getElementById('o-think-log'), `🏁 <b>终局</b> ${score} · ${winner === 0 ? '和棋' : (winner === 1 ? '黑胜' : '白胜')}`);
+    appendLog(mustEl('o-think-log'), `🏁 <b>终局</b> ${score} · ${winner === 0 ? '和棋' : (winner === 1 ? '黑胜' : '白胜')}`);
     this.updatePanel();
     this.redraw();
   }
@@ -288,11 +288,11 @@ export class OthelloController {
     if (this.over) return;
     this.thinking = true;
     this.showThinking(true);
-    toggleProgress(document.getElementById('o-think-progress'), true);
+    toggleProgress(mustEl('o-think-progress'), true);
     const cfg = LEVEL_CONFIG[this.level];
     this.setGlobalStatus(`AI 思考中…(${cfg.name})`);
     this.redraw();
-    setStats(document.getElementById('o-think-stats'), `⏳ <b>${cfg.name}</b> 运算中… 正在搜索落点`);
+    setStats(mustEl('o-think-stats'), `⏳ <b>${cfg.name}</b> 运算中… 正在搜索落点`);
     const seq = ++this._searchSeq;
     const delay = this.level === 4 ? 60 : (this.level === 3 ? 40 : 20);
     this._aiTimer = setTimeout(async () => {
@@ -302,11 +302,11 @@ export class OthelloController {
       if (seq !== this._searchSeq) return;
       this.thinking = false;
       this.showThinking(false);
-      toggleProgress(document.getElementById('o-think-progress'), false);
+      toggleProgress(mustEl('o-think-progress'), false);
 
       const who = side === 1 ? '黑' : '白';
       const mv = res.move;
-      const log = document.getElementById('o-think-log');
+      const log = mustEl('o-think-log');
       const engineName = res.engine === 'egaroucid' ? '🧠 Egaroucid Web' : '内置引擎';
       if (res.engine === 'egaroucid' && !this._egarLogged) {
         this._egarLogged = true;
@@ -318,7 +318,7 @@ export class OthelloController {
         }
       }
       if (!mv || isPass(mv)) {
-        setStats(document.getElementById('o-think-stats'), `⏸ <b>${who}</b> 无合法落点，停一手`);
+        setStats(mustEl('o-think-stats'), `⏸ <b>${who}</b> 无合法落点，停一手`);
         appendLog(log, `⏸ <b>${who}方停一手</b>（引擎确认无合法落点）`);
         this.applyMove(-1, side, true);
         this.setGlobalStatus('AI 就绪');
@@ -330,7 +330,7 @@ export class OthelloController {
       const top = (res.scores || []).slice(0, 5)
         .map((s, i) => `#${i + 1}${ptName(s)}(翻${s.f ?? 0})`).join(' ');
       const ev = fmtOthEval(res.eval);
-      setStats(document.getElementById('o-think-stats'),
+      setStats(mustEl('o-think-stats'),
         `✅ <b>${who}·${cfg.name}</b>〔${engineName}〕${res.book ? ' 开局谱 ' : ''}depth${res.depth} · 节点 <b>${res.nodes.toLocaleString()}</b> · ${res.ms}ms · 评估 <b>${ev}</b> · 选 ${ptName(mv)}（翻 ${mv.f ?? 0}）`);
       appendLog(log, `🧠 <b>${engineName}</b> · ${res.book ? '开局谱 ' : ''}depth<b>${res.depth}</b> · 节点${res.nodes.toLocaleString()} · ${res.ms}ms · 评估${ev} · 选<b>${ptName(mv)}</b> 翻 ${mv.f ?? 0} 子<br><span class="cand">${top}</span>`);
 
@@ -347,7 +347,7 @@ export class OthelloController {
   stopAivai(): void {
     this._haltAivai = true;
     if (this._aiTimer) { clearTimeout(this._aiTimer); this._aiTimer = null; }
-    if (!this.over) appendLog(document.getElementById('o-think-log'), '⏹ <b>已停止AI互搏</b>，可悔棋/新开一局');
+    if (!this.over) appendLog(mustEl('o-think-log'), '⏹ <b>已停止AI互搏</b>，可悔棋/新开一局');
     this.updatePanel();
     this.setGlobalStatus('AI 就绪');
   }
@@ -377,7 +377,7 @@ export class OthelloController {
       this._searchSeq++;
       this.thinking = false;
       this.showThinking(false);
-      toggleProgress(document.getElementById('o-think-progress'), false);
+      toggleProgress(mustEl('o-think-progress'), false);
       if (this._aiTimer) { clearTimeout(this._aiTimer); this._aiTimer = null; }
       this.setGlobalStatus('AI 就绪');
     }
@@ -419,7 +419,7 @@ export class OthelloController {
     this._hintBusy = true;
     this.syncGodUI();
     const seq = this._posSeq;
-    setStats(document.getElementById('o-think-stats'), '👉 恶魔正在支招… 满配搜索中，请稍候');
+    setStats(mustEl('o-think-stats'), '👉 恶魔正在支招… 满配搜索中，请稍候');
     setTimeout(async () => {
       try {
         const res = await this.ai.hintOth(this.board.slice(), this.turn, this.mode, this.history.length, this.engineKind);
@@ -427,14 +427,14 @@ export class OthelloController {
         const m = res.move;
         if (m && !isPass(m)) {
           this.hintPos = { x: m.x, y: m.y };
-          appendLog(document.getElementById('o-think-log'),
+          appendLog(mustEl('o-think-log'),
             `💡 <b>恶魔支招</b> depth${res.depth} · 推荐<b>${ptName(m)}</b>（翻 ${m.f ?? 0}）· 评估${fmtOthEval(res.eval)} · 节点${res.nodes.toLocaleString()} · ${res.ms}ms`);
-          setStats(document.getElementById('o-think-stats'), `💡 恶魔支招 depth${res.depth} · 推荐 ${ptName(m)} · 翻 ${m.f ?? 0} · ${res.ms}ms`);
+          setStats(mustEl('o-think-stats'), `💡 恶魔支招 depth${res.depth} · 推荐 ${ptName(m)} · 翻 ${m.f ?? 0} · ${res.ms}ms`);
           this.redraw();
           this.audio.hint();
           setTimeout(() => { this.hintPos = null; this.redraw(); }, 4000);
         } else {
-          appendLog(document.getElementById('o-think-log'), '💡 当前无合法落点，只能停一手');
+          appendLog(mustEl('o-think-log'), '💡 当前无合法落点，只能停一手');
         }
       } finally {
         this._hintBusy = false;
@@ -446,14 +446,14 @@ export class OthelloController {
   toggleGod(): void {
     this.god = !this.god;
     if (this.god) {
-      appendLog(document.getElementById('o-think-log'), `🙏 <b>${DEMON_NAME}附体！请神上身成功</b>，每手都会标出最佳落点`);
+      appendLog(mustEl('o-think-log'), `🙏 <b>${DEMON_NAME}附体！请神上身成功</b>，每手都会标出最佳落点`);
       this.syncGodUI();
       this.refreshGod();
     } else {
       this.godMove = null;
       this.godThinking = false;
       this._godDirty = false;
-      appendLog(document.getElementById('o-think-log'), '🛌 已送神，神指消失');
+      appendLog(mustEl('o-think-log'), '🛌 已送神，神指消失');
       this.syncGodUI();
       this.redraw();
     }
@@ -486,42 +486,38 @@ export class OthelloController {
   /* ── UI ── */
 
   private syncGodUI(): void {
-    const btn = document.getElementById('o-god');
-    if (btn) {
-      btn.classList.toggle('on', this.god);
-      btn.textContent = !this.god ? '🙏 请神上身' : (this.godThinking ? '🙏 神算中…' : '🛌 送神离开');
-    }
+    const btn = mustEl('o-god');
+    btn.classList.toggle('on', this.god);
+    btn.textContent = !this.god ? '🙏 请神上身' : (this.godThinking ? '🙏 神算中…' : '🛌 送神离开');
     const busy = this.god && this.godThinking;
-    document.getElementById('othello-god-thinking')?.classList.toggle('hidden', !busy);
-    toggleProgress(document.getElementById('o-think-progress'), busy || this._hintBusy || this.thinking);
+    mustEl('othello-god-thinking').classList.toggle('hidden', !busy);
+    toggleProgress(mustEl('o-think-progress'), busy || this._hintBusy || this.thinking);
     this.updatePanel();
   }
 
   private updatePanel(): void {
-    const turnEl = document.getElementById('othello-turn');
-    if (turnEl) {
-      const t = this.turn === 1 ? '黑方' : '白方';
-      turnEl.textContent = this.over
-        ? `对局结束 · ${this.winner === 0 ? '和棋' : (this.winner === 1 ? '黑胜' : '白胜')}`
-        : `${this._passNotice ? `⏸ ${this._passNotice} · ` : ''}轮到 ${t} 落子${this.mode === 'aivai' ? ' · AI互搏中' : ''}${this.god ? ' · 神附体👇' : ''}`;
-      turnEl.classList.toggle('red', this.turn === 1);
-    }
+    const turnEl = mustEl('othello-turn');
+    const t = this.turn === 1 ? '黑方' : '白方';
+    turnEl.textContent = this.over
+      ? `对局结束 · ${this.winner === 0 ? '和棋' : (this.winner === 1 ? '黑胜' : '白胜')}`
+      : `${this._passNotice ? `⏸ ${this._passNotice} · ` : ''}轮到 ${t} 落子${this.mode === 'aivai' ? ' · AI互搏中' : ''}${this.god ? ' · 神附体👇' : ''}`;
+    turnEl.classList.toggle('red', this.turn === 1);
     const { black, white } = counts(this.board);
-    const set = (id: string, v: string) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+    const set = (id: string, v: string): void => { mustEl(id).textContent = v; };
     set('o-black', String(black));
     set('o-white', String(white));
     set('o-steps', String(this.history.filter((h) => h.index >= 0).length));
     set('o-status', this.over ? '已结束' : (this.thinking ? 'AI 思考中…' : (this.godThinking ? '神算中…' : '对弈中')));
     const pct = othScorePercent(this.board, this.human);
-    const bar = document.getElementById('o-score-bar');
-    if (bar) bar.style.width = `${pct}%`;
+    const bar = mustEl('o-score-bar');
+    bar.style.width = `${pct}%`;
     const v = quickEvalCells(this.board, this.turn);
-    const txt = document.getElementById('o-score-text');
-    if (txt) txt.textContent = v > 220 ? '我方大优' : v > 80 ? '我方稍优' : v < -220 ? 'AI 大优' : v < -80 ? 'AI 稍优' : '均势';
+    const txt = mustEl('o-score-text');
+    txt.textContent = v > 220 ? '我方大优' : v > 80 ? '我方稍优' : v < -220 ? 'AI 大优' : v < -80 ? 'AI 稍优' : '均势';
   }
 
   private showThinking(on: boolean): void {
-    document.getElementById('othello-thinking')?.classList.toggle('hidden', !on);
+    mustEl('othello-thinking').classList.toggle('hidden', !on);
   }
 
   /**
@@ -548,11 +544,11 @@ export class OthelloController {
         this.syncEngineUI();
         if (ok) {
           this.setGlobalStatus('AI 就绪');
-          appendLog(document.getElementById('o-think-log'), '🧠 <b>Egaroucid 引擎已预加载</b>（1.4MB wasm）· 落子无需等待');
+          appendLog(mustEl('o-think-log'), '🧠 <b>Egaroucid 引擎已预加载</b>（1.4MB wasm）· 落子无需等待');
           this._egarLogged = true;
         } else {
           this.setGlobalStatus('AI 就绪（内置引擎）');
-          appendLog(document.getElementById('o-think-log'),
+          appendLog(mustEl('o-think-log'),
             `⚠️ <b>Egaroucid 加载失败</b>，已回退内置引擎：${error ?? '未知原因'}`);
         }
       });
@@ -566,8 +562,7 @@ export class OthelloController {
   /** 刷新「引擎」区块与说明文字 */
   private syncEngineUI(): void {
     this.paintSeg('o-engine', this.enginePref);
-    const note = document.getElementById('o-engine-note');
-    if (!note) return;
+    const note = mustEl('o-engine-note');
     if (this.enginePref === 'builtin') {
       note.textContent = '当前使用内置 JS 引擎（加载 0 字节、零额外内存）。';
     } else if (this._egarReady === true) {
@@ -580,12 +575,12 @@ export class OthelloController {
   }
 
   private paintSeg(id: string, value: string): void {
-    document.getElementById(id)?.querySelectorAll<HTMLButtonElement>('button')
+    mustEl(id).querySelectorAll<HTMLButtonElement>('button')
       .forEach((b) => b.classList.toggle('on', b.dataset.v === value));
   }
 
   private hideResult(): void {
-    document.getElementById('o-result')?.classList.add('hidden');
+    mustEl('o-result').classList.add('hidden');
   }
 
   private setGlobalStatus(t: string): void {
@@ -609,8 +604,8 @@ export class OthelloController {
     this.canvas.addEventListener('pointercancel', () => { this._down = null; });
 
     const seg = (id: string, fn: (v: string) => void) => {
-      const el = document.getElementById(id);
-      el?.querySelectorAll('button').forEach((b) => b.addEventListener('click', () => {
+      const el = mustEl(id);
+      el.querySelectorAll('button').forEach((b) => b.addEventListener('click', () => {
         el.querySelectorAll('button').forEach((x) => x.classList.remove('on'));
         b.classList.add('on');
         fn(b.dataset.v!);
@@ -619,7 +614,7 @@ export class OthelloController {
 
     seg('o-mode', (v) => {
       this.mode = v as GameMode;
-      if (this.mode === 'aivai') appendLog(document.getElementById('o-think-log'), '🤖 <b>AI互搏观战开始</b>，双方都用当前难度对战');
+      if (this.mode === 'aivai') appendLog(mustEl('o-think-log'), '🤖 <b>AI互搏观战开始</b>，双方都用当前难度对战');
       this.newGame();
     });
     seg('o-color', (v) => { this.human = Number(v) as OthDisc; this.newGame(); });
@@ -627,28 +622,28 @@ export class OthelloController {
       this.level = Number(v) as Difficulty;
       applyDemonTheme('o', this.level, this.audio);
       const cfg = LEVEL_CONFIG[this.level];
-      setStats(document.getElementById('o-think-stats'), `难度切换 → <b>${cfg.name}</b> · 时间预算 ${cfg.timeMs}ms`);
-      appendLog(document.getElementById('o-think-log'), `⚙️ 难度切换 → <b>${cfg.name}</b>${this.level === 4 ? ' · <span style="color:#ff6b6b">恶魔全开</span>' : ''}`);
+      setStats(mustEl('o-think-stats'), `难度切换 → <b>${cfg.name}</b> · 时间预算 ${cfg.timeMs}ms`);
+      appendLog(mustEl('o-think-log'), `⚙️ 难度切换 → <b>${cfg.name}</b>${this.level === 4 ? ' · <span style="color:#ff6b6b">恶魔全开</span>' : ''}`);
     });
 
     seg('o-engine', (v) => {
       this.enginePref = v === 'experimental' ? 'experimental' : 'builtin';
-      appendLog(document.getElementById('o-think-log'), this.enginePref === 'builtin'
+      appendLog(mustEl('o-think-log'), this.enginePref === 'builtin'
         ? '🔧 引擎切换 → <b>内置 JS 引擎</b>'
         : '🔧 引擎切换 → <b>Egaroucid</b>（1.4MB wasm · 64MB 内存）');
       if (this.enginePref === 'experimental') this.warmUp();
       this.syncEngineUI();
     });
 
-    const legalToggle = document.getElementById('o-legal') as HTMLInputElement | null;
-    legalToggle?.addEventListener('change', () => { this.showLegal = !!legalToggle.checked; this.redraw(); });
+    const legalToggle = mustEl<HTMLInputElement>('o-legal');
+    legalToggle.addEventListener('change', () => { this.showLegal = !!legalToggle.checked; this.redraw(); });
 
-    document.getElementById('o-new')?.addEventListener('click', () => this.newGame());
-    document.getElementById('o-undo')?.addEventListener('click', () => this.undo());
-    document.getElementById('o-hint')?.addEventListener('click', () => this.showHint());
-    document.getElementById('o-god')?.addEventListener('click', () => this.toggleGod());
-    document.getElementById('o-stop')?.addEventListener('click', () => this.stopAivai());
-    document.getElementById('o-sound')?.addEventListener('click', (e) => {
+    mustEl('o-new').addEventListener('click', () => this.newGame());
+    mustEl('o-undo').addEventListener('click', () => this.undo());
+    mustEl('o-hint').addEventListener('click', () => this.showHint());
+    mustEl('o-god').addEventListener('click', () => this.toggleGod());
+    mustEl('o-stop').addEventListener('click', () => this.stopAivai());
+    mustEl('o-sound').addEventListener('click', (e) => {
       this.audio.enabled = !this.audio.enabled;
       const btn = e.target as HTMLButtonElement;
       btn.textContent = this.audio.enabled ? '🔊 音效开' : '🔇 音效关';

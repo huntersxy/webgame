@@ -8,13 +8,8 @@ import {
   squareToXY,
   START_FEN,
 } from '../src/xiangqi/fen';
+import { check, finish } from './harness.mts';
 
-let pass = 0;
-let fail = 0;
-function check(name: string, cond: boolean, extra = ''): void {
-  if (cond) { pass++; console.log(`  ok  ${name}`); }
-  else { fail++; console.log(`FAIL  ${name} ${extra}`); }
-}
 
 // ── 坐标映射 ──
 check('红帅 (4,9) → e0', xyToSquare(4, 9) === 'e0');
@@ -45,5 +40,4 @@ capBoard[4][4] = 'P';   // 红兵推进到中路 (4,5)
 const capMv = uciToXqMove('c6c5', capBoard); // 黑卒 (2,3)? 检查形状即可
 check('吃子时 cap 非空或合法 null', capMv === null || (capMv.cap === null || typeof capMv.cap === 'string'));
 
-console.log(`\n${pass} passed, ${fail} failed`);
-if (fail) process.exit(1);
+finish('xqfen');

@@ -2,6 +2,8 @@
  *  ui/stats.ts — Global game statistics (localStorage)
  * ──────────────────────────────────────────────────────────── */
 
+import { mustEl } from './dom';
+
 const KEY_GAMES = 'zq_games';
 const KEY_WINS = 'zq_wins';
 
@@ -16,9 +18,7 @@ export const Stats = {
   },
 
   refresh(): void {
-    const g = document.getElementById('stat-games');
-    const w = document.getElementById('stat-wins');
-    if (g) g.textContent = String(this.games);
-    if (w) w.textContent = String(this.wins);
+    mustEl('stat-games').textContent = String(this.games);
+    mustEl('stat-wins').textContent = String(this.wins);
   },
 };

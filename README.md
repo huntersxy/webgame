@@ -45,10 +45,12 @@ npm install
 npm run dev        # 开发服务器 http://localhost:5173
 npm run build      # 类型检查 + 生产构建 → dist/
 npm run preview    # 预览生产构建
-npm test           # 8 套引擎自测，共 308 项
+npm test           # 10 套引擎自测，共 398 项
+npm test -- othello    # 只跑其中一套（套件名见 scripts/run-tests.mjs）
+npm run test:othello:smoke    # 浏览器接口冒烟（需先跑起 dev server）
 ```
 
-测试分布：五子棋 27 · 军棋 66 · Rapfi 18 · 象棋 FEN 16 · 象棋神经网络 32 · XQWLight 22 · 龙卷风 32 · 黑白棋 27 · 黑白棋控制器 9 · 围棋 95。
+测试分布：五子棋 29 · 军棋 66 · Rapfi 18 · 象棋 FEN 16 · 象棋 α-β 8 · 象棋神经网络 32 · XQWLight 22 · 龙卷风 76 · 黑白棋 27 · 黑白棋控制器 9 · 围棋 95。
 
 ## AI 引擎
 
@@ -163,6 +165,8 @@ webgame/
 ├── vite.config.ts / tsconfig.json / package.json
 ├── .github/workflows/deploy.yml   构建 + FTP 自动部署
 ├── scripts/
+│   ├── run-tests.mjs          引擎自测入口：esbuild 打包 + 逐个套件运行
+│   ├── othello-smoke.mjs      黑白棋浏览器冒烟（headless Edge + CDP）
 │   └── copy-tfjs-wasm.mjs     复制 TF.js WASM 后端到 public/go/tfjs/（predev / prebuild 自动执行）
 ├── public/                    随站点分发的引擎与权重
 │   ├── rapfi/                 Rapfi WASM（多线程 / 单线程构建 + NNUE 权重 + worker 胶水）
@@ -170,12 +174,14 @@ webgame/
 │   ├── xqnn/                  象棋神经网络权重 chess_model.onnx
 │   └── xqwlight/              XQWLight 引擎与 worker 胶水、NOTICE.md
 ├── tests/                     引擎自测（见上方测试分布）
+│   ├── harness.mts            断言与汇总（各测试文件共用）
 │   └── fixtures/              与上游实现对齐用的黄金输出
 └── src/
     ├── main.ts                Hash 路由 + 共享服务 + 控制器装配
     ├── types.ts               全局类型定义
     ├── assets/                恶魔主题头像与 BGM
-    ├── core/                  zobrist.ts · transposition.ts（各引擎共用）
+    ├── core/                  zobrist.ts · transposition.ts · time.ts · errors.ts
+    │                          worker-engine.ts（外部引擎 worker 客户端的公共骨架）
     ├── gomoku/                五子棋：规则 · 搜索 · 评估 · 开局库 · Rapfi 客户端
     ├── go/                    围棋：rules（规则）· area / life（区域与征子）· features（输入编码）
     │                          model / tf-model（权重解析与前向）· evaluate（后端降级）· mcts（PUCT）
@@ -188,7 +194,7 @@ webgame/
     ├── campaign/              战役模式守关 AI
     ├── ai/                    worker.ts · ai-bridge.ts（主线程与 Worker 的 Promise 桥）
     ├── controllers/           各游戏控制器（棋盘状态、AI 调度、面板与日志）
-    └── ui/                    渲染器（五子棋 / 象棋 / 围棋）· 音频 · 主题 · 格式化
+    └── ui/                    渲染器（五子棋 / 象棋 / 围棋）· 音频 · 主题 · 格式化 · dom（元素取用）
 ```
 
 ## 开发约定
