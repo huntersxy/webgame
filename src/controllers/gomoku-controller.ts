@@ -7,8 +7,8 @@ import type { GomokuBoard, GomokuPlayer, Difficulty, GameMode, Pt, GomokuMove } 
 import { createBoard, cloneBoard, checkWin, isBoardFull, other, inBounds } from '../gomoku/rules';
 import { evaluateBoard } from '../gomoku/eval';
 import { LEVEL_CONFIG, resetGomokuWarmDepth } from '../gomoku/search';
-import { AIBridge } from '../ai/ai-bridge';
-import { AudioEngine } from '../ui/audio';
+import type { AIBridge } from '../ai/ai-bridge';
+import type { AudioEngine } from '../ui/audio';
 import { Stats } from '../ui/stats';
 import { renderGomoku, pxToCellGomoku, gomokuScorePercent, type GomokuRenderState } from '../ui/gomoku-renderer';
 import { appendLog, setStats, toggleProgress, fmtEval } from '../ui/format';
@@ -283,10 +283,10 @@ export class GomokuController {
           '⚠️ <b>Rapfi 引擎不可用</b>，本局恶魔档已临时改用内置 JS 引擎应手（刷新页面可重试加载）。');
       }
       if (res.opening) {
-        setStats(mustEl('g-think-stats'), `⚡ <b>${who}</b> 开局速答 (${m?.x},${m?.y})${engineName ? ' · ' + engineName : ''}`);
+        setStats(mustEl('g-think-stats'), `⚡ <b>${who}</b> 开局速答 (${m?.x},${m?.y})${engineName ? ` · ${engineName}` : ''}`);
         appendLog(mustEl('g-think-log'), `⚡ 开局速答 [${who}] → (${m?.x},${m?.y})${engineName ? ` · ${engineName}` : ''}（开局谱固定应手，未启动搜索）`);
       } else if (res.instant) {
-        setStats(mustEl('g-think-stats'), `⚡ <b>${who}·${cfg.name}</b> 秒断胜负手 (${m?.x},${m?.y}) · 直接成五/堵五${engineName ? ' · ' + engineName : ''}`);
+        setStats(mustEl('g-think-stats'), `⚡ <b>${who}·${cfg.name}</b> 秒断胜负手 (${m?.x},${m?.y}) · 直接成五/堵五${engineName ? ` · ${engineName}` : ''}`);
         appendLog(mustEl('g-think-log'), `⚡ <b>即时胜负手</b> [${who}] → (${m?.x},${m?.y}) · depth${res.depth}免搜索`);
       } else {
         const top = (res.scores || []).slice(0, 5).map((s, i) => `#${i + 1}(${s.x},${s.y}):${s.v > 99999 ? '胜' : s.v}`).join(' ');
@@ -386,7 +386,7 @@ export class GomokuController {
           const engineName = res.engine === 'rapfi-multi' ? '🧩Rapfi·多线程' : res.engine === 'rapfi-single' ? '🧩Rapfi·单线程' : res.engine === 'js' ? '内置引擎' : '';
           this.thinkCandidates = (res.scores || []).map((s, i) => ({ ...s, rank: i + 1 }));
           appendLog(mustEl('g-think-log'), `💡 <b>恶魔支招</b>${engineName ? `〔${engineName}〕` : ''} depth${res.depth} · 推荐<b>(${m.x},${m.y})</b> · 评估${fmtEval(res.eval, 100000)} · 节点${res.nodes.toLocaleString()} · ${res.ms}ms`);
-          setStats(mustEl('g-think-stats'), `💡 恶魔支招 depth${res.depth} · 推荐 (${m.x},${m.y}) · 节点${res.nodes.toLocaleString()} · ${res.ms}ms${engineName ? ' · ' + engineName : ''}`);
+          setStats(mustEl('g-think-stats'), `💡 恶魔支招 depth${res.depth} · 推荐 (${m.x},${m.y}) · 节点${res.nodes.toLocaleString()} · ${res.ms}ms${engineName ? ` · ${engineName}` : ''}`);
           this.hintPos = { x: m.x, y: m.y };
           this.redraw();
           this.audio.hint();
@@ -475,7 +475,7 @@ export class GomokuController {
     statusEl.textContent = this.over ? '已结束' : modeTag;
     const pct = gomokuScorePercent(this.board, this.human);
     const barEl = mustEl('g-score-bar');
-    barEl.style.width = pct + '%';
+    barEl.style.width = `${pct}%`;
     const v = evaluateBoard(this.board, this.human);
     const scoreText = mustEl('g-score-text');
     scoreText.textContent = v > 1500 ? '我方大优' : v > 400 ? '我方稍优' : v < -1500 ? 'AI 大优' : v < -400 ? 'AI 稍优' : '均势';

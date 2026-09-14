@@ -261,7 +261,7 @@ export function scorePosition(
 
   // 先把死子摘掉（视为被提走）
   let work = stones;
-  let deadCount: [number, number] = [0, 0];
+  const deadCount: [number, number] = [0, 0];
   if (deadMask) {
     let hasDead = false;
     for (let i = 0; i < area; i++) if (deadMask[i] && stones[i] !== EMPTY) { hasDead = true; break; }

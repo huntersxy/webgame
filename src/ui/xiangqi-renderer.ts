@@ -297,7 +297,7 @@ function drawGodOverlay(ctx: CanvasRenderingContext2D, state: XqRenderState): vo
   ctx.setLineDash([6, 6]);
   ctx.beginPath(); ctx.arc(x2, y2, R + 6, 0, Math.PI * 2); ctx.stroke();
   ctx.setLineDash([]);
-  const c = (R + 2) * 0.707, L = 10;
+  const c = (R + 2) * Math.SQRT1_2, L = 10;
   ctx.strokeStyle = '#ffd54a';
   ctx.lineWidth = 3.5;
   for (const [dx, dy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]] as const) {

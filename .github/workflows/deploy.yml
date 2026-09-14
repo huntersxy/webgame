@@ -33,6 +33,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Lint (Biome)
+        run: npm run lint
+
       - name: Engine tests
         run: npm test
 

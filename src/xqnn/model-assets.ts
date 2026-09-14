@@ -22,13 +22,13 @@ export const XQNN_MODEL_LABEL = '象棋神经网络 ResNet128×6';
 
 /** TF.js WASM 后端所需文件由 scripts/copy-tfjs-wasm.mjs 统一放到 public/go/tfjs/（与围棋共用一份）。 */
 export function xqnnWasmPathPrefix(): string {
-  const base = (import.meta.env && import.meta.env.BASE_URL) || '/';
+  const base = (import.meta.env?.BASE_URL) || '/';
   return `${base}go/tfjs/`;
 }
 
 /** 权重 URL（带版本号，可长缓存） */
 export function xqnnModelUrl(): string {
-  const base = (import.meta.env && import.meta.env.BASE_URL) || '/';
+  const base = (import.meta.env?.BASE_URL) || '/';
   return `${base}xqnn/${XQNN_MODEL_FILE}?v=${XQNN_ASSET_VERSION}`;
 }
 

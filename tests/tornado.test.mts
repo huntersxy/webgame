@@ -145,7 +145,7 @@ console.log('— 屏幕尺度守恒与推远（各量级）—');
     g.tier = tier;
     g.restartTier();
     const px = g.dispScreenR;
-    const expect = 22 * Math.pow(perTier, tier);
+    const expect = 22 * perTier ** tier;
     assert(Math.abs(px - expect) < 0.5, `T${tier + 1} 开局屏幕半径 ${px.toFixed(1)}px = 22·${perTier}^${tier}`);
     if (tier > 0) assert(px > prev, `T${tier + 1} 比上一关更推远（世界占比 ${prev.toFixed(1)} → ${px.toFixed(1)}px 屏幕半径）`);
     prev = px;

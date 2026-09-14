@@ -52,7 +52,7 @@ const SUITES = [
 
 const args = process.argv.slice(2);
 if (args.includes('--list')) {
-  for (const s of SUITES) console.log(s.name + '\t' + s.entries.join(' '));
+  for (const s of SUITES) console.log(`${s.name}\t${s.entries.join(' ')}`);
   process.exit(0);
 }
 

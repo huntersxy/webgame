@@ -40,7 +40,7 @@ export interface XqNetWeights {
 }
 
 function expect(cond: boolean, msg: string): void {
-  if (!cond) throw new Error('象棋神经网络模型不匹配：' + msg);
+  if (!cond) throw new Error(`象棋神经网络模型不匹配：${msg}`);
 }
 
 function sameShape(t: OnnxTensor, dims: number[]): boolean {
@@ -57,7 +57,7 @@ export function parseXqNet(buf: ArrayBuffer): XqNetWeights {
 
   const convs: Array<{ w: OnnxTensor; b: OnnxTensor }> = [];
   const gemms: OnnxTensor[] = [];
-  let gemmBiases: Array<OnnxTensor | undefined> = [];
+  const gemmBiases: Array<OnnxTensor | undefined> = [];
 
   for (const node of g.nodes) {
     if (node.opType === 'Conv') {

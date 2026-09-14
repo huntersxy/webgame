@@ -20,7 +20,7 @@ import {
 } from '../junqi/rules';
 import { renderJunqi, pxToNode, JQ_W, JQ_H, type JunqiRenderState } from '../junqi/render';
 import { JQ_LEVEL_CONFIG, JQ_MATE, describeMove } from '../junqi/ai';
-import { AIBridge } from '../ai/ai-bridge';
+import type { AIBridge } from '../ai/ai-bridge';
 import type { AudioEngine } from '../ui/audio';
 import { Stats } from '../ui/stats';
 import { appendLog, setStats, toggleProgress } from '../ui/format';
@@ -636,7 +636,7 @@ export class JunqiController {
     for (const [t] of PIECE_COUNTS) {
       const left = need[t] ?? 0;
       const chip = document.createElement('button');
-      chip.className = 'jq-chip' + (left === 0 ? ' used' : '') + (this.hand === t ? ' on' : '');
+      chip.className = `jq-chip${left === 0 ? ' used' : ''}${this.hand === t ? ' on' : ''}`;
       chip.innerHTML = `<span class="jq-chip-name">${t}</span><span class="jq-chip-n">${left}</span>`;
       chip.addEventListener('click', () => {
         if ((need[t] ?? 0) === 0) { this.audio.bad(); return; }

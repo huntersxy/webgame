@@ -16,7 +16,7 @@ export const RAPFI_ASSET_VERSION = 'c1';
 
 /** 引擎资源 URL（与 engine-worker.js 内部的 locateFile 拼法保持一致）。 */
 export function rapfiAssetUrl(file: string): string {
-  const base = (import.meta.env && import.meta.env.BASE_URL) || '/';
+  const base = (import.meta.env?.BASE_URL) || '/';
   return `${base}rapfi/${file}?v=${RAPFI_ASSET_VERSION}`;
 }
 

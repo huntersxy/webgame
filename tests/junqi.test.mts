@@ -1,11 +1,11 @@
 /* 军棋规则引擎自测：esbuild 打包后 node 运行 */
 import {
-  randomBoard, randomLayout, legalMoves, allJqMoves, resolve, hasAnyMove, isCamp, isHQ, sideOfNode, ADJ,
+  randomBoard, legalMoves, allJqMoves, resolve, hasAnyMove, isCamp, isHQ, ADJ,
   idx, rowOf, colOf, canMoveType, validateLayout, layoutComplete, autofillLayout,
-  makeJqMove, undoJqMove, ownHalf, DRAW_NO_CAPTURE, MAX_MOVES,
+  makeJqMove, undoJqMove, DRAW_NO_CAPTURE, MAX_MOVES,
   type Board, type Piece, type Side, type PType,
 } from '../src/junqi/rules';
-import { findBestMove, evaluate, HIDDEN_VAL } from '../src/junqi/ai';
+import { findBestMove, evaluate, } from '../src/junqi/ai';
 import { check, finish } from './harness.mts';
 
 const mk = (side: Side, type: PType, id = 1): Piece => ({ id, side, type });
@@ -402,12 +402,12 @@ console.log('== AI ==');
   const b = randomBoard();
   let turn: Side = 'r';
   let plies = 0;
-  let ended = false;
+  let _ended = false;
   const t0 = Date.now();
   while (plies < 60) {
-    if (!hasAnyMove(b, turn)) { ended = true; break; }
+    if (!hasAnyMove(b, turn)) { _ended = true; break; }
     const res = findBestMove(b, turn, 1, 'aivai', false, plies);
-    if (!res.move) { ended = true; break; }
+    if (!res.move) { _ended = true; break; }
     const ms = allJqMoves(b, turn);
     if (!ms.some((m) => m.from === res.move!.from && m.to === res.move!.to)) { legal = false; break; }
     makeJqMove(b, res.move.from, res.move.to);
@@ -416,12 +416,12 @@ console.log('== AI ==');
   }
   const dt = Date.now() - t0;
   check('简单 AI 互搏 60 手全程合法', legal && plies >= 60, `plies=${plies}`);
-  check('简单 AI 单步耗时 < 900ms（60 手共 ' + dt + 'ms）', dt < 54000);
+  check(`简单 AI 单步耗时 < 900ms（60 手共 ${dt}ms）`, dt < 54000);
   // 揭棋模式自对弈 20 手
   const b2 = randomBoard();
   for (const p of b2) if (p) p.hidden = true;
   let t2: Side = 'r';
-  let ok2 = true;
+  const ok2 = true;
   for (let i = 0; i < 20 && hasAnyMove(b2, t2); i++) {
     const res = findBestMove(b2, t2, 2, 'ai', true, i);
     if (!res.move) break;

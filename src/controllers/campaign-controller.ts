@@ -5,7 +5,7 @@
 import type { GomokuBoard, GomokuPlayer, Pt } from '../types';
 import { createBoard, cloneBoard, checkWin, isBoardFull, other, inBounds } from '../gomoku/rules';
 import { LEVELS, loadProgress, saveProgress, firstPlayable, campaignSearch, type CampaignLevel } from '../campaign/engine';
-import { AudioEngine } from '../ui/audio';
+import type { AudioEngine } from '../ui/audio';
 import { renderGomoku, pxToCellGomoku, type GomokuRenderState } from '../ui/gomoku-renderer';
 import { appendLog, setStats, toggleProgress } from '../ui/format';
 import { mustEl } from '../ui/dom';
@@ -189,13 +189,13 @@ export class CampaignController {
       const cur = i === cleared && !lv.locked;
       const locked = lv.locked;
       const btn = document.createElement('button');
-      btn.className = 'camp-card' + (cur ? ' current' : '') + (done ? ' done' : '') + (locked ? ' locked' : '');
-      btn.innerHTML = `<span class="n">${i + 1}</span><span class="t"><b>${lv.emoji} ${lv.name}</b><small>${lv.locked ? '未解锁' : '风格：' + (lv.title || lv.name)}</small></span><span class="st">${done ? '✅' : (cur ? '▶' : '🔒')}</span>`;
+      btn.className = `camp-card${cur ? ' current' : ''}${done ? ' done' : ''}${locked ? ' locked' : ''}`;
+      btn.innerHTML = `<span class="n">${i + 1}</span><span class="t"><b>${lv.emoji} ${lv.name}</b><small>${lv.locked ? '未解锁' : `风格：${lv.title || lv.name}`}</small></span><span class="st">${done ? '✅' : (cur ? '▶' : '🔒')}</span>`;
       if (!lv.locked) btn.addEventListener('click', () => this.startLevel(i));
       el.appendChild(btn);
     });
     mustEl('camp-progress-text').textContent = `已通关 ${cleared} / ${LEVELS.length}`;
-    mustEl('camp-progress-bar').style.width = (cleared / LEVELS.length * 100) + '%';
+    mustEl('camp-progress-bar').style.width = `${cleared / LEVELS.length * 100}%`;
     this.updateAICard();
   }
 

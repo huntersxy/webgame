@@ -5,8 +5,8 @@
 import type { XqBoard, XqSide, XqMove, Difficulty, GameMode, Pt, XqEngineKind } from '../types';
 import { createInitialBoard, legalMoves, inCheck, colorOf, typeOf, PIECE_NAME } from '../xiangqi/rules';
 import { LEVEL_CONFIG, MATE, resetXqWarmDepth } from '../xiangqi/search';
-import { AIBridge } from '../ai/ai-bridge';
-import { AudioEngine } from '../ui/audio';
+import type { AIBridge } from '../ai/ai-bridge';
+import type { AudioEngine } from '../ui/audio';
 import { Stats } from '../ui/stats';
 import { renderXiangqi, pxToCellXq, type XqRenderState } from '../ui/xiangqi-renderer';
 import { appendLog, setStats, toggleProgress } from '../ui/format';
@@ -297,7 +297,7 @@ export class XiangqiController {
     this.board[m.fy][m.fx] = null;
     this.last = { fx: m.fx, fy: m.fy, tx: m.tx, ty: m.ty };
     const pn = PIECE_NAME[typeOf(m.piece)!][colorOf(m.piece) === 'r' ? 1 : 0];
-    const capStr = m.cap ? '吃' + PIECE_NAME[typeOf(m.cap)!][colorOf(m.cap) === 'r' ? 1 : 0] : '进';
+    const capStr = m.cap ? `吃${PIECE_NAME[typeOf(m.cap)!][colorOf(m.cap) === 'r' ? 1 : 0]}` : '进';
     this.log.push(`${this.hist.length}. ${colorOf(m.piece) === 'r' ? '红' : '黑'} ${pn} ${capStr} (${m.fx},${m.fy})→(${m.tx},${m.ty})`);
   }
 
@@ -520,7 +520,7 @@ export class XiangqiController {
     mustEl('xiangqi-turn').textContent = this.over ? '对局结束' : `轮到 ${this.turn === 'r' ? '红方' : '黑方'} 走棋${this.check ? ' · 将军！' : ''}${this.mode === 'aivai' ? ' · AI互搏中' : ''}${this.god ? ' · 神附体👇' : ''}`;
     mustEl('x-steps').textContent = String(Math.floor(this.hist.length / 2) + 1);
     const modeTag = this.mode === 'aivai' ? '🤖互搏' : (this.thinking ? 'AI 思考中…' : (this.godThinking ? '👇神算中…' : '行棋中'));
-    mustEl('x-status').textContent = this.over ? ('胜者：' + (this.winner === 'draw' ? '和棋' : (this.winner === 'r' ? '红' : '黑'))) : ((this.turn === 'r' ? '红' : '黑') + `方${modeTag}` + (this.check ? '（将军）' : ''));
+    mustEl('x-status').textContent = this.over ? (`胜者：${this.winner === 'draw' ? '和棋' : (this.winner === 'r' ? '红' : '黑')}`) : (`${this.turn === 'r' ? '红' : '黑'}方${modeTag}${this.check ? '（将军）' : ''}`);
     const cr: string[] = [], cb: string[] = [];
     this.hist.forEach((h) => { if (h.cap) { (colorOf(h.cap) === 'r' ? cb : cr).push(PIECE_NAME[typeOf(h.cap)!][colorOf(h.cap) === 'r' ? 1 : 0]); } });
     mustEl('x-cap-r').textContent = cr.join(' ') || '—';

@@ -301,7 +301,7 @@ export function renderJunqi(canvas: HTMLCanvasElement, st: JunqiRenderState): vo
     const a = dnode(st.anim.from, st.flipView);
     const b = dnode(st.anim.to, st.flipView);
     const t = st.anim.t;
-    const ease = 1 - Math.pow(1 - t, 3);
+    const ease = 1 - (1 - t) ** 3;
     const x = a.x + (b.x - a.x) * ease;
     const y = a.y + (b.y - a.y) * ease - Math.sin(t * Math.PI) * 8; // 轻微跃起
     drawTile(ctx, { x, y }, st.anim.piece, false, faceDown(st.anim.piece, st.viewer), 1.08);

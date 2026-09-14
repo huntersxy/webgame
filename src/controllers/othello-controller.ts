@@ -18,8 +18,8 @@ import {
 import type { OthPosition } from '../othello/rules';
 import { LEVEL_CONFIG, ptOfIndex, indexOfPt, notationOf } from '../othello/search';
 import { quickEvalCells, counts } from '../othello/evaluate';
-import { AIBridge } from '../ai/ai-bridge';
-import { AudioEngine } from '../ui/audio';
+import type { AIBridge } from '../ai/ai-bridge';
+import type { AudioEngine } from '../ui/audio';
 import { Stats } from '../ui/stats';
 import { renderOth, pxToCellOth, othScorePercent, type OthRenderState } from '../ui/othello-renderer';
 import { appendLog, setStats, toggleProgress } from '../ui/format';

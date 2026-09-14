@@ -14,7 +14,7 @@ export const EGAROUCID_ASSET_VERSION = 'a1';
 
 /** 引擎资源 URL（engine-worker.js 内部用相对路径取 egar.js / egar.wasm）。 */
 export function egaroucidAssetUrl(file: string): string {
-  const base = (import.meta.env && import.meta.env.BASE_URL) || '/';
+  const base = (import.meta.env?.BASE_URL) || '/';
   return `${base}egaroucid/${file}?v=${EGAROUCID_ASSET_VERSION}`;
 }
 

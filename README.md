@@ -5,9 +5,11 @@
 免注册、无广告、可离线运行的轻量网页游戏平台。棋类 AI 与休闲小游戏全部在浏览器本地计算，不需要服务器参与。
 
 [![Build & Deploy](https://github.com/huntersxy/webgame/actions/workflows/deploy.yml/badge.svg)](https://github.com/huntersxy/webgame/actions/workflows/deploy.yml)
-![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6?logo=typescript&logoColor=white)
-![Vite](https://img.shields.io/badge/Vite-6-646CFF?logo=vite&logoColor=white)
-![Node](https://img.shields.io/badge/Node-22-339933?logo=nodedotjs&logoColor=white)
+![TypeScript](https://img.shields.io/badge/TypeScript-7-strict-3178C6?logo=typescript&logoColor=white)
+![Vite](https://img.shields.io/badge/Vite-8-646CFF?logo=vite&logoColor=white)
+![Biome](https://img.shields.io/badge/Biome-2-60A5FA?logo=biome&logoColor=white)
+![Node](https://img.shields.io/badge/Node-%E2%89%A522.12-339933?logo=nodedotjs&logoColor=white)
+![PWA](https://img.shields.io/badge/PWA-%E5%8F%AF%E5%AE%89%E8%A3%85-5A0FC8?logo=pwa&logoColor=white)
 ![License](https://img.shields.io/badge/License-MIT-2ea44f)
 
 **五子棋** · **围棋** · **中国象棋** · **军棋（陆战棋）** · **龙卷风成长记** · **战役**
@@ -29,13 +31,17 @@
 ## 特性
 
 - **完全本地** — 规则、AI、渲染均在浏览器内完成，不联网也能开局
+- **可安装 PWA** — Service Worker 预缓存应用外壳，引擎权重按首次使用落盘，断网也能开局；支持「添加到主屏幕」，引擎权重会申请持久化存储，不会被浏览器在磁盘紧张时回收
 - **Web Worker 隔离搜索** — 深度计算在独立线程，界面不卡顿
 - **Canvas 2D 渲染** — 木纹棋盘、落子动画、思考过程可视化（深度 / 节点 / 评估 / 主变 / 访问量）
 - **程序化音效** — Web Audio 实时合成，除恶魔主题 BGM 外无音频文件依赖
 - **触控与鼠标统一** — Pointer 事件一套代码，手机可直接开局
 - **模型随站点分发** — 推理权重均为静态资源，无外部服务调用
+- **预压缩分发** — 构建同时产出 brotli 与 gzip 副本，nginx 直接静态下发；WASM 也在压缩范围内（首启少下约 3.2MB）
 
 ## 快速开始
+
+需要 Node **22.12+**（Vite 8 的下限）。
 
 ```bash
 git clone https://github.com/huntersxy/webgame.git
@@ -45,12 +51,16 @@ npm install
 npm run dev        # 开发服务器 http://localhost:5173
 npm run build      # 类型检查 + 生产构建 → dist/
 npm run preview    # 预览生产构建
+npm run lint       # Biome 静态检查
+npm run check      # Biome 检查 + 格式检查
+npm run format     # Biome 自动格式化
+npm run icons      # 重新生成 PWA 图标（改品牌色后用）
 npm test           # 10 套引擎自测，共 398 项
 npm test -- othello    # 只跑其中一套（套件名见 scripts/run-tests.mjs）
 npm run test:othello:smoke    # 浏览器接口冒烟（需先跑起 dev server）
 ```
 
-测试分布：五子棋 29 · 军棋 66 · Rapfi 18 · 象棋 FEN 16 · 象棋 α-β 8 · 象棋神经网络 32 · XQWLight 22 · 龙卷风 76 · 黑白棋 27 · 黑白棋控制器 9 · 围棋 95。
+测试分布：五子棋 29 · 军棋 66 · Rapfi 18 · 象棋 FEN 16 · 象棋 α-β 8 · 象棋神经网络 32 · XQWLight 22 · 龙卷风 76 · 黑白棋 27 · 黑白棋控制器 15 · 围棋 95。
 
 ## AI 引擎
 
@@ -58,6 +68,9 @@ npm run test:othello:smoke    # 浏览器接口冒烟（需先跑起 dev server�
 
 - **网络**：KataGo 官方最小的正式网络 `g170-b6c96`（3.8MB，6 个残差块 × 96 通道，约 103 万参数），由 TensorFlow.js 在浏览器内前向推理
 - **推理后端**：WebGPU → WebGL → WASM → CPU 依次降级；后端能力不足时自动下调访问量，并在界面上标注实际使用的引擎
+- **后端调优**：这个网络的开销几乎全在卷积上，因此按后端打开针对性开关（WebGPU 的 `WEBGPU_CONV_SEPARATE_IM2COL_SHADER`、WebGL 的 `WEBGL_USE_SHAPES_UNIFORMS`，集中在 `src/ai/backend-tuning.ts`，必须在 `setBackend` 之前写入才生效）
+- **批处理按后端自适应**：GPU 上一次前向的固定开销（提交命令 + 读回）远大于算力本身，批开大一倍能摊薄它、同样的时间预算多跑几次访问；WASM / CPU 没有这段开销可摊，保持小批以免抬高落子延迟
+- **换尺寸预热**：WebGL / WebGPU 的卷积着色器按张量形状编译，故 9 / 13 / 19 路各预热一次，玩家中途换棋盘不会卡第一手
 - **权重加载**：`.bin.gz` 用浏览器原生 `DecompressionStream` 解压，权重为 fp32；约 3.8MB，仅在进入围棋页时获取
 - **输入编码**：KataGo v7 输入（22 个空间平面 + 19 个全局通道），棋盘按实际路数推理；征子与区域归属分别由有预算的征子搜索和 KataGo `calculateArea` 口径计算
 - **搜索**：PUCT，策略先验 + 胜率/目差价值，批量叶子评估、虚拟损失、FPU、根节点策略温度与噪声；四档难度由访问量与时间预算决定
@@ -128,9 +141,21 @@ server {
     gzip_min_length 1024;
     gzip_types application/wasm application/javascript text/css application/json image/svg+xml;
 
+    # 构建已产出 .br / .gz 副本，直接静态下发，省掉每次请求的运行时压缩。
+    # brotli_static 需要 ngx_brotli 模块；没有就删掉这行，gzip_static 仍可用。
+    gzip_static on;
+    brotli_static on;
+
+    # Service Worker 必须每次校验：长缓存会让访客一直卡在旧版本
+    location = /sw.js {
+        add_header Cache-Control "no-cache" always;
+        add_header Cross-Origin-Opener-Policy "same-origin" always;
+        add_header Cross-Origin-Embedder-Policy "require-corp" always;
+    }
+
     # 引擎资源与围棋权重：URL 带 ?v=<版本号>，可长期缓存
     # 注意：location 内出现 add_header 后，server 级的 add_header 不再继承，需重复声明
-    location ~* ^/(rapfi|go|xqnn|xqwlight)/ {
+    location ~* ^/(rapfi|go|xqnn|xqwlight|egaroucid)/ {
         add_header Cache-Control "public, max-age=31536000, immutable" always;
         add_header Cross-Origin-Opener-Policy "same-origin" always;
         add_header Cross-Origin-Embedder-Policy "require-corp" always;
@@ -156,19 +181,55 @@ server {
 
 COEP `require-corp` 要求页面的跨域子资源自带 CORP/CORS 响应头；本项目资源全部自包含，无此问题。若后续引入 CDN 资源，需补 `crossorigin` 属性。
 
+### 离线缓存与版本号
+
+Service Worker 的行为全部由 `vite.config.ts` 里的 `VitePWA` 配置决定，注册逻辑在 `src/pwa.ts`：
+
+- **预缓存** — 应用外壳（HTML / JS / CSS / 图标 / manifest / 恶魔头像），**20 条约 2.2MB**，安装时一次拉完
+- **运行时缓存** — `/rapfi/`、`/go/`、`/xqnn/`、`/xqwlight/`、`/egaroucid/` 与 `.m4a` 走 CacheFirst，首次用到才落盘。因此**换了 `public/` 下的引擎文件后必须递增对应版本常量**（见上一段），否则访客的 SW 会继续命中旧文件的缓存
+- **更新策略** — `registerType: 'prompt'`：新版本就绪时右下角提示，由玩家决定何时刷新，不会在棋局中途把页面刷掉（`src/pwa.ts` 发 `SKIP_WAITING` 消息触发接管，接管后才刷新）
+- **存储持久化** — `navigator.storage.persist()`，避免几十 MB 的引擎缓存被浏览器在磁盘紧张时回收
+
+**注册 URL 带构建版本**：`/sw.js?v=<构建标识>`，标识取 git 短 SHA（本地有未提交改动时加 `-dirty` 后缀），由 `vite.config.ts` 的 `resolveBuildId()` 计算后经 `define` 注入。
+
+为什么光靠 `Cache-Control: no-cache` 不够：现代浏览器做 SW 更新检查时确实会绕过 HTTP 缓存，但如果站点前面挂了 CDN / 反代而它无视 `Cache-Control` 缓存了 `sw.js`，访客会一直拿到旧脚本。把版本写进 URL 是唯一不依赖中间层配合的办法——版本一变缓存键就变。另外还设了 `updateViaCache: 'none'`，连脚本本身都不走 HTTP 缓存。
+
+> 因为要带版本参数，这里没有用 `vite-plugin-pwa` 的 `virtual:pwa-register`（它把地址硬编码成 `/sw.js`），而是自己接 SW 生命周期。
+
+开发环境不注册 SW（`devOptions.enabled: false`），`npm run dev` 的行为与接入前一致。
+
+### 预压缩
+
+`vite-plugin-compression2` 在构建期产出 `.br` 与 `.gz` 副本，nginx 侧用 `brotli_static` / `gzip_static` 直接下发，省掉每次请求的运行时压缩。
+
+压缩分两档，因为 WASM 的性价比拐点明显更低：
+
+| 类别 | 算法 | 实测 |
+| --- | --- | --- |
+| 代码与小文本（HTML / JS / CSS / SVG） | brotli **q=11** + gzip 9 | 510KB 的 JS 块 → br 58KB |
+| WASM（六个文件，共 4.8MB） | brotli **q=9** + gzip 9 | 4.8MB → 1.6MB，**首启省 3.2MB** |
+
+WASM 用 q=9 而非 q=11：q=11 只多省 3~7 个百分点，但要多花十几秒（`egar.wasm` q=11 需 4.1s、q=9 仅 0.27s）。
+
+**刻意不压**的是「本就已压缩」和「压了几乎不省」的：`.data`（Rapfi NNUE 权重 9.7MB，只省 4%）、`.onnx`（象棋权重 8.5MB，只省 7%）、图片 / 音频 / woff2 / sourcemap。
+
+> 注意：`vite-plugin-compression2` 的默认 `include` 只覆盖 `html|xml|css|json|js|mjs|svg|yaml|yml|toml`——**WASM 必须显式加进 `include` 才会被处理**。
+
 ## 项目结构
 
 ```
 webgame/
 ├── index.html                 平台外壳：首页与各游戏页面
 ├── styles.css                 浅色 UI 样式
-├── vite.config.ts / tsconfig.json / package.json
-├── .github/workflows/deploy.yml   构建 + FTP 自动部署
+├── vite.config.ts / tsconfig.json / package.json / biome.json / .node-version
+├── .github/workflows/deploy.yml   lint + 测试 + 构建 + FTP 自动部署
 ├── scripts/
 │   ├── run-tests.mjs          引擎自测入口：esbuild 打包 + 逐个套件运行
 │   ├── othello-smoke.mjs      黑白棋浏览器冒烟（headless Edge + CDP）
-│   └── copy-tfjs-wasm.mjs     复制 TF.js WASM 后端到 public/go/tfjs/（predev / prebuild 自动执行）
+│   ├── copy-tfjs-wasm.mjs     复制 TF.js WASM 后端到 public/go/tfjs/（predev / prebuild 自动执行）
+│   └── generate-pwa-icons.py  由品牌色 + 🐟 生成 PWA 图标（改品牌后 npm run icons）
 ├── public/                    随站点分发的引擎与权重
+│   ├── pwa-192.png 等         PWA 图标（由 generate-pwa-icons.py 生成）
 │   ├── rapfi/                 Rapfi WASM（多线程 / 单线程构建 + NNUE 权重 + worker 胶水）
 │   ├── go/                    围棋：KataGo 最小网络权重、TF.js WASM 后端、NOTICE.md
 │   ├── xqnn/                  象棋神经网络权重 chess_model.onnx
@@ -178,8 +239,11 @@ webgame/
 │   └── fixtures/              与上游实现对齐用的黄金输出
 └── src/
     ├── main.ts                Hash 路由 + 共享服务 + 控制器装配
+    ├── pwa.ts                 Service Worker 注册 + 引擎权重存储持久化
     ├── types.ts               全局类型定义
     ├── assets/                恶魔主题头像与 BGM
+    ├── ai/                    worker.ts · ai-bridge.ts（主线程与 Worker 的 Promise 桥）
+    │                          backend-tuning.ts（TF.js 后端调优与批大小策略）
     ├── core/                  zobrist.ts · transposition.ts · time.ts · errors.ts
     │                          worker-engine.ts（外部引擎 worker 客户端的公共骨架）
     ├── gomoku/                五子棋：规则 · 搜索 · 评估 · 开局库 · Rapfi 客户端
@@ -192,7 +256,6 @@ webgame/
     ├── junqi/                 军棋：rules（棋盘 / 铁路 / 战斗 / 摆阵 / 暗子）· ai · render
     ├── tornado/               龙卷风成长记引擎
     ├── campaign/              战役模式守关 AI
-    ├── ai/                    worker.ts · ai-bridge.ts（主线程与 Worker 的 Promise 桥）
     ├── controllers/           各游戏控制器（棋盘状态、AI 调度、面板与日志）
     └── ui/                    渲染器（五子棋 / 象棋 / 围棋）· 音频 · 主题 · 格式化 · dom（元素取用）
 ```

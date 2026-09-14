@@ -169,7 +169,7 @@ export class GoRenderer {
 
     this.cssSize = css;
     this.dpr = dpr;
-    this.canvas.style.width = css + 'px';
+    this.canvas.style.width = `${css}px`;
     const px = Math.max(1, Math.round(css * dpr));
     if (this.canvas.width !== px || this.canvas.height !== px) {
       this.canvas.width = px;  // 改属性会清空画布与上下文状态，draw() 里每次都重设变换

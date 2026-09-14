@@ -91,7 +91,7 @@ class Reader {
       case WIRE_FIXED64: this.pos += 8; break;
       case WIRE_LEN: this.lenBytes(); break;
       case WIRE_FIXED32: this.pos += 4; break;
-      default: throw new Error('onnx: 未知 wire type ' + wire);
+      default: throw new Error(`onnx: 未知 wire type ${wire}`);
     }
   }
 
@@ -115,9 +115,9 @@ function float16ToNumber(h: number): number {
   const sign = (h & 0x8000) ? -1 : 1;
   const exp = (h >> 10) & 0x1f;
   const frac = h & 0x3ff;
-  if (exp === 0) return sign * Math.pow(2, -14) * (frac / 1024);
+  if (exp === 0) return sign * 2 ** -14 * (frac / 1024);
   if (exp === 31) return frac ? NaN : sign * Infinity;
-  return sign * Math.pow(2, exp - 15) * (1 + frac / 1024);
+  return sign * 2 ** (exp - 15) * (1 + frac / 1024);
 }
 
 function parseTensor(r: Reader): OnnxTensor {

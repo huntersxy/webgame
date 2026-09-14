@@ -48,7 +48,7 @@ export class EgaroucidEngine extends WorkerEngine<Reply, EgarMsg> {
     const base = import.meta.env.BASE_URL || '/';
     // 必须是 **module** worker：egar.js 内部用 import.meta.url 找同目录的
     // egar.wasm（见 engine-worker.js 顶部说明）。
-    return new URL(base + 'egaroucid/engine-worker.js?v=' + EGAROUCID_ASSET_VERSION, self.location.href).href;
+    return new URL(`${base}egaroucid/engine-worker.js?v=${EGAROUCID_ASSET_VERSION}`, self.location.href).href;
   }
 
   protected initMessage(): { message: unknown } {

@@ -26,7 +26,7 @@ export function check(name: string, cond: boolean, extra = ''): void {
     return;
   }
   fail++;
-  console.log(`FAIL  ${name}${extra ? '  ' + extra : ''}`);
+  console.log(`FAIL  ${name}${extra ? `  ${extra}` : ''}`);
 }
 
 /** 与 check 同义，参数顺序相反（断言式写法）。 */

@@ -7,8 +7,8 @@
  *  INFO settings, START 15, INFO TIME_LEFT, YXBOARD + YXNBEST, bare "x,y".
  * ──────────────────────────────────────────────────────────── */
 'use strict';
-const fs = require('fs');
-const path = require('path');
+const fs = require('node:fs');
+const path = require('node:path');
 
 const RAPFI_DIR = path.join(__dirname, '..', 'public', 'rapfi');
 
@@ -24,9 +24,9 @@ globalThis.self = globalThis;
 globalThis.window = globalThis;
 globalThis.document = { currentScript: null };
 globalThis.location = { href: 'http://localhost/rapfi/t.html', pathname: '/rapfi/t.html' };
-globalThis.XMLHttpRequest = function () {
+globalThis.XMLHttpRequest = () => {
   const st = { readyState: 0, status: 0, response: null, responseText: '', responseType: '' };
-  st.open = (m, url) => { st._url = String(url); };
+  st.open = (_m, url) => { st._url = String(url); };
   st.setRequestHeader = () => {};
   st.overrideMimeType = () => {};
   st.getAllResponseHeaders = () => '';
@@ -64,7 +64,7 @@ class Parser {
     const parts = m[1].split(/\s+/);
     const head = parts[0], tail = parts.slice(1).join(' ');
     if (head === 'PV' && tail === 'DONE') {
-      if (this.cur && this.cur.line.length) this.blocks.push(this.cur);
+      if (this.cur?.line.length) this.blocks.push(this.cur);
       this.cur = null;
     } else if (head === 'PV') {
       this.cur = { pv: parseInt(tail, 10) || 0, eval: this.cur ? this.cur.eval : 0, depth: 0, nodes: 0, line: [] };
@@ -108,8 +108,8 @@ function setupCmds(engine, turnMs, strength) {
   engine.sendCommand('INFO RULE 0');
   engine.sendCommand('INFO THREAD_NUM 1');
   engine.sendCommand('INFO CAUTION_FACTOR 1');
-  engine.sendCommand('INFO STRENGTH ' + strength);
-  engine.sendCommand('INFO TIMEOUT_TURN ' + turnMs);
+  engine.sendCommand(`INFO STRENGTH ${strength}`);
+  engine.sendCommand(`INFO TIMEOUT_TURN ${turnMs}`);
   engine.sendCommand('INFO TIMEOUT_MATCH 100000000');
   engine.sendCommand('INFO MAX_DEPTH 99');
   engine.sendCommand('INFO MAX_NODE 0');
@@ -149,7 +149,7 @@ async function run() {
   while (!eng.getMove() && Date.now() - t0 < 8000) await sleep(10);
   const mv2 = eng.getMove();
   check('midgame returns a move within budget', !!mv2 && Date.now() - t0 < 700 + 2500, JSON.stringify(mv2));
-  check('move is on an empty cell', !!mv2 && ![8, 8, 7, 7, 6, 8, 7, 9, 8, 7, 9, 9].some((v, i, a) => i % 2 === 0 && a[i] === mv2.x && a[i + 1] === mv2.y));
+  check('move is on an empty cell', !!mv2 && ![8, 8, 7, 7, 6, 8, 7, 9, 8, 7, 9, 9].some((_v, i, a) => i % 2 === 0 && a[i] === mv2.x && a[i + 1] === mv2.y));
 
   // 2b) quiet position must produce a NON-ZERO evaluation — guards against a
   //     broken data package (engine silently running a zero evaluator).
@@ -163,7 +163,7 @@ async function run() {
     cmd('YXNBEST 1');
     while (!eng.getMove() && Date.now() - t0 < 500 + 2500) await sleep(10);
     const last = pEval.blocks[pEval.blocks.length - 1];
-    check('mix9svq evaluator active (non-zero eval)', !!last && last.eval !== 0, JSON.stringify(last && last.eval));
+    check('mix9svq evaluator active (non-zero eval)', !!last && last.eval !== 0, JSON.stringify(last?.eval));
   }
 
   // 3) STRENGTH low → finishes fast (capped search)
@@ -193,7 +193,7 @@ async function run() {
   const lastBlock = p3.blocks[p3.blocks.length - 1];
   check('session persists across searches', !!mv4, JSON.stringify(mv4));
   check('depth/nodes parsed from INFO', !!lastBlock && lastBlock.depth > 0 && lastBlock.nodes > 0, JSON.stringify(lastBlock));
-  check('mate evals map to UI scale', !lastBlock || lastBlock.eval <= MATE_SCALE, JSON.stringify(lastBlock && lastBlock.eval));
+  check('mate evals map to UI scale', !lastBlock || lastBlock.eval <= MATE_SCALE, JSON.stringify(lastBlock?.eval));
 
   // 4b) 战术正确性：对手（OPPO=2）横向活四，引擎（SELF=1）应手必须堵。
   //     回归根因：引擎的 getPosition 按【落子顺序】重摆棋盘且禁止连续 PASS，
@@ -247,7 +247,7 @@ async function run() {
   // 这里用模拟 Chrome 行为的解码器验证：不打补丁会抛，加载 engine-worker.js 后必须被挡掉。
   // （本块会改写传入的 TextDecoder 原型，故放在所有真实引擎用例之后）
   {
-    const vm = require('vm');
+    const vm = require('node:vm');
     class ChromeLikeDecoder {
       decode(input) {
         const buf = input && typeof input === 'object' && input.buffer ? input.buffer : input;
@@ -287,7 +287,7 @@ async function run() {
   // 表现为多线程构建能就绪、却搜不出任何着法且 stderr 为空（"produced no move"）。
   // engine-worker.js 现在把 name === 'em-pthread' 的那次构造改指向真正的 glue。
   {
-    const vm = require('vm');
+    const vm = require('node:vm');
     const created = [];
     class FakeWorker {
       constructor(url, opts) { created.push({ url: String(url), opts }); }

@@ -898,3 +898,32 @@ footer::before {
   cursor: pointer;
 }
 #othello-canvas:active { cursor: grabbing; }
+
+/* ════════════════════════════════════════════════════════════
+   PWA 提示条 — 新版本就绪（可点击刷新）/ 已可离线游玩
+   新版本提示刻意不自动刷新：整页刷新会毁掉正在进行的一盘棋
+   ════════════════════════════════════════════════════════════ */
+.sw-toast {
+  position: fixed; right: 20px; bottom: 20px; z-index: 200;
+  max-width: min(320px, calc(100vw - 40px));
+  padding: 12px 20px;
+  font-family: inherit; font-size: 14px; font-weight: 700; line-height: 1.4;
+  color: #fff; background: var(--accent);
+  border: 2px solid var(--doodle);
+  border-radius: var(--wobble-sm);
+  box-shadow: 3px 4px 0 rgba(52, 58, 64, .85);
+  cursor: pointer;
+  transition: transform .18s ease, box-shadow .18s ease;
+  animation: sw-toast-in .28s ease;
+}
+.sw-toast:hover { transform: translate(-1px, -2px); box-shadow: 5px 6px 0 rgba(52, 58, 64, .85); }
+.sw-toast:active { transform: translate(1.5px, 2px); box-shadow: 0 0 0 rgba(52, 58, 64, .85); }
+.sw-toast-info {
+  color: var(--ink); background: var(--surface);
+  font-weight: 600; cursor: default;
+  box-shadow: var(--shadow);
+}
+.sw-toast-info:hover { transform: none; box-shadow: var(--shadow); }
+@keyframes sw-toast-in { from { opacity: 0; transform: translateY(12px); } }
+@media (prefers-reduced-motion: reduce) { .sw-toast { animation: none; } }
+

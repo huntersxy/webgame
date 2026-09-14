@@ -88,6 +88,8 @@ export class AIBridge {
   private warmUp(
     game: 'gomoku' | 'xq' | 'go' | 'oth',
     req: WorkerRequest,
+    // 联合里必须写 `void` 而不是 `undefined`：prefetchEgaroucid 这类只刷缓存、
+    // 不返回字节的实现是 `Promise<void>`，只有 `Promise<ArrayBuffer | void>` 才接受它。
     prefetch: ((cb: (loaded: number, total: number) => void) => Promise<ArrayBuffer | void>) | null,
     onProgress?: (loaded: number, total: number, src: LoadPhase) => void,
   ): Promise<WarmUpResult> {

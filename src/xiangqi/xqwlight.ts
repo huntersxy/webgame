@@ -47,7 +47,7 @@ export class XqWLightEngine extends WorkerEngine<BestMoveReply, XqEngineMsg> {
 
   protected workerUrl(): string {
     const base = import.meta.env.BASE_URL || '/';
-    return new URL(base + 'xqwlight/engine-worker.js?v=' + XQWLIGHT_ASSET_VERSION, self.location.href).href;
+    return new URL(`${base}xqwlight/engine-worker.js?v=${XQWLIGHT_ASSET_VERSION}`, self.location.href).href;
   }
 
   protected initMessage(): { message: unknown } {

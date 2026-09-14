@@ -15,8 +15,8 @@
 
 import type { GameMode, GoCandidate, GoLevel, GoMove, GoPositionPayload, GoColor, SearchResult } from '../types';
 import { GoBoard, opponent, scorePosition, type GoRuleset } from '../go/rules';
-import { AIBridge } from '../ai/ai-bridge';
-import { AudioEngine } from '../ui/audio';
+import type { AIBridge } from '../ai/ai-bridge';
+import type { AudioEngine } from '../ui/audio';
 import { GoRenderer, type GoRenderState } from '../ui/go-renderer';
 import { appendLog, setStats, toggleProgress } from '../ui/format';
 import { applyDemonTheme } from '../ui/demon';
@@ -370,7 +370,7 @@ export class GoController {
     this.setGlobalStatus('🔎 正在计算最佳点…');
 
     const seq = ++this._searchSeq;
-    let res;
+    let res: SearchResult<GoMove>;
     try {
       res = await this.ai.searchGo(this.payload(), 4, { forceHeuristic: this.forceHeuristic });
     } finally {
@@ -580,7 +580,7 @@ export class GoController {
     btn.disabled = true;
     btn.textContent = '📊 计算中…';
     this.setGlobalStatus('📊 形势判断中…');
-    let res;
+    let res: SearchResult<GoMove>;
     try {
       res = await this.ai.estimateGo(this.payload());
     } finally {

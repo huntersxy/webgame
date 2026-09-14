@@ -94,7 +94,7 @@ export function buildYxBoardCmd(
   if (prev === player) return null; // 最后一手是 player 下的 → 还没轮到它
   let block = 'YXBOARD';
   for (const m of moves) block += ` ${m.x},${m.y},${m.c === player ? 1 : 2}`;
-  return block + ' DONE';
+  return `${block} DONE`;
 }
 
 interface PvBlock {
@@ -160,7 +160,7 @@ class OutputParser {
   }
 
   private flush(): void {
-    if (this.cur && this.cur.line.length) this.blocks.push(this.cur);
+    if (this.cur?.line.length) this.blocks.push(this.cur);
     this.cur = null;
   }
 }
@@ -196,7 +196,7 @@ export class RapfiEngine extends WorkerEngine<void, RapfiMsg> {
     // （它的 importScripts 相对自己所在的 /rapfi/ 解析）。?v= 顶掉引擎更新后
     // 浏览器对旧文件的启发式缓存。
     const base = import.meta.env.BASE_URL || '/';
-    return new URL(base + 'rapfi/engine-worker.js?v=' + ASSET_VERSION, self.location.href).href;
+    return new URL(`${base}rapfi/engine-worker.js?v=${ASSET_VERSION}`, self.location.href).href;
   }
 
   protected initMessage(extra?: unknown): { message: unknown; transfer?: Transferable[] } {
@@ -238,7 +238,7 @@ export class RapfiEngine extends WorkerEngine<void, RapfiMsg> {
   protected onDead(_why: string): void {
     if (this.variant) this.failedVariants.add(this.variant);
     if (this.stderrTail.length) {
-      console.warn('[rapfi] 引擎 stderr 末尾：\n' + this.stderrTail.join('\n'));
+      console.warn(`[rapfi] 引擎 stderr 末尾：\n${this.stderrTail.join('\n')}`);
     }
   }
 
@@ -363,10 +363,10 @@ export class RapfiEngine extends WorkerEngine<void, RapfiMsg> {
 
     try {
       this.cmd('INFO RULE 0'); // freestyle gomoku
-      this.cmd('INFO THREAD_NUM ' + this.threads);
+      this.cmd(`INFO THREAD_NUM ${this.threads}`);
       this.cmd('INFO CAUTION_FACTOR 1');
-      this.cmd('INFO STRENGTH ' + cfg.strength);
-      this.cmd('INFO TIMEOUT_TURN ' + turnMs);
+      this.cmd(`INFO STRENGTH ${cfg.strength}`);
+      this.cmd(`INFO TIMEOUT_TURN ${turnMs}`);
       this.cmd('INFO TIMEOUT_MATCH 100000000');
       this.cmd('INFO MAX_DEPTH 99');
       this.cmd('INFO MAX_NODE 0');
@@ -381,7 +381,7 @@ export class RapfiEngine extends WorkerEngine<void, RapfiMsg> {
       // 标志置位后后续命令全部被引擎丢弃——YXNBEST 5（恶魔档多候选）
       // 就这么被吞过，而且提前触发的思考用的是不带 multiPV 的配置。
       this.cmd(block);
-      this.cmd('YXNBEST ' + nbest);
+      this.cmd(`YXNBEST ${nbest}`);
 
       // 引擎自己按 TIMEOUT_TURN 收手，这里只留一块有限余量兜底。
       // 余量给太大（原先 turnMs*4+4000）的代价是：引擎一旦已经死掉，

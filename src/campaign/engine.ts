@@ -161,7 +161,7 @@ function minimax(board: GomokuBoard, depth: number, alpha: number, beta: number,
   if (depth === 0) return fortressEval(board);
 
   const me: GomokuPlayer = aiTurn ? 2 : 1;
-  let moves = campaignCandidates(board, 2, width, me);
+  const moves = campaignCandidates(board, 2, width, me);
   if (moves.length === 0) return fortressEval(board);
 
   if (tte?.move) {

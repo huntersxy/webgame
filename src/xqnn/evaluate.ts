@@ -14,6 +14,7 @@
  * ──────────────────────────────────────────────────────────── */
 
 import * as tf from '@tensorflow/tfjs-core';
+import { applyBackendTuning } from '../ai/backend-tuning';
 import { parseXqNet, XqNet, type XqNetOutput } from './model';
 import { encodeBoard, type XqMoveTable, moveTable } from './encoding';
 import { xqnnWasmPathPrefix } from './model-assets';
@@ -34,6 +35,8 @@ async function tryBackend(name: XqnnBackend): Promise<boolean> {
     } else {
       await import('@tensorflow/tfjs-backend-cpu');
     }
+    // 顺序关键：上面这次 import 才把 flag 注册进去，必须在 setBackend 之前写入
+    applyBackendTuning(name);
     await tf.setBackend(name);
     await tf.ready();
     return tf.getBackend() === name;

@@ -3,8 +3,9 @@
 import { readFileSync } from 'node:fs';
 import * as tf from '@tensorflow/tfjs-core';
 
-// 静态 import 会被 esbuild 当作无副作用摇掉，CPU 后端就注册不上
-const { } = await import('@tensorflow/tfjs-backend-cpu');
+// 静态 import 会被 esbuild 当作无副作用摇掉，CPU 后端就注册不上；
+// 顶层 await import 是表达式语句，esbuild 不会摇掉它。
+await import('@tensorflow/tfjs-backend-cpu');
 
 import { parseXqNet, XqNet } from '../src/xqnn/model';
 import { parseOnnx } from '../src/xqnn/onnx';
@@ -13,7 +14,7 @@ import { XqnnEvaluator } from '../src/xqnn/evaluate';
 import { XqSearcher, XQNN_LEVELS } from '../src/xqnn/search';
 import { createInitialBoard, legalMoves, makeMove, inCheck, findKing, ROWS, COLS } from '../src/xiangqi/rules';
 import { boardToFen } from '../src/xiangqi/fen';
-import type { XqBoard, XqMove, XqSide } from '../src/types';
+import type { XqBoard, XqSide } from '../src/types';
 import { check, finish } from './harness.mts';
 
 
@@ -122,7 +123,7 @@ const net = new XqNet(weights);
   // 炮二平五 (7,1)->(7,4) 是象棋最经典的开局之一，受过大师棋谱训练的网络应当给出高分
   const centerCannon = out.policy[actionIndex(7 * COLS + 1, 7 * COLS + 4)];
   const all = Array.from(out.policy).sort((a, b) => b - a);
-  const rank = all.findIndex((v) => v === centerCannon) + 1;
+  const rank = all.indexOf(centerCannon) + 1;
   check(`炮二平五在网络先验里排名靠前（第 ${rank} 名 / 2086）`, rank > 0 && rank <= 60, String(rank));
 }
 

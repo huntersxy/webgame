@@ -14,6 +14,7 @@ import { JunqiController } from './controllers/junqi-controller';
 import { GoController } from './controllers/go-controller';
 import { OthelloController } from './controllers/othello-controller';
 import { setupDemonAssets } from './ui/demon';
+import { setupPWA } from './pwa';
 import { mustEl } from './ui/dom';
 
 // ── Global status helper ──
@@ -121,3 +122,6 @@ if (routeFromHash() === 'home') setTimeout(prefetchGomokuEngine, 1200);
 // ── Stats + initial route ──
 Stats.refresh();
 applyView(routeFromHash());
+
+// ── PWA：离线缓存与引擎权重的持久化存储 ──
+setupPWA();

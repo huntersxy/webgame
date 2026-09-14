@@ -1177,7 +1177,7 @@ function hexRgb(h: string): [number, number, number] {
 
 function ease(t: number): number {
   const k = clamp(t, 0, 1);
-  return k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2;
+  return k < 0.5 ? 2 * k * k : 1 - (-2 * k + 2) ** 2 / 2;
 }
 function smoothstep(t: number): number {
   const k = clamp(t, 0, 1);

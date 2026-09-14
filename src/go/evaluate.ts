@@ -13,6 +13,7 @@
  * ──────────────────────────────────────────────────────────── */
 
 import * as tf from '@tensorflow/tfjs-core';
+import { applyBackendTuning, preferredBatchSize, shouldWarmAllBoardSizes } from '../ai/backend-tuning';
 import { parseGoModel } from './model';
 import { GoTfModel } from './tf-model';
 import { NUM_GLOBAL_PLANES, NUM_SPATIAL_PLANES, createFeatureScratch, fillFeatures, type FeatureMove, type FeatureScratch } from './features';
@@ -59,8 +60,7 @@ export interface GoNNResult {
   ownership: Float32Array;
 }
 
-/** 单批最大样本数：太大反而会因为显存/纹理尺寸限制变慢 */
-const MAX_BATCH = 8;
+/** 单批几个局面由后端能力决定，见 ai/backend-tuning.ts 的 preferredBatchSize() */
 
 /* ── gzip 解压 ── */
 export async function maybeGunzip(bytes: Uint8Array): Promise<Uint8Array> {
@@ -87,6 +87,8 @@ async function tryBackend(name: GoBackend): Promise<boolean> {
     } else {
       await import('@tensorflow/tfjs-backend-cpu');
     }
+    // 顺序关键：上面这次 import 才把 flag 注册进去，必须在 setBackend 之前写入
+    applyBackendTuning(name);
     await tf.setBackend(name);
     await tf.ready();
     return tf.getBackend() === name;
@@ -221,10 +223,23 @@ export class GoEvaluator {
     const parsed = parseGoModel(bytes);
     this.net = new GoTfModel(parsed);
     this.modelName = parsed.modelName;
-    // 预热：让小后端把着色器/内核先编好，第一手棋不至于卡住
-    const warm = new Uint8Array(81);
-    await this.evaluate([{ size: 9, stones: warm, koPoint: -1, toMove: 1, recentMoves: [], komi: 7 }]);
+    await this.warmUp();
     return { backend: this.backendName, modelName: parsed.modelName };
+  }
+
+  /**
+   * 预热：让后端把卷积 kernel / 着色器先编好，第一手棋不至于卡住。
+   *
+   * WebGL / WebGPU 的卷积着色器按输入张量形状编译，换棋盘路数会重新编译。
+   * 这两种后端上把 9 / 13 / 19 路各跑一次（合计几十毫秒），玩家中途从 9 路切到
+   * 19 路时就不会卡第一手。WASM / CPU 上大棋盘一次前向要几百毫秒，为省一次编译
+   * 付这个代价不划算，所以只预热 9 路。
+   */
+  private async warmUp(): Promise<void> {
+    const sizes = shouldWarmAllBoardSizes(this.backendName) ? [9, 13, 19] : [9];
+    for (const size of sizes) {
+      await this.evaluate([{ size, stones: new Uint8Array(size * size), koPoint: -1, toMove: 1, recentMoves: [], komi: 7 }]);
+    }
   }
 
   /** 载入权重（网络字节，自动按需解压） */
@@ -251,9 +266,10 @@ export class GoEvaluator {
     const size = positions[0].size;
     const area = size * size;
     const results: GoNNResult[] = [];
+    const maxBatch = preferredBatchSize(this.backendName);
 
-    for (let start = 0; start < positions.length; start += MAX_BATCH) {
-      const batch = positions.slice(start, start + MAX_BATCH);
+    for (let start = 0; start < positions.length; start += maxBatch) {
+      const batch = positions.slice(start, start + maxBatch);
       this.ensureBuffers(size, batch.length);
       const spatial = this.spatial!;
       const global = this.global!;

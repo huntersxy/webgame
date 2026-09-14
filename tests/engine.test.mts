@@ -1,5 +1,5 @@
 /* Test harness for the rewritten Gomoku engine (run via esbuild bundle). */
-import { GomokuEngine, MATE, ttClear } from '../src/gomoku/engine';
+import { GomokuEngine, ttClear } from '../src/gomoku/engine';
 import { findBestMove, LEVEL_CONFIG } from '../src/gomoku/search';
 import { nowMs } from '../src/core/time';
 import { check, finish } from './harness.mts';
@@ -258,7 +258,7 @@ console.log('== self-play (level3 B vs level2 W) ==');
     c = c === 1 ? 2 : 1;
     moves++;
   }
-  console.log(`  finished in ${moves} plies, ${((Date.now() - t0) / 1000).toFixed(1)}s wall, winner=${winner === 0 ? 'unfinished' : 'B' + winner}`);
+  console.log(`  finished in ${moves} plies, ${((Date.now() - t0) / 1000).toFixed(1)}s wall, winner=${winner === 0 ? 'unfinished' : `B${winner}`}`);
   check('self-play terminates cleanly (winner or 40-ply cap)', winner === 1 || winner === 2 || winner === 0);
   // 自对弈用的是 1/2 档，按档位预算给余量（不写死秒数）
   check('平均每手时间在档位预算量级', totalMs / moves < LEVEL_CONFIG[2].timeMs * 3, `${Math.round(totalMs / moves)}ms`);

@@ -78,7 +78,6 @@ let hardWin = 0, demonWin = 0, draw = 0;
 let idx = 0;
 for (const target of [12, 14, 16, 18]) {
   for (let g = 0; g < PER_POS; g++) {
-    seedLoop:
     for (let seed = idx * 977 + 1; seed < idx * 977 + 60; seed++) {
       const pos = sampleEndgame(target, seed);
       if (!pos) continue;
@@ -94,7 +93,7 @@ for (const target of [12, 14, 16, 18]) {
       else if (demonWon) demonWin++;
       else hardWin++;
       console.log(`  剩${CELLS - (discCount(pos, 1) + discCount(pos, 2))}空 第${idx}局：恶魔${demonIsBlack ? '执黑' : '执白'} → ${winner === 0 ? '和' : (demonWon ? '恶魔胜' : '困难胜')}（黑 ${r.black}:${r.white} 白）`);
-      break seedLoop;
+      break;
     }
   }
 }

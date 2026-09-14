@@ -21,13 +21,13 @@ export const GO_MODEL_BYTES = 3_827_339;
 
 /** TF.js WASM 后端所需文件所在目录（同源） */
 export function goWasmPathPrefix(): string {
-  const base = (import.meta.env && import.meta.env.BASE_URL) || '/';
+  const base = (import.meta.env?.BASE_URL) || '/';
   return `${base}go/tfjs/`;
 }
 
 /** 权重 URL（带版本号，可长缓存） */
 export function goModelUrl(): string {
-  const base = (import.meta.env && import.meta.env.BASE_URL) || '/';
+  const base = (import.meta.env?.BASE_URL) || '/';
   return `${base}go/${GO_MODEL_FILE}?v=${GO_ASSET_VERSION}`;
 }
 

@@ -11,6 +11,7 @@
 
 import { GoBoard, type GoColor } from './rules';
 import { errText } from '../core/errors';
+import { preferredBatchSize } from '../ai/backend-tuning';
 import { GoEvaluator, type GoPositionInput } from './evaluate';
 import { computeLadderFeatures } from './life';
 import { GoSearcher, defaultSearchOptions, type GoCandidateInfo, type GoSearchOptions } from './mcts';
@@ -228,11 +229,16 @@ export class GoEngine {
       const scale = backendScale(this.evaluator.backend);
       const visits = Math.max(4, Math.round((req.visitsOverride ?? config.visits) * scale));
       const timeMs = req.timeMsOverride ?? Math.round(config.timeMs / (scale < 1 ? 2.2 : 1));
+      // GPU 后端上，一次前向的固定开销（提交命令 + 读回结果）远大于算力本身，
+      // 批开大一倍能把它摊薄，同样的时间预算就多跑几次访问——直接换成棋力。
+      // WASM / CPU 没有这段开销可摊，保持难度档原本的小批，避免抬高落子延迟。
+      const gpu = this.evaluator.backend === 'webgpu' || this.evaluator.backend === 'webgl';
+      const batch = gpu ? Math.min(config.batch * 2, preferredBatchSize(this.evaluator.backend)) : config.batch;
       const options: GoSearchOptions = {
         ...defaultSearchOptions(),
         maxVisits: visits,
         maxTimeMs: timeMs,
-        batchSize: config.batch,
+        batchSize: batch,
         rootNoise: config.rootNoise,
         rootPolicyTemperature: config.policyTemp,
         moveTemperature: config.moveTemp,

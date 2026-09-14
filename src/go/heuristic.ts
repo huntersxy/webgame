@@ -11,7 +11,7 @@
  *  这不是棋力担当，只是「网络没就绪时也不会卡住」的保险。
  * ──────────────────────────────────────────────────────────── */
 
-import { GoBoard, opponent, type GoColor } from './rules';
+import { type GoBoard, opponent, type GoColor } from './rules';
 
 /** 随机数（可注入种子便于测试） */
 export interface Rng {

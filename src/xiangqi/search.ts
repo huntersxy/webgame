@@ -201,7 +201,7 @@ function alphaBeta(
   if (ttScore !== null) return ttScore;
   const tte = tt.get(key);
 
-  let moves = orderMoves(legalMoves(board, turn), demon);
+  const moves = orderMoves(legalMoves(board, turn), demon);
 
   // TT best move + killers to front
   if (tte?.move) {

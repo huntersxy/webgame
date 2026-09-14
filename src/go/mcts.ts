@@ -266,7 +266,7 @@ export class GoSearcher {
 
         // 沿路径回传：v = 「该父节点轮走方视角」的胜率
         let v = 1 - leafValue;
-        let s = leafScore;
+        const s = leafScore;
         let moveFromParent = leaf.move;
         for (let i = pick.path.length - 2; i >= 0; i--) {
           const parent = pick.path[i];
@@ -487,7 +487,7 @@ export class GoSearcher {
     const temp = this.options.moveTemperature;
     if (temp <= 0) return candidates[0].move;
 
-    const weights = candidates.map((c) => Math.pow(c.visits, 1 / Math.max(0.05, temp)));
+    const weights = candidates.map((c) => c.visits ** (1 / Math.max(0.05, temp)));
     const sum = weights.reduce((a, b) => a + b, 0);
     if (sum <= 0) return candidates[0].move;
     let r = Math.random() * sum;
@@ -503,7 +503,7 @@ export class GoSearcher {
     const pv: number[] = [];
     let node: GoNode | null = root;
     for (let i = 0; i < maxLen; i++) {
-      if (!node || !node.childVisits) break;
+      if (!node?.childVisits) break;
       let best = -1;
       let bestVisits = 0;
       for (let m = 0; m <= area; m++) {
@@ -527,7 +527,7 @@ function applyPolicyTemperature(probs: Float32Array, area: number, temperature: 
   const t = Math.max(0.05, temperature);
   let sum = 0;
   for (let i = 0; i <= area; i++) {
-    const v = Math.pow(Math.max(probs[i], 1e-12), 1 / t);
+    const v = Math.max(probs[i], 1e-12) ** (1 / t);
     out[i] = v;
     sum += v;
   }

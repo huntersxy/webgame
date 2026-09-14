@@ -161,8 +161,8 @@ export function fillFeatures(args: FeatureInput): void {
     const x = pos % size;
     const y = (pos / size) | 0;
     if (ladder.laddered[pos]) spatial[idx(x, y, 14)] = 1;
-    if (args.prevLaddered && args.prevLaddered[pos]) spatial[idx(x, y, 15)] = 1;
-    if (args.prevPrevLaddered && args.prevPrevLaddered[pos]) spatial[idx(x, y, 16)] = 1;
+    if (args.prevLaddered?.[pos]) spatial[idx(x, y, 15)] = 1;
+    if (args.prevPrevLaddered?.[pos]) spatial[idx(x, y, 16)] = 1;
     if (ladder.workingMoves[pos]) spatial[idx(x, y, 17)] = 1;
   }
 

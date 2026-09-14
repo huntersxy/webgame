@@ -75,7 +75,7 @@ async function evaluate(expression) {
 const checks = [];
 function check(name, ok, extra = '') {
   checks.push({ name, ok, extra });
-  console.log(`${ok ? '  ok ' : 'FAIL '} ${name}${extra && !ok ? '  ' + extra : ''}`);
+  console.log(`${ok ? '  ok ' : 'FAIL '} ${name}${extra && !ok ? `  ${extra}` : ''}`);
 }
 
 const main = async () => {
