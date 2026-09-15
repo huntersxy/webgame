@@ -4,6 +4,9 @@
  *  DOM 牌桌（不用 Canvas）：手牌扇面点选、叫分条、出牌/不出/提示，
  *  两个电脑座位。AI 走 DouZero（Web Worker + onnxruntime-web），
  *  模型就绪前用内置牌理启发式顶班；叫分固定走启发式强度表。
+ *
+ *  牌面不再是 CSS 画的文字牌，而是 public/ddz/cards.png 雪碧图：
+ *  每张牌按 8 列网格定位，切图规则见 scripts/gen-ddz-art.py。
  * ─────────────────────────────────────────────────────────────── */
 
 import type { AudioEngine } from '../ui/audio';
@@ -17,14 +20,68 @@ import { bidScore, heuristicMove } from '../ddz/heuristic';
 
 const SEAT_NAMES = ['你', '电脑·右家', '电脑·左家'];
 const RANK_LABEL: Record<number, string> = {
-  3: '3', 4: '4', 5: '5', 6: '6', 7: '7', 8: '8', 9: '9', 10: '10',
-  11: 'J', 12: 'Q', 13: 'K', 14: 'A', 17: '2', 20: '小王', 30: '大王',
+  3: '3',
+  4: '4',
+  5: '5',
+  6: '6',
+  7: '7',
+  8: '8',
+  9: '9',
+  10: '10',
+  11: 'J',
+  12: 'Q',
+  13: 'K',
+  14: 'A',
+  17: '2',
+  20: '小王',
+  30: '大王',
 };
-const SUIT_LABEL = ['♠', '♥', '♣', '♦'];
+/* ── 牌面雪碧图 ──
+ * cards.png 是 8 列网格，每格 128×192（2× 于显示尺寸）。
+ * 牌序与 gen-ddz-art.py 一致：黑桃 A..K、红心 A..K、梅花 A..K、方块 A..K、小王、大王。 */
+const SHEET_COLS = 8;
+const SHEET_TILE_W = 128;
+const SHEET_TILE_H = 192;
+const SHEET_W = SHEET_COLS * SHEET_TILE_W;
+const SHEET_ROWS = 7;
+const SHEET_H = SHEET_ROWS * SHEET_TILE_H;
+const SHEET_RANKS = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'] as const;
+/* 雪碧图按 2× 出图，缩到 0.484 正好对上 CSS 里的牌宽高 */
+const SHEET_SCALE = 0.484;
+
+/** 牌值（3..17）→ 雪碧图里的点数记号 */
+const RANK_TO_SHEET: Record<number, string> = {
+  3: '3',
+  4: '4',
+  5: '5',
+  6: '6',
+  7: '7',
+  8: '8',
+  9: '9',
+  10: '10',
+  11: 'J',
+  12: 'Q',
+  13: 'K',
+  14: 'A',
+  17: '2',
+};
+
 const TYPE_NAME: Record<number, string> = {
-  0: '不出', 1: '单', 2: '对', 3: '三张', 4: '炸弹', 5: '王炸',
-  6: '三带一', 7: '三带二', 8: '顺子', 9: '连对', 10: '飞机',
-  11: '飞机带单', 12: '飞机带对', 13: '四带二', 14: '四带两对',
+  0: '不出',
+  1: '单',
+  2: '对',
+  3: '三张',
+  4: '炸弹',
+  5: '王炸',
+  6: '三带一',
+  7: '三带二',
+  8: '顺子',
+  9: '连对',
+  10: '飞机',
+  11: '飞机带单',
+  12: '飞机带对',
+  13: '四带二',
+  14: '四带两对',
 };
 
 export class DoudizhuController {
@@ -39,6 +96,11 @@ export class DoudizhuController {
   private shownPlayed: (Move | 'pass' | null)[] = [null, null, null];
   private nnReady: boolean | null = null;
   private soundOn = true;
+  private bgmOn = false;
+  /** 发牌动画只在开新局时播一次 */
+  private dealAnim = false;
+  /** 上一次渲染时各座位的出牌，用来判断哪些牌是「刚打出的」 */
+  private lastPlayed: (Move | 'pass' | null)[] = [null, null, null];
 
   constructor(private readonly audio: AudioEngine) {
     // 手牌点选
@@ -70,6 +132,16 @@ export class DoudizhuController {
       btn.classList.toggle('on', this.soundOn);
     });
 
+    // 经典斗地主 BGM：默认关，玩家点了才播（浏览器也只在手势后才允许播放）
+    mustEl('ddz-bgm').addEventListener('click', () => {
+      this.bgmOn = !this.bgmOn;
+      if (this.bgmOn) this.audio.startDdzBgm();
+      else this.audio.stopDdzBgm();
+      const btn = mustEl('ddz-bgm');
+      btn.textContent = this.bgmOn ? '🎵 音乐开' : '🎵 音乐关';
+      btn.classList.toggle('on', this.bgmOn);
+    });
+
     for (const btn of document.querySelectorAll<HTMLButtonElement>('#ddz-engine button')) {
       btn.addEventListener('click', () => {
         this.enginePref = btn.dataset.v === 'heuristic' ? 'heuristic' : 'auto';
@@ -93,24 +165,26 @@ export class DoudizhuController {
   warmUp(): void {
     if (this.engine.ready() || this.busyLoading()) return;
     this.showEngineLoad(true);
-    this.engine.warmUp((loaded, total, label) => {
-      const pct = Math.min(100, Math.round((loaded / total) * 100));
-      this.setEngineLoad(pct, `${label}（${(loaded / 1048576).toFixed(1)} / ${(total / 1048576).toFixed(0)} MB）`);
-    }).then((ok) => {
-      this.showEngineLoad(false);
-      this.nnReady = ok;
-      this.syncEngineUI();
-      if (ok) {
-        this.setGlobalStatus('AI 就绪');
-        appendLog(mustEl('ddz-log'), '🧠 <b>DouZero 模型已就绪</b> · 三个角色网络全部加载完成');
-      } else {
-        this.setGlobalStatus('AI 就绪（内置牌理兜底）');
-        appendLog(
-          mustEl('ddz-log'),
-          `⚠️ <b>DouZero 模型加载失败</b>：${this.engine.error() ?? '未知原因'}<br>已回退到内置牌理 AI；刷新页面可重试。`,
-        );
-      }
-    });
+    this.engine
+      .warmUp((loaded, total, label) => {
+        const pct = Math.min(100, Math.round((loaded / total) * 100));
+        this.setEngineLoad(pct, `${label}（${(loaded / 1048576).toFixed(1)} / ${(total / 1048576).toFixed(0)} MB）`);
+      })
+      .then((ok) => {
+        this.showEngineLoad(false);
+        this.nnReady = ok;
+        this.syncEngineUI();
+        if (ok) {
+          this.setGlobalStatus('AI 就绪');
+          appendLog(mustEl('ddz-log'), '🧠 <b>DouZero 模型已就绪</b> · 三个角色网络全部加载完成');
+        } else {
+          this.setGlobalStatus('AI 就绪（内置牌理兜底）');
+          appendLog(
+            mustEl('ddz-log'),
+            `⚠️ <b>DouZero 模型加载失败</b>：${this.engine.error() ?? '未知原因'}<br>已回退到内置牌理 AI；刷新页面可重试。`,
+          );
+        }
+      });
   }
 
   private loadingFlag = false;
@@ -127,6 +201,8 @@ export class DoudizhuController {
     this.hintList = [];
     this.hintIdx = -1;
     this.shownPlayed = [null, null, null];
+    this.lastPlayed = [null, null, null];
+    this.dealAnim = true;
     this.game = new DdzGame();
     mustEl('ddz-result').classList.add('hidden');
     appendLog(mustEl('ddz-log'), '🃏 <b>新一局开始</b> · 发牌完毕，开始叫分');
@@ -152,10 +228,7 @@ export class DoudizhuController {
         let v = bidScore(this.game.hands[seat]);
         if (v <= this.game.highestBid) v = 0;
         const advanced = this.game.bid(seat, v);
-        appendLog(
-          mustEl('ddz-log'),
-          `<b>${SEAT_NAMES[seat]}</b> ${v === 0 ? '不叫' : `叫 <b>${v} 分</b>`}`,
-        );
+        appendLog(mustEl('ddz-log'), `<b>${SEAT_NAMES[seat]}</b> ${v === 0 ? '不叫' : `叫 <b>${v} 分</b>`}`);
         this.audio.move();
         if (advanced && this.game.playing) {
           this.onLandlordDecided();
@@ -226,10 +299,7 @@ export class DoudizhuController {
       } else {
         this.shownPlayed[seat] = [...move];
         const info = getMoveType(move);
-        appendLog(
-          mustEl('ddz-log'),
-          `<b>${SEAT_NAMES[seat]}</b> ${this.moveText(move, info)}`,
-        );
+        appendLog(mustEl('ddz-log'), `<b>${SEAT_NAMES[seat]}</b> ${this.moveText(move, info)}`);
       }
     }
     this.audio.move();
@@ -241,10 +311,7 @@ export class DoudizhuController {
 
   private onLandlordDecided(): void {
     const ll = this.game.landlordSeat;
-    appendLog(
-      mustEl('ddz-log'),
-      `👑 <b>${SEAT_NAMES[ll]} 当地主</b> · 底分 <b>${this.game.highestBid}</b> 分，拿走 3 张底牌`,
-    );
+    appendLog(mustEl('ddz-log'), `👑 <b>${SEAT_NAMES[ll]} 当地主</b> · 底分 <b>${this.game.highestBid}</b> 分，拿走 3 张底牌`);
   }
 
   /* ══════════ 人类操作 ══════════ */
@@ -253,10 +320,7 @@ export class DoudizhuController {
     if (this.game.phase !== 'bid' || this.game.bidTurn !== 0 || this.busy) return;
     if (value !== 0 && value <= this.game.highestBid) return;
     const advanced = this.game.bid(0, value);
-    appendLog(
-      mustEl('ddz-log'),
-      `<b>你</b> ${value === 0 ? '不叫' : `叫 <b>${value} 分</b>`}`,
-    );
+    appendLog(mustEl('ddz-log'), `<b>你</b> ${value === 0 ? '不叫' : `叫 <b>${value} 分</b>`}`);
     this.audio.move();
     mustEl('ddz-bidbar').classList.add('hidden');
     if (advanced && this.game.playing) this.onLandlordDecided();
@@ -319,19 +383,14 @@ export class DoudizhuController {
     }
     if (this.hintList.length === 0) {
       const first = heuristicMove(this.game.snapshot(), 0);
-      this.hintList = first.length > 0
-        ? [first, ...legal.filter((m) => !this.sameMove(m, first))]
-        : [...legal];
+      this.hintList = first.length > 0 ? [first, ...legal.filter((m) => !this.sameMove(m, first))] : [...legal];
       this.hintIdx = -1;
     }
     this.hintIdx = (this.hintIdx + 1) % this.hintList.length;
     const move = this.hintList[this.hintIdx];
     this.selectByMove(move);
     this.audio.hint();
-    appendLog(
-      mustEl('ddz-log'),
-      `💡 提示（${this.hintIdx + 1}/${this.hintList.length}）：${this.moveText(move, getMoveType(move))}`,
-    );
+    appendLog(mustEl('ddz-log'), `💡 提示（${this.hintIdx + 1}/${this.hintList.length}）：${this.moveText(move, getMoveType(move))}`);
     this.renderHand();
     this.syncActionButtons();
   }
@@ -372,61 +431,76 @@ export class DoudizhuController {
     if (this.game.phase === 'over') this.renderTurnPill('对局结束');
   }
 
+  /** 手牌：牌面来自雪碧图，大牌在左（与主流斗地主 App 一致） */
   private renderHand(): void {
     const wrap = mustEl('ddz-hand');
     const hand = this.game.hands[0];
-    // 大牌在左（与主流斗地主 App 一致）
+    const dealt = this.dealAnim;
+    this.dealAnim = false;
     const order = hand.map((_, i) => i).sort((a, b) => hand[b].code - hand[a].code || hand[b].suit - hand[a].suit);
     wrap.innerHTML = '';
-    for (const i of order) {
+    order.forEach((i, pos) => {
       const c = hand[i];
       const btn = document.createElement('button');
-      btn.className = `ddz-card ${this.cardColor(c)}${this.selected.has(i) ? ' selected' : ''}`;
-      btn.dataset.idx = String(i);
       btn.type = 'button';
-      btn.innerHTML = this.cardInner(c);
+      btn.dataset.idx = String(i);
+      btn.className = `ddz-card${this.selected.has(i) ? ' selected' : ''}`;
+      if (dealt) {
+        btn.classList.add('dealt');
+        btn.style.animationDelay = `${Math.min(pos * 22, 460)}ms`;
+      }
+      const img = document.createElement('img');
+      img.alt = RANK_LABEL[c.code] ?? '';
+      img.draggable = false;
+      this.applyCardBg(img, c);
+      btn.appendChild(img);
       wrap.appendChild(btn);
-    }
+    });
   }
 
-  private cardColor(c: DdzCard): string {
-    if (c.code === 30) return 'red';
-    if (c.code === 20) return 'black';
-    return c.suit === 1 || c.suit === 3 ? 'red' : 'black';
+  /** 把一张牌贴到 cards.png 的对应格子上 */
+  private applyCardBg(el: HTMLElement, c: DdzCard): void {
+    const row = this.sheetRow(c);
+    const rank = c.code === 20 ? 'small' : c.code === 30 ? 'big' : (RANK_TO_SHEET[c.code] ?? 'A');
+    const idx = row * SHEET_RANKS.length + (SHEET_RANKS as readonly string[]).indexOf(rank);
+    const col = idx % SHEET_COLS;
+    const line = Math.floor(idx / SHEET_COLS);
+    el.style.backgroundImage = 'url("/ddz/cards.png")';
+    el.style.backgroundRepeat = 'no-repeat';
+    el.style.backgroundSize = `${SHEET_W * SHEET_SCALE}px ${SHEET_H * SHEET_SCALE}px`;
+    el.style.backgroundPosition = `${-col * SHEET_TILE_W * SHEET_SCALE}px ${-line * SHEET_TILE_H * SHEET_SCALE}px`;
   }
 
-  private cardInner(c: DdzCard): string {
-    if (c.code === 20 || c.code === 30) {
-      return `<span class="dc-rank">${RANK_LABEL[c.code]}</span><span class="dc-suit">🃏</span>`;
-    }
-    const rank = RANK_LABEL[c.code] ?? '?';
-    const suit = SUIT_LABEL[c.suit] ?? '';
-    return `<span class="dc-rank">${rank}</span><span class="dc-suit">${suit}</span><span class="dc-corner">${suit}</span>`;
+  /** 牌在雪碧图里的行：0 黑桃 1 红心 2 梅花 3 方块 4 小王 5 大王 */
+  private sheetRow(c: DdzCard): number {
+    if (c.code === 20) return 4;
+    if (c.code === 30) return 5;
+    return c.suit;
   }
 
+  /** 底牌：地主确定前是牌背，之后翻成真牌 */
   private renderBottom(): void {
     const wrap = mustEl('ddz-bottom');
     wrap.innerHTML = '';
     const revealed = this.game.landlordSeat >= 0;
     for (const c of this.game.bottom) {
+      const el = document.createElement('div');
       if (revealed) {
-        const el = document.createElement('div');
-        el.className = `ddz-mini ${this.cardColor(c)}`;
-        el.innerHTML = this.cardInner(c);
-        wrap.appendChild(el);
+        el.className = 'ddz-mini';
+        this.applyCardBg(el, c);
       } else {
-        const el = document.createElement('div');
         el.className = 'ddz-back';
-        wrap.appendChild(el);
       }
+      wrap.appendChild(el);
     }
   }
 
   private renderPlayed(): void {
     for (const seat of [0, 1, 2] as const) {
       const wrap = mustEl(`ddz-played-${seat}`);
-      wrap.innerHTML = '';
       const shown = this.shownPlayed[seat];
+      const fresh = shown !== null && shown !== this.lastPlayed[seat];
+      wrap.innerHTML = '';
       if (shown === 'pass') {
         const mark = document.createElement('div');
         mark.className = 'ddz-pass-mark';
@@ -435,35 +509,46 @@ export class DoudizhuController {
       } else if (shown && shown.length > 0) {
         for (const code of shown) {
           const el = document.createElement('div');
-          el.className = `ddz-mini ${code === 30 ? 'red' : code === 20 ? 'black' : code % 13 === 1 || code % 13 === 2 ? 'red' : 'black'}`;
-          el.innerHTML = this.cardInner({ code, suit: this.suitFor(shown, code) });
+          el.className = `ddz-mini${fresh ? ' just-played' : ''}`;
+          this.applyCardBg(el, { code, suit: this.suitFor(code) });
           wrap.appendChild(el);
         }
       }
+      this.lastPlayed[seat] = shown;
     }
   }
 
-  /** 出牌区的展示花色：按手中同点牌回填，无则黑桃 */
-  private suitFor(_move: Move, code: number): number {
+  /** 出牌区的展示花色：按手里同点牌回填，没有就黑桃 */
+  private suitFor(code: number): number {
+    if (code === 20 || code === 30) return 0;
     for (const c of this.game.hands[0]) {
       if (c.code === code) return c.suit;
     }
-    if (code === 30 || code % 13 === 1 || code % 13 === 2) return 1; // ♥ 显示红色系
     return 0;
   }
 
   private renderSeats(): void {
     for (const seat of [0, 1, 2] as const) {
-      mustEl(`ddz-cnt-${seat}`).textContent = `${this.game.hands[seat].length} 张`;
+      mustEl(`ddz-cnt-${seat}`).innerHTML = `<i>${this.game.hands[seat].length}</i>`;
       const roleEl = mustEl(`ddz-role-${seat}`);
+      const isLl = this.game.landlordSeat >= 0 && seat === this.game.landlordSeat;
       if (this.game.landlordSeat >= 0) {
         roleEl.classList.remove('hidden');
-        const isLl = seat === this.game.landlordSeat;
-        roleEl.textContent = isLl ? '地主 👑' : '农民';
+        roleEl.textContent = isLl ? '地主' : '农民';
         roleEl.classList.toggle('farmer', !isLl);
       } else {
         roleEl.classList.add('hidden');
       }
+      // 地主帽 + 金头像框
+      const head = mustEl(`ddz-seat-${seat}`).querySelector<HTMLElement>('.ddz-seat-head');
+      head?.querySelector('.ddz-crown')?.classList.toggle('hidden', !isLl);
+      const ring = head?.querySelector<HTMLImageElement>('.ddz-avatar-ring');
+      if (ring && !ring.src.includes(isLl ? 'ring-gold' : 'ring-wood')) {
+        ring.src = isLl ? '/ddz/ui/ring-gold.png' : '/ddz/ui/ring-wood.png';
+      }
+      // 轮到谁，谁的名牌发光
+      const isTurn = (this.game.phase === 'bid' && this.game.bidTurn === seat) || (this.game.phase === 'play' && this.game.turn === seat);
+      head?.classList.toggle('thinking', isTurn);
     }
   }
 
@@ -475,7 +560,17 @@ export class DoudizhuController {
       side.textContent = this.game.landlordSeat === 0 ? '你是地主 👑' : '你是农民';
     }
     mustEl('ddz-base').textContent = this.game.highestBid > 0 ? `${this.game.highestBid} 分` : '—';
-    mustEl('ddz-mult').textContent = `×${2 ** this.game.bombNum}`;
+    const mult = 2 ** this.game.bombNum;
+    mustEl('ddz-mult').textContent = `×${mult}`;
+    const big = mustEl('ddz-mult-big');
+    if (big.textContent !== `×${mult}`) {
+      big.textContent = `×${mult}`;
+      // 倍数变了就弹一下，炸弹翻倍玩家不容易漏看
+      const box = mustEl('ddz-multiplier');
+      box.classList.remove('pop');
+      void box.offsetWidth;
+      box.classList.add('pop');
+    }
     if (this.game.phase === 'over' && this.game.result) {
       const d = this.game.result.deltas[0];
       const scoreEl = mustEl('ddz-score');
@@ -490,8 +585,7 @@ export class DoudizhuController {
     const r = this.game.result;
     if (!r) return;
     const banner = mustEl('ddz-result');
-    const humanWon = (r.landlordSeat === 0 && r.winnerSide === 'landlord') ||
-      (r.landlordSeat !== 0 && r.winnerSide === 'farmers');
+    const humanWon = (r.landlordSeat === 0 && r.winnerSide === 'landlord') || (r.landlordSeat !== 0 && r.winnerSide === 'farmers');
     const d = r.deltas[0];
     const extras: string[] = [];
     if (r.spring) extras.push('🌸 春天 ×2');
@@ -515,6 +609,9 @@ export class DoudizhuController {
     const bar = mustEl('ddz-bidbar');
     const show = this.game.phase === 'bid' && this.game.bidTurn === 0;
     bar.classList.toggle('hidden', !show);
+    // 叫分阶段倍数还没有意义，整列让位给叫分条
+    mustEl('ddz-center').classList.toggle('bidding', this.game.phase === 'bid');
+
     if (!show) return;
     this.renderTurnPill('该你叫分');
     for (const btn of document.querySelectorAll<HTMLButtonElement>('#ddz-bidbar [data-bid]')) {
@@ -557,11 +654,12 @@ export class DoudizhuController {
 
   private syncEngineUI(): void {
     const note = mustEl('ddz-engine-note');
-    note.textContent = this.nnReady === true
-      ? 'DouZero 模型已就绪：对手由神经网络驱动。'
-      : this.nnReady === false
-        ? '模型不可用：当前为内置牌理 AI（棋力较弱）；刷新页面可重试。'
-        : '模型加载中：先用内置牌理应战，加载完成后自动切换。';
+    note.textContent =
+      this.nnReady === true
+        ? 'DouZero 模型已就绪：对手由神经网络驱动。'
+        : this.nnReady === false
+          ? '模型不可用：当前为内置牌理 AI（棋力较弱）；刷新页面可重试。'
+          : '模型加载中：先用内置牌理应战，加载完成后自动切换。';
   }
 
   private setGlobalStatus(t: string): void {

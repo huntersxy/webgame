@@ -25,7 +25,7 @@
 | ♞ 中国象棋 | `#/xiangqi` | 完整规则（蹩马腿、塞象眼、飞将、困毙判负）；神经网络与经典引擎二选一，四档难度，棋盘可翻转 |
 | ⚫⚪ 黑白棋 | `#/othello` | 8×8 翻转棋（奥赛罗）；位置权重 + 行动力评估、迭代加深 α-β、终局精确求解，四档难度，支持停手自动处理 |
 | ⚔️ 军棋 · 陆战棋 | `#/junqi` | 明棋（自定义摆阵）/ 揭棋（暗棋）两种玩法，人机四档难度，AI 互搏观战 |
-| 🃏 斗地主 | `#/ddz` | 标准三人玩法（叫分定地主、完整牌型、炸弹/王炸/春天翻倍）；DouZero WP 神经网络在 Web Worker 内推理 |
+| 🃏 斗地主 | `#/ddz` | 标准三人玩法（叫分定地主、完整牌型、炸弹/王炸/春天翻倍）；DouZero WP 神经网络在 Web Worker 内推理；写实牌桌皮肤 + 经典配乐 |
 | 🌪️ 龙卷风成长记 | `#/tornado` | 大鱼吃小鱼式成长，六个量级从街道一路卷到全地球 |
 | 🏰 战役 | `#/campaign` | 五子棋风格化守关 AI，破防获胜解锁下一关 |
 
@@ -35,7 +35,8 @@
 - **可安装 PWA** — Service Worker 预缓存应用外壳，引擎权重按首次使用落盘，断网也能开局；支持「添加到主屏幕」，引擎权重会申请持久化存储，不会被浏览器在磁盘紧张时回收
 - **Web Worker 隔离搜索** — 深度计算在独立线程，界面不卡顿
 - **Canvas 2D 渲染** — 木纹棋盘、落子动画、思考过程可视化（深度 / 节点 / 评估 / 主变 / 访问量）
-- **程序化音效** — Web Audio 实时合成，除恶魔主题 BGM 外无音频文件依赖
+- **程序化音效** — Web Audio 实时合成；音频文件只用于两处配乐（恶魔主题、斗地主牌桌），均按需缓存
+- **程序化美术** — 斗地主的牌面、桌布、木框、头像、按钮全部由 `scripts/gen-ddz-art.py` 生成，仓库不存第三方 UI 素材
 - **触控与鼠标统一** — Pointer 事件一套代码，手机可直接开局
 - **模型随站点分发** — 推理权重均为静态资源，无外部服务调用
 - **预压缩分发** — 构建同时产出 brotli 与 gzip 副本，nginx 直接静态下发；WASM 也在压缩范围内（首启少下约 3.2MB）
@@ -132,6 +133,14 @@ npm run test:othello:smoke    # 浏览器接口冒烟（需先跑起 dev server�
 - **推理**：模型在独立 Web Worker 内由 onnxruntime-web（WASM 后端，单线程）前向，主线程只做预取与转发；argmax Q 选走法
 - **兜底**：模型加载完成前由内置牌理启发式应战（跟最小、不拆炸弹、对手将走完才交炸弹）；叫分走手牌强度评分表（大王 4 + 小王 3 + 火箭 4 + 炸弹 8 + 2×3 + A×1，≥18 叫 3 分）
 - **计分**：底分（叫分值）× 倍数（每次炸弹翻倍，春天/反春再 ×2），地主 ±2 份、农民各 ±1 份
+
+牌桌美术全部由 `scripts/gen-ddz-art.py` 生成，输出到 `public/ddz/`：
+
+- **牌面**：Wikimedia Commons 的公有领域牌面矢量图「English pattern playing cards deck」按 13×4 网格拆成 52 张，与程序化绘制的两张王一起拼成雪碧图 `cards.png`（8 列网格，每格 128×192）
+- **UI 元件**：桌布（`felt.jpg`）、木质外框（`frame.png`）、牌背、头像、头像框、地主帽、按钮底、徽章、筹码，由 Pillow 程序化绘制
+- **重跑**：`python scripts/gen-ddz-art.py`，需要 Pillow 与本机的 Chrome / Edge（用于光栅化矢量牌面，可用 `CHROME_BIN` 指定路径）
+
+牌桌 BGM 为 `public/ddz/bgm/ddz-theme.mp3`（经典斗地主配乐），默认关闭，由面板的「音乐」开关控制；与牌面同属 `/ddz/` 目录，走 Service Worker 的运行时缓存。
 
 ## 部署
 
@@ -237,13 +246,15 @@ webgame/
 │   ├── run-tests.mjs          引擎自测入口：esbuild 打包 + 逐个套件运行
 │   ├── othello-smoke.mjs      黑白棋浏览器冒烟（headless Edge + CDP）
 │   ├── copy-tfjs-wasm.mjs     复制 TF.js WASM 后端到 public/go/tfjs/（predev / prebuild 自动执行）
-│   └── generate-pwa-icons.py  由品牌色 + 🐟 生成 PWA 图标（改品牌后 npm run icons）
+│   ├── generate-pwa-icons.py  由品牌色 + 🐟 生成 PWA 图标（改品牌后 npm run icons）
+│   └── gen-ddz-art.py         生成斗地主牌面雪碧图与整套牌桌美术 → public/ddz/
 ├── public/                    随站点分发的引擎与权重
 │   ├── pwa-192.png 等         PWA 图标（由 generate-pwa-icons.py 生成）
 │   ├── rapfi/                 Rapfi WASM（多线程 / 单线程构建 + NNUE 权重 + worker 胶水）
 │   ├── go/                    围棋：KataGo 最小网络权重、TF.js WASM 后端、NOTICE.md
 │   ├── xqnn/                  象棋神经网络权重 chess_model.onnx
-│   └── xqwlight/              XQWLight 引擎与 worker 胶水、NOTICE.md
+│   ├── xqwlight/              XQWLight 引擎与 worker 胶水、NOTICE.md
+│   └── ddz/                   斗地主：DouZero 权重、牌面雪碧图、牌桌美术、牌桌 BGM
 ├── tests/                     引擎自测（见上方测试分布）
 │   ├── harness.mts            断言与汇总（各测试文件共用）
 │   └── fixtures/              与上游实现对齐用的黄金输出
@@ -295,5 +306,8 @@ webgame/
 | [KataGo 神经网络](https://katagotraining.org/network_license/) | KataGo Neural Network License | 围棋权重，声明见 `public/go/NOTICE.md` |
 | [yingwang/chinese_chess](https://github.com/yingwang/chinese_chess) | MIT | 象棋神经网络权重 |
 | [TensorFlow.js](https://github.com/tensorflow/tfjs) | Apache-2.0 | 推理运行时 |
+| [English pattern playing cards deck](https://commons.wikimedia.org/wiki/File:English_pattern_playing_cards_deck.svg) | 公有领域 | 斗地主牌面矢量图，由 `scripts/gen-ddz-art.py` 切分并光栅化 |
+
+其余美术资源（斗地主牌桌、按钮、头像、头衔牌等）均由 `scripts/gen-ddz-art.py` 程序化生成，不含第三方素材。
 
 实现过程中参考过的开源项目（不包含其代码）：[web-katrain](https://github.com/Sir-Teo/web-katrain)（围棋管线对照与回归基准）、[lightvector/KataGo](https://github.com/lightvector/KataGo)（网络结构与输入定义）。

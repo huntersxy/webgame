@@ -62,14 +62,29 @@ function applyView(name: ViewName): void {
   });
   Object.entries(views).forEach(([k, el]) => el.classList.toggle('active', k === name));
   window.scrollTo({ top: 0, behavior: 'smooth' });
-  if (name === 'gomoku') { gomokuCtrl.redraw(); gomokuCtrl.warmUp(); }
+  if (name === 'gomoku') {
+    gomokuCtrl.redraw();
+    gomokuCtrl.warmUp();
+  }
   if (name === 'campaign') campaignCtrl.redraw();
-  if (name === 'othello') { othelloCtrl.redraw(); othelloCtrl.warmUp(); }
-  if (name === 'xiangqi') { xiangqiCtrl.redraw(); xiangqiCtrl.warmUp(); }
+  if (name === 'othello') {
+    othelloCtrl.redraw();
+    othelloCtrl.warmUp();
+  }
+  if (name === 'xiangqi') {
+    xiangqiCtrl.redraw();
+    xiangqiCtrl.warmUp();
+  }
   if (name === 'tornado') tornadoCtrl.redraw();
   if (name === 'junqi') junqiCtrl.redraw();
-  if (name === 'go') { goCtrl.redraw(); goCtrl.warmUp(); }
-  if (name === 'ddz') { ddzCtrl.redraw(); ddzCtrl.warmUp(); }
+  if (name === 'go') {
+    goCtrl.redraw();
+    goCtrl.warmUp();
+  }
+  if (name === 'ddz') {
+    ddzCtrl.redraw();
+    ddzCtrl.warmUp();
+  }
 }
 
 function routeFromHash(): ViewName {
@@ -81,7 +96,9 @@ window.addEventListener('hashchange', () => applyView(routeFromHash()));
 
 // nav buttons
 document.querySelectorAll('.tab').forEach((t) => t.addEventListener('click', () => gotoView((t as HTMLElement).dataset.tab as ViewName)));
-document.querySelectorAll('[data-goto]').forEach((b) => b.addEventListener('click', () => gotoView((b as HTMLElement).dataset.goto as ViewName)));
+document
+  .querySelectorAll('[data-goto]')
+  .forEach((b) => b.addEventListener('click', () => gotoView((b as HTMLElement).dataset.goto as ViewName)));
 
 // ── Shared services ──
 const audio = new AudioEngine();
@@ -125,7 +142,18 @@ if (routeFromHash() === 'home') setTimeout(prefetchGomokuEngine, 1200);
 
 // ── Stats + initial route ──
 Stats.refresh();
-applyView(routeFromHash());
+// 首屏应用路由：刷新时浏览器可能还没派发 hashchange，
+// 若此时恰好有控制器在构造期抛错，整个模块会中断、页面停在首页。
+// 这里包一层，保证「路由此刻决定」这件事本身不会因为某个游戏初始化失败而失效。
+try {
+  applyView(routeFromHash());
+} catch (err) {
+  console.error('[router] 首次应用路由失败，回退首页', err);
+  applyView('home');
+}
+// 再补一次：模块执行完后浏览器才补发的 hashchange 会被上面的监听接住，
+// 但若初始 hash 与默认首页相同则不会触发，这里显式对齐一次状态。
+window.addEventListener('load', () => applyView(routeFromHash()));
 
 // ── PWA：离线缓存与引擎权重的持久化存储 ──
 setupPWA();

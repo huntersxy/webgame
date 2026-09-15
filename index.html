@@ -798,7 +798,7 @@
     <div class="layout">
       <div class="board-wrap">
         <div class="board-head">
-          <h2>斗地主 <small>DOU DI ZHOU · DouZero 神经网络 AI</small></h2>
+          <h2>斗地主 <small>DOU DI ZHU · DouZero 神经网络 AI</small></h2>
           <div id="ddz-turn" class="turn-pill">叫分中…</div>
         </div>
         <div id="ddz-engine-load" class="engine-load hidden">
@@ -810,59 +810,87 @@
           <div class="el-bar"><i id="ddz-engine-bar"></i></div>
           <p class="el-tip">首次进入需下载约 <b>17MB</b> 模型（DouZero WP 三个角色网络，每个 &lt;10MB）。加载期间<b>照常可以出牌</b>——先用内置牌理顶着打。</p>
         </div>
-        <div class="ddz-table">
-          <div class="ddz-seat top-left">
+
+        <!-- ═══ 牌桌 ═══ -->
+        <div class="ddz-table" id="ddz-table">
+          <div class="ddz-felt"></div>
+          <div class="ddz-table-inner">
+
+          <div class="ddz-seat ddz-seat-left" id="ddz-seat-2">
             <div class="ddz-seat-head">
-              <span class="ddz-avatar">🐧</span>
+              <div class="ddz-portrait">
+                <img class="ddz-avatar-img" src="/ddz/ui/avatar-left.png" alt="">
+                <img class="ddz-avatar-ring" src="/ddz/ui/ring-wood.png" alt="">
+                <img class="ddz-crown hidden" src="/ddz/ui/crown.png" alt="">
+              </div>
               <div class="ddz-seat-meta">
                 <b id="ddz-name-2">电脑·左家</b>
                 <span id="ddz-role-2" class="ddz-role hidden">地主</span>
               </div>
-              <span id="ddz-cnt-2" class="ddz-cnt">17 张</span>
             </div>
-            <div id="ddz-played-2" class="ddz-played"></div>
+            <div class="ddz-seat-count" id="ddz-cnt-2"><i>17</i></div>
+            <div id="ddz-played-2" class="ddz-played seat-played"></div>
           </div>
-          <div class="ddz-seat top-right">
+
+          <div class="ddz-seat ddz-seat-right" id="ddz-seat-1">
             <div class="ddz-seat-head">
-              <span class="ddz-avatar">🦊</span>
+              <div class="ddz-portrait">
+                <img class="ddz-avatar-img" src="/ddz/ui/avatar-right.png" alt="">
+                <img class="ddz-avatar-ring" src="/ddz/ui/ring-wood.png" alt="">
+                <img class="ddz-crown hidden" src="/ddz/ui/crown.png" alt="">
+              </div>
               <div class="ddz-seat-meta">
                 <b id="ddz-name-1">电脑·右家</b>
                 <span id="ddz-role-1" class="ddz-role hidden">地主</span>
               </div>
-              <span id="ddz-cnt-1" class="ddz-cnt">17 张</span>
             </div>
-            <div id="ddz-played-1" class="ddz-played right"></div>
+            <div class="ddz-seat-count" id="ddz-cnt-1"><i>17</i></div>
+            <div id="ddz-played-1" class="ddz-played seat-played right"></div>
           </div>
-          <div class="ddz-middle">
+
+          <div class="ddz-center" id="ddz-center">
             <div class="ddz-bottom-row">
-              <span class="ddz-bottom-label">底牌</span>
+              <span class="ddz-bottom-label">底 牌</span>
               <div id="ddz-bottom" class="ddz-bottom"></div>
             </div>
+            <div class="ddz-multiplier" id="ddz-multiplier">
+              <span class="ddz-mult-label">倍</span><b id="ddz-mult-big">×1</b>
+            </div>
             <div id="ddz-bidbar" class="ddz-bidbar hidden">
-              <span>该你叫分：</span>
-              <button class="btn plain" data-bid="0">不叫</button>
-              <button class="btn plain" data-bid="1">1 分</button>
-              <button class="btn plain" data-bid="2">2 分</button>
-              <button class="btn primary" data-bid="3">3 分</button>
+              <span class="ddz-bid-title">叫分</span>
+              <button class="ddz-bid-btn" data-bid="0">不叫</button>
+              <button class="ddz-bid-btn" data-bid="1">1 分</button>
+              <button class="ddz-bid-btn" data-bid="2">2 分</button>
+              <button class="ddz-bid-btn go" data-bid="3">3 分</button>
             </div>
           </div>
-          <div class="ddz-seat bottom-seat">
-            <div class="ddz-seat-head">
-              <span class="ddz-avatar">🙂</span>
-              <div class="ddz-seat-meta">
-                <b>你</b>
-                <span id="ddz-role-0" class="ddz-role hidden">地主</span>
+
+          <div class="ddz-seat ddz-seat-bottom" id="ddz-seat-0">
+            <div class="ddz-my-row">
+              <div class="ddz-seat-head ddz-seat-head-me">
+                <div class="ddz-portrait">
+                  <img class="ddz-avatar-img" src="/ddz/ui/avatar-you.png" alt="">
+                  <img class="ddz-avatar-ring" id="ddz-my-ring" src="/ddz/ui/ring-wood.png" alt="">
+                  <img class="ddz-crown hidden" id="ddz-my-crown" src="/ddz/ui/crown.png" alt="">
+                </div>
+                <div class="ddz-seat-meta">
+                  <b>你</b>
+                  <span id="ddz-role-0" class="ddz-role hidden">地主</span>
+                </div>
               </div>
-              <span id="ddz-cnt-0" class="ddz-cnt">17 张</span>
+              <div class="ddz-seat-count me" id="ddz-cnt-0"><i>17</i></div>
+              <div id="ddz-played-0" class="ddz-played my-played"></div>
             </div>
-            <div id="ddz-played-0" class="ddz-played center"></div>
             <div id="ddz-hand" class="ddz-hand"></div>
           </div>
+
+          </div>
         </div>
+
         <div class="ddz-actions">
-          <button id="ddz-pass" class="btn plain" disabled>⊘ 不出</button>
-          <button id="ddz-play" class="btn primary" disabled>出牌</button>
-          <button id="ddz-hint" class="btn soft" disabled>💡 提示</button>
+          <button id="ddz-pass" class="ddz-btn ddz-btn-pass" disabled><i>⊘</i><span>不出</span></button>
+          <button id="ddz-play" class="ddz-btn ddz-btn-play" disabled><i>▶</i><span>出牌</span></button>
+          <button id="ddz-hint" class="ddz-btn ddz-btn-hint" disabled><i>💡</i><span>提示</span></button>
         </div>
         <div id="ddz-result" class="result-banner hidden"></div>
       </div>
@@ -876,9 +904,10 @@
           <div class="engine-note">规则：<b>标准三人斗地主</b> · 叫分定地主 · 炸弹/王炸翻倍 · 春天再翻倍</div>
         </div>
         <div class="panel-block">
-          <div class="btn-grid">
+          <div class="btn-grid ddz-btn-grid">
             <button id="ddz-new" class="btn primary">新开一局</button>
             <button id="ddz-sound" class="btn plain on">🔊 音效开</button>
+            <button id="ddz-bgm" class="btn plain">🎵 音乐关</button>
           </div>
         </div>
         <div class="panel-block info-box">

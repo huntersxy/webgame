@@ -928,196 +928,400 @@ footer::before {
 @media (prefers-reduced-motion: reduce) { .sw-toast { animation: none; } }
 
 /* ════════════════════════════════════════════════════════════
-   斗地主 — 牌桌 / 扑克牌 / 座位 / 叫分条
+   斗地主 — 写实牌桌皮肤
+   仅作用于 #view-ddz 内部，不影响其他棋类页面。
+   美术资源全部由 scripts/gen-ddz-art.py 程序化生成（见 public/ddz/）。
    ════════════════════════════════════════════════════════════ */
 
-/* 首页缩略图：三张斜扇牌 + 地主徽章 */
-.ddz-thumb { background: linear-gradient(160deg, #2f9e77, #186b52 65%, #11563f); }
-.ddz-thumb .ddz-fan {
-  position: absolute; top: 26%; font-size: 44px; line-height: 1;
-  filter: drop-shadow(2px 3px 0 rgba(0, 0, 0, .25));
+#view-ddz {
+  --ddz-wood: #6e421c;
+  --ddz-wood-dark: #3a200e;
+  --ddz-wood-light: #a87034;
+  --ddz-gold: #d1a234;
+  --ddz-gold-light: #f7db82;
+  --ddz-gold-dark: #8c6014;
+  --ddz-felt: #0d4f37;
+  --ddz-ink: #2a1c0c;
+  --ddz-cream: #f6efdd;
+  --ddz-card-w: 62px;
+  --ddz-card-h: 93px;
+  --ddz-span: 30px;          /* 手牌相邻两张的横向间距 */
 }
-.ddz-thumb .ddz-fan.c1 { left: 16%; transform: rotate(-14deg); }
-.ddz-thumb .ddz-fan.c2 { left: 38%; transform: rotate(-2deg) translateY(-8px); }
-.ddz-thumb .ddz-fan.c3 { left: 60%; transform: rotate(12deg); }
+
+/* ── 首页缩略图 ── */
+.ddz-thumb { background: radial-gradient(ellipse at 50% 40%, #17805a, #06301f 72%); }
+.ddz-thumb .ddz-fan {
+  position: absolute; top: 24%; width: 62px; height: 94px;
+  border: 2px solid #2a1c0c; border-radius: 7px; background: #fff;
+  background-image: url("/ddz/cards.png");
+  background-repeat: no-repeat; background-size: 819.2px 1075.2px;
+  box-shadow: 2px 3px 6px rgba(0, 0, 0, .35);
+}
+.ddz-thumb .ddz-fan.c1 { left: 15%; background-position: -102.4px -192px; transform: rotate(-15deg); }
+.ddz-thumb .ddz-fan.c2 { left: 37%; background-position: -204.8px -192px; transform: rotate(-3deg) translateY(-9px); z-index: 2; }
+.ddz-thumb .ddz-fan.c3 { left: 59%; background-position: -921.6px -384px; transform: rotate(13deg); }
 .ddz-thumb .ddz-landlord {
   position: absolute; right: 12px; bottom: 12px;
-  padding: 3px 12px; font-size: 13px; font-weight: 800;
-  color: #7a4a00; background: var(--lemon);
-  border: 2px solid var(--doodle); border-radius: 999px;
-  transform: rotate(-6deg);
+  padding: 3px 14px; font-size: 13px; font-weight: 800; letter-spacing: 1px;
+  color: #5a3a05;
+  background: linear-gradient(180deg, #f7db82, #c9971f);
+  border: 2px solid #6b4a0c; border-radius: 999px;
+  box-shadow: 0 2px 0 rgba(0, 0, 0, .3), inset 0 1px 0 rgba(255, 255, 255, .7);
+  transform: rotate(-5deg);
 }
 
-/* 牌桌 */
+/* ══ 牌桌主体 ══ */
 .ddz-table {
   position: relative;
-  min-height: 520px;
-  padding: 14px;
-  background:
-    radial-gradient(ellipse at 50% 38%, rgba(255, 255, 255, .10), transparent 62%),
-    linear-gradient(165deg, #2f9e77, #1b7a58 60%, #14634a);
-  border: 2px solid var(--doodle);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow);
+  border-radius: 26px;
+  padding: 22px;
+  min-height: 560px;
+  border: 3px solid var(--ddz-wood-dark);
+  box-shadow:
+    0 18px 40px rgba(0, 0, 0, .35),
+    0 3px 0 rgba(0, 0, 0, .25),
+    inset 0 0 0 2px rgba(255, 255, 255, .06);
   overflow: hidden;
+  isolation: isolate;
 }
+/* 绒布底：图片本身带聚光与颗粒，再叠一层内阴影做出凹陷感 */
+.ddz-felt {
+  position: absolute; inset: 0; z-index: 0;
+  background: url("/ddz/felt.jpg") center / cover no-repeat,
+              radial-gradient(ellipse at 50% 42%, #17805a, #06301f 78%);
+}
+.ddz-felt::after {
+  content: ''; position: absolute; inset: 0;
+  border-radius: 22px;
+  box-shadow: inset 0 0 90px rgba(0, 0, 0, .6), inset 0 0 24px rgba(0, 0, 0, .45);
+}
+/* 木质外框 PNG 叠加在绒布上 */
+.ddz-table::before {
+  content: ''; position: absolute; inset: 0; z-index: 1;
+  background: url("/ddz/frame.png") center / 100% 100% no-repeat;
+  pointer-events: none;
+}
+.ddz-table-inner { position: relative; z-index: 2; min-height: 516px; }
 
-.ddz-seat { position: absolute; z-index: 2; }
-.ddz-seat.top-left { top: 14px; left: 14px; }
-.ddz-seat.top-right { top: 14px; right: 14px; text-align: right; }
-.ddz-seat.bottom-seat { left: 14px; right: 14px; bottom: 12px; }
+/* ══ 座位 ══
+   左右两家的名牌靠边对齐：名字朝内、头像朝外，和牌桌主角的座位呼应。 */
+.ddz-seat { position: absolute; z-index: 3; }
+.ddz-seat-left { top: 10px; left: 12px; display: flex; flex-direction: column; align-items: flex-start; }
+.ddz-seat-right { top: 10px; right: 12px; display: flex; flex-direction: column; align-items: flex-end; }
+.ddz-seat-bottom {
+  left: 12px; right: 12px; bottom: 0;
+  display: flex; flex-direction: column; justify-content: flex-end;
+}
+/* 手牌要整体待在绒布里：底部座位整体上抬，避开木框内侧的压暗边 */
+.ddz-seat-bottom { bottom: 28px; }
+.ddz-seat-bottom .ddz-hand { margin-top: 2px; }
 
 .ddz-seat-head {
-  display: flex; align-items: center; gap: 8px;
-  padding: 6px 12px;
-  background: rgba(255, 255, 255, .92);
-  border: 2px solid var(--doodle);
-  border-radius: var(--wobble-sm);
-  box-shadow: 2px 3px 0 rgba(0, 0, 0, .18);
+  display: flex; align-items: center; gap: 9px;
+  padding: 5px 14px 5px 6px;
+  background: linear-gradient(180deg, rgba(30, 22, 12, .82), rgba(12, 10, 6, .82));
+  border: 2px solid var(--ddz-gold-dark);
+  border-radius: 40px;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, .45), inset 0 1px 0 rgba(255, 255, 255, .12);
+  backdrop-filter: blur(2px);
 }
-.ddz-seat.top-right .ddz-seat-head { flex-direction: row-reverse; }
-.ddz-seat.bottom-seat .ddz-seat-head { display: inline-flex; margin-bottom: 6px; }
-.ddz-seat-head.thinking { outline: 3px solid var(--lemon); animation: ddz-pulse 1s ease-in-out infinite; }
-@keyframes ddz-pulse { 50% { outline-color: transparent; } }
+.ddz-seat-right .ddz-seat-head { flex-direction: row-reverse; padding: 5px 6px 5px 14px; }
+.ddz-seat-right .ddz-seat-meta { align-items: flex-end; text-align: right; }
+.ddz-seat-head.thinking {
+  border-color: var(--ddz-gold-light);
+  box-shadow: 0 0 0 3px rgba(247, 219, 130, .3), 0 3px 12px rgba(0, 0, 0, .5),
+              inset 0 1px 0 rgba(255, 255, 255, .2);
+  animation: ddz-thinking 1.1s ease-in-out infinite;
+}
+@keyframes ddz-thinking { 50% { box-shadow: 0 0 0 6px rgba(247, 219, 130, .05), 0 3px 12px rgba(0, 0, 0, .5); } }
 @media (prefers-reduced-motion: reduce) { .ddz-seat-head.thinking { animation: none; } }
 
-.ddz-avatar { font-size: 24px; line-height: 1; }
-.ddz-seat-meta { display: flex; flex-direction: column; line-height: 1.25; }
-.ddz-seat-meta b { font-size: 14px; }
-.ddz-cnt {
-  margin-left: auto; padding: 2px 10px;
-  font-size: 12px; font-weight: 700;
-  color: var(--ink); background: var(--lemon-soft);
-  border: 1.5px solid var(--doodle); border-radius: 999px;
+.ddz-portrait { position: relative; width: 54px; height: 54px; flex: none; }
+.ddz-avatar-img {
+  position: absolute; inset: 6px; width: 42px; height: 42px;
+  border-radius: 50%; display: block; z-index: 1;
+}
+.ddz-avatar-ring {
+  position: absolute; inset: 0; width: 54px; height: 54px; display: block;
+  z-index: 2; pointer-events: none;
+  filter: drop-shadow(0 2px 3px rgba(0, 0, 0, .45));
+}
+.ddz-crown {
+  position: absolute; left: 50%; top: -18px; width: 44px;
+  transform: translateX(-50%) rotate(-4deg);
+  filter: drop-shadow(0 2px 3px rgba(0, 0, 0, .5));
+  pointer-events: none;
+}
+.ddz-seat-meta { display: flex; flex-direction: column; align-items: flex-start; line-height: 1.25; }
+.ddz-seat-meta b { font-size: 13.5px; color: var(--ddz-cream); letter-spacing: .5px; text-shadow: 0 1px 2px rgba(0, 0, 0, .6); }
+.ddz-role {
+  margin-top: 1px; padding: 0 9px;
+  font-size: 11px; font-weight: 800; letter-spacing: 1px;
+  color: #4a2f04;
+  background: linear-gradient(180deg, #f7db82, #c9971f);
+  border: 1px solid #6b4a0c; border-radius: 999px;
+}
+.ddz-role.farmer {
+  color: #eaf6ff;
+  background: linear-gradient(180deg, #5fa6dd, #2f6ea8);
+  border-color: #1d4a75;
+}
+
+/* 剩余张数：圆形木质计数牌，贴在名牌外侧 */
+.ddz-seat-count {
+  position: absolute; top: 46px; left: -14px;
+  width: 34px; height: 34px; display: grid; place-items: center;
+  font-size: 14px; font-weight: 800; font-style: normal;
+  color: var(--ddz-cream);
+  background: radial-gradient(circle at 35% 30%, #7d4c22, #3a200e 72%);
+  border: 2px solid var(--ddz-gold-dark); border-radius: 50%;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, .5), inset 0 1px 0 rgba(255, 255, 255, .2);
+}
+.ddz-seat-count i { font-style: normal; }
+.ddz-seat-right .ddz-seat-count { left: auto; right: -14px; }
+.ddz-seat-count.me { position: static; }
+
+/* ══ 出牌区 ══
+   两个电脑座位的出牌落在名牌**下方**，避免压住头像和名字。 */
+.ddz-seat-left .ddz-played,
+.ddz-seat-right .ddz-played {
+  position: static; margin-top: 8px;
+  max-width: 300px; flex-wrap: wrap; row-gap: 4px;
+}
+.ddz-seat-left .ddz-played { justify-content: flex-start; }
+.ddz-seat-right .ddz-played { justify-content: flex-end; }
+.ddz-played { display: flex; align-items: flex-start; min-height: 44px; }
+.ddz-played > * { margin-left: -22px; }
+.ddz-played > *:first-child { margin-left: 0; }
+.ddz-played.right > * { margin-left: 0; margin-right: -22px; }
+.ddz-played.right > *:last-child { margin-right: 0; }
+
+.ddz-pass-mark {
+  display: flex; align-items: center; gap: 5px;
+  padding: 5px 16px;
+  font-size: 15px; font-weight: 800; letter-spacing: 3px;
+  color: #ffe9a8;
+  background: rgba(0, 0, 0, .42);
+  border: 2px solid rgba(247, 219, 130, .5);
+  border-radius: 999px;
+  transform: rotate(-7deg);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, .4);
   white-space: nowrap;
 }
-.ddz-seat.top-right .ddz-cnt { margin-left: 0; margin-right: auto; }
-.ddz-role {
-  align-self: flex-start; padding: 0 8px;
-  font-size: 11px; font-weight: 800;
-  color: #fff; background: var(--amber);
-  border: 1.5px solid var(--doodle); border-radius: 999px;
-}
-.ddz-role.farmer { background: var(--sky); color: #14506e; }
 
-/* 中区：底牌 + 叫分条 */
-.ddz-middle {
-  position: absolute; left: 0; right: 0; top: 96px;
-  display: flex; flex-direction: column; align-items: center; gap: 10px;
+/* ══ 中央：底牌 / 倍数 / 叫分 ══ */
+.ddz-center {
+  position: absolute; left: 0; right: 0; top: 12px;
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
+  pointer-events: none;
 }
-.ddz-bottom-row { display: flex; align-items: center; gap: 10px; }
+.ddz-center > * { pointer-events: auto; }
+.ddz-bottom-row { display: flex; align-items: center; gap: 11px; min-height: 78px; }
+/* 叫分阶段倍数还没意义，整块收起来，给叫分条腾地方 */
+.ddz-center.bidding { gap: 6px; }
+.ddz-center.bidding .ddz-multiplier { display: none; }
+/* 叫分条出现时底牌上移一点，避免整列顶到底 */
+.ddz-center.bidding .ddz-bottom-row { min-height: 62px; }
 .ddz-bottom-label {
-  font-size: 12px; font-weight: 700; color: rgba(255, 255, 255, .85);
+  font-size: 12px; font-weight: 800; letter-spacing: 4px;
+  color: rgba(247, 219, 130, .85);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, .8);
 }
-.ddz-bottom { display: flex; gap: 6px; }
+.ddz-bottom { display: flex; gap: 5px; }
+
+.ddz-multiplier {
+  display: flex; align-items: baseline; gap: 3px;
+  padding: 3px 16px 4px;
+  background: linear-gradient(180deg, rgba(30, 22, 12, .8), rgba(12, 10, 6, .8));
+  border: 2px solid var(--ddz-gold-dark); border-radius: 999px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, .4);
+}
+.ddz-mult-label { font-size: 12px; font-weight: 700; color: rgba(247, 219, 130, .8); letter-spacing: 2px; }
+.ddz-multiplier b {
+  font-size: 22px; font-weight: 900; font-style: italic;
+  color: var(--ddz-gold-light);
+  text-shadow: 0 0 12px rgba(247, 219, 130, .6), 0 2px 0 rgba(0, 0, 0, .5);
+}
+.ddz-multiplier.pop { animation: ddz-pop .45s cubic-bezier(.3, 1.7, .5, 1); }
+@keyframes ddz-pop { 0% { transform: scale(1); } 45% { transform: scale(1.28); } 100% { transform: scale(1); } }
+
 .ddz-bidbar {
-  display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: center;
-  padding: 8px 16px;
-  background: rgba(255, 255, 255, .95);
-  border: 2px solid var(--doodle); border-radius: var(--wobble-sm);
-  box-shadow: var(--shadow);
-  font-size: 14px; font-weight: 700;
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: center;
+  padding: 10px 18px;
+  background: linear-gradient(180deg, rgba(44, 32, 18, .94), rgba(20, 15, 8, .94));
+  border: 2px solid var(--ddz-gold); border-radius: 16px;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, .5), inset 0 1px 0 rgba(255, 255, 255, .12);
+}
+.ddz-bid-title {
+  font-size: 13px; font-weight: 800; letter-spacing: 4px;
+  color: rgba(247, 219, 130, .9); padding-right: 4px;
+}
+.ddz-bid-btn {
+  padding: 9px 20px;
+  font: inherit; font-size: 14px; font-weight: 800;
+  color: var(--ddz-cream); cursor: pointer;
+  background: linear-gradient(180deg, #6a7480, #3b434c);
+  border: 2px solid #22282e; border-radius: 11px;
+  box-shadow: 0 3px 0 rgba(0, 0, 0, .45), inset 0 1px 0 rgba(255, 255, 255, .25);
+  transition: transform .1s, filter .15s;
+}
+.ddz-bid-btn:hover:not(:disabled) { filter: brightness(1.15); }
+.ddz-bid-btn:active:not(:disabled) { transform: translateY(2px); box-shadow: 0 1px 0 rgba(0, 0, 0, .45); }
+.ddz-bid-btn.go {
+  color: #4a2f04;
+  background: linear-gradient(180deg, #f7db82, #c9971f);
+  border-color: #6b4a0c;
+  box-shadow: 0 3px 0 #6b4a0c, inset 0 1px 0 rgba(255, 255, 255, .6);
+}
+.ddz-bid-btn:disabled { opacity: .38; cursor: not-allowed; filter: grayscale(.6); box-shadow: 0 1px 0 rgba(0, 0, 0, .3); }
+
+/* ══ 自己的区域 ══ */
+.ddz-my-row { display: flex; align-items: center; gap: 12px; margin-bottom: 4px; }
+.ddz-seat-head-me { flex: none; }
+.ddz-my-played {
+  position: static !important; flex: 1; justify-content: center;
+  min-height: 44px; flex-wrap: wrap; row-gap: 4px;
 }
 
-/* 出牌区 */
-.ddz-played {
-  position: absolute; top: 64px; left: 0;
-  display: flex; gap: 3px; min-height: 52px; align-items: flex-start;
-}
-.ddz-played.right { left: auto; right: 0; justify-content: flex-end; }
-.ddz-played.center { left: 50%; transform: translateX(-50%); justify-content: center; }
-.ddz-played .ddz-mini { transform: scale(.82); transform-origin: top left; margin-left: -22px; }
-.ddz-played .ddz-mini:first-child { margin-left: 0; }
-.ddz-played.right .ddz-mini { transform-origin: top right; margin-left: 0; margin-right: -22px; }
-.ddz-played.right .ddz-mini:last-child { margin-right: 0; }
-.ddz-pass-mark {
-  padding: 4px 14px;
-  font-size: 13px; font-weight: 800; color: rgba(255, 255, 255, .9);
-  background: rgba(0, 0, 0, .28); border-radius: 999px;
-}
-
-/* 手牌扇面 */
+/* ══ 手牌扇面 ══ */
 .ddz-hand {
+  position: relative;
   display: flex; justify-content: center; align-items: flex-end;
-  min-height: 96px; padding: 8px 4px 2px;
-  overflow-x: auto;
+  height: 112px; padding: 22px 10px 8px;
+  overflow-x: auto; overflow-y: hidden;
+  scrollbar-width: thin;
 }
 .ddz-card {
   position: relative; flex: none;
-  width: 58px; height: 84px; margin-left: -26px;
-  padding: 5px 4px 4px 7px;
-  font-family: inherit; text-align: left;
-  background: #fff;
-  border: 2px solid var(--doodle);
-  border-radius: 8px;
-  box-shadow: 2px 3px 0 rgba(0, 0, 0, .22);
-  cursor: pointer;
-  transition: transform .13s ease, box-shadow .13s ease;
-  user-select: none;
+  width: var(--ddz-card-w); height: var(--ddz-card-h);
+  margin-left: calc(var(--ddz-span) - var(--ddz-card-w));
+  padding: 0; border: 0; background: none; cursor: pointer;
+  border-radius: 7px; overflow: visible;
+  filter: drop-shadow(1px 2px 3px rgba(0, 0, 0, .45));
+  transition: transform .13s cubic-bezier(.3, 1.4, .5, 1), filter .13s;
   -webkit-tap-highlight-color: transparent;
+  user-select: none;
 }
 .ddz-card:first-child { margin-left: 0; }
-.ddz-card:hover { transform: translateY(-8px); }
-.ddz-card.selected { transform: translateY(-18px); box-shadow: 3px 5px 0 rgba(0, 0, 0, .3); }
-.ddz-card:disabled { cursor: default; }
-.ddz-card:disabled:hover, .ddz-card:disabled.selected { transform: none; }
-.ddz-card.selected:disabled { transform: translateY(-18px); }
-.ddz-card.red { color: var(--danger); }
-.ddz-card.black { color: var(--ink); }
-.ddz-card .dc-rank {
-  display: block; font-size: 19px; font-weight: 800; line-height: 1.05;
-}
-.ddz-card .dc-suit { display: block; font-size: 15px; line-height: 1.1; }
-.ddz-card .dc-corner {
-  position: absolute; right: 5px; bottom: 4px;
-  font-size: 18px; transform: rotate(180deg); opacity: .85;
-}
-.ddz-card.joker { width: 62px; }
-.ddz-card.joker .dc-rank { font-size: 14px; letter-spacing: 1px; }
-.ddz-card.back {
-  background:
-    repeating-linear-gradient(45deg, #fff 0 5px, #dceaf6 5px 10px);
-  cursor: default;
-}
-/* 迷你牌（出牌区） */
-.ddz-mini {
-  position: relative; flex: none;
-  width: 44px; height: 62px; margin-left: -14px;
-  padding: 3px 3px 3px 5px;
-  background: #fff;
-  border: 2px solid var(--doodle); border-radius: 7px;
-  box-shadow: 1px 2px 0 rgba(0, 0, 0, .2);
+.ddz-card img { width: 100%; height: 100%; display: block; border-radius: 7px; }
+.ddz-card::after {
+  content: ''; position: absolute; inset: 0; border-radius: 7px;
+  box-shadow: inset 0 0 0 1.5px rgba(42, 28, 12, .55);
   pointer-events: none;
 }
-.ddz-mini:first-child { margin-left: 0; }
-.ddz-mini.red { color: var(--danger); }
-.ddz-mini.black { color: var(--ink); }
-.ddz-mini .dc-rank { display: block; font-size: 15px; font-weight: 800; line-height: 1.05; }
-.ddz-mini .dc-suit { display: block; font-size: 12px; line-height: 1.1; }
-.ddz-mini.joker .dc-rank { font-size: 11px; }
-/* 底牌背面 */
+.ddz-card:hover:not(:disabled) { transform: translateY(-10px); z-index: 5; }
+.ddz-card.selected {
+  transform: translateY(-24px);
+  filter: drop-shadow(2px 5px 7px rgba(0, 0, 0, .55));
+  z-index: 6;
+}
+.ddz-card.selected::after { box-shadow: inset 0 0 0 2.5px var(--ddz-gold-light), 0 0 12px rgba(247, 219, 130, .7); }
+.ddz-card:disabled { cursor: default; }
+.ddz-card:disabled:hover { transform: none; }
+.ddz-card.selected:disabled { transform: translateY(-24px); }
+.ddz-card.dealt { animation: ddz-deal .34s cubic-bezier(.2, .9, .3, 1.1) backwards; }
+@keyframes ddz-deal { from { opacity: 0; transform: translate(40px, 90px) rotate(16deg) scale(.7); } }
+@media (prefers-reduced-motion: reduce) { .ddz-card.dealt { animation: none; } }
+
+/* ══ 桌上打出的牌 ══ */
+.ddz-mini {
+  position: relative; flex: none;
+  width: 52px; height: 78px;
+  border-radius: 6px; overflow: hidden;
+  background-image: url("/ddz/cards.png");
+  background-repeat: no-repeat;
+  background-size: 819.2px 1075.2px;
+  filter: drop-shadow(1px 2px 3px rgba(0, 0, 0, .45));
+}
+.ddz-mini::after {
+  content: ''; position: absolute; inset: 0; border-radius: 6px;
+  box-shadow: inset 0 0 0 1.5px rgba(42, 28, 12, .5);
+}
 .ddz-back {
-  width: 44px; height: 62px;
-  background: repeating-linear-gradient(45deg, #fff 0 5px, #dceaf6 5px 10px);
-  border: 2px solid var(--doodle); border-radius: 7px;
-  box-shadow: 1px 2px 0 rgba(0, 0, 0, .2);
+  width: 52px; height: 78px; border-radius: 6px;
+  background: url("/ddz/ui/card-back.png") center / 100% 100% no-repeat;
+  filter: drop-shadow(1px 2px 3px rgba(0, 0, 0, .45));
 }
+.ddz-mini.just-played { animation: ddz-put .3s cubic-bezier(.25, 1.5, .5, 1); }
+@keyframes ddz-put { from { transform: translateY(-30px) scale(.86); opacity: 0; } }
 
-/* 动作按钮行 */
+/* ══ 动作按钮 ══ */
 .ddz-actions {
-  display: flex; justify-content: center; gap: 12px; margin-top: 12px;
-  flex-wrap: wrap;
+  display: flex; justify-content: center; align-items: center;
+  gap: 16px; margin-top: 14px; flex-wrap: wrap;
+}
+.ddz-btn {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 12px 34px;
+  font: inherit; font-size: 17px; font-weight: 800; letter-spacing: 2px;
+  cursor: pointer; border-radius: 14px;
+  transition: transform .1s, filter .15s;
+}
+.ddz-btn i { font-style: normal; font-size: 15px; }
+.ddz-btn-play {
+  color: #4a2f04;
+  background: url("/ddz/ui/btn-play.png") center / 100% 100% no-repeat;
+  border: 0; box-shadow: 0 5px 14px rgba(140, 96, 20, .5);
+  padding: 18px 46px;
+}
+.ddz-btn-pass {
+  color: #eef2f0;
+  background: url("/ddz/ui/btn-pass.png") center / 100% 100% no-repeat;
+  border: 0; padding: 16px 38px;
+}
+.ddz-btn-hint {
+  color: #eef6ff;
+  background: url("/ddz/ui/btn-hint.png") center / 100% 100% no-repeat;
+  border: 0; padding: 16px 38px;
+}
+.ddz-btn:hover:not(:disabled) { filter: brightness(1.12) saturate(1.06); transform: translateY(-2px); }
+.ddz-btn:active:not(:disabled) { transform: translateY(2px); }
+.ddz-btn:disabled { cursor: not-allowed; filter: grayscale(.85) brightness(.62); opacity: .75; }
+.ddz-btn.ddz-pulse { animation: ddz-btn-pulse 1.4s ease-in-out infinite; }
+@keyframes ddz-btn-pulse {
+  0%, 100% { box-shadow: 0 5px 14px rgba(140, 96, 20, .5); }
+  50% { box-shadow: 0 5px 14px rgba(140, 96, 20, .5), 0 0 0 8px rgba(247, 219, 130, .22); }
+}
+@media (prefers-reduced-motion: reduce) { .ddz-btn.ddz-pulse { animation: none; } }
+
+/* 面板里三颗按钮挤两列 */
+.ddz-btn-grid { grid-template-columns: 1fr 1fr; }
+.ddz-btn-grid #ddz-new { grid-column: 1 / -1; }
+
+/* ══ 结果横幅 ══ */
+#view-ddz .result-banner {
+  margin-top: 14px;
+  border: 2px solid var(--ddz-gold-dark);
+  background: linear-gradient(180deg, #fff6dd, #f0dfb4);
+  color: var(--ddz-ink);
+  font-weight: 700;
+}
+#view-ddz .result-banner.lose {
+  background: linear-gradient(180deg, #f4f0ee, #ddd6d0);
+  border-color: #8d8378;
 }
 
-@media (max-width: 640px) {
-  .ddz-table { min-height: 470px; }
-  .ddz-card { width: 48px; height: 70px; margin-left: -28px; padding: 4px 3px 3px 5px; }
-  .ddz-card .dc-rank { font-size: 16px; }
-  .ddz-card.joker { width: 52px; }
-  .ddz-mini { width: 36px; height: 52px; }
-  .ddz-mini .dc-rank { font-size: 13px; }
-  .ddz-middle { top: 88px; }
-  .ddz-avatar { font-size: 20px; }
-  .ddz-seat-meta b { font-size: 13px; }
+/* ══ 窄屏 ══ */
+@media (max-width: 720px) {
+  #view-ddz { --ddz-card-w: 46px; --ddz-card-h: 69px; --ddz-span: 22px; }
+  .ddz-table { padding: 16px; min-height: 470px; border-radius: 20px; }
+  .ddz-table-inner { min-height: 436px; }
+  .ddz-portrait { width: 44px; height: 44px; }
+  .ddz-avatar-img { inset: 4px; width: 36px; height: 36px; }
+  .ddz-avatar-ring { width: 44px; height: 44px; }
+  .ddz-crown { width: 34px; top: -14px; }
+  .ddz-seat-meta b { font-size: 12px; }
+  .ddz-seat-count { width: 28px; height: 28px; font-size: 12px; top: 50px; }
+  .ddz-mini, .ddz-back { width: 40px; height: 60px; }
+  .ddz-played > * { margin-left: -16px; }
+  .ddz-played.right > * { margin-right: -16px; }
+  .ddz-seat-left .ddz-played { left: 6px; top: 56px; }
+  .ddz-seat-right .ddz-played { right: 6px; top: 56px; }
+  .ddz-multiplier b { font-size: 18px; }
+  .ddz-center { top: 8px; gap: 8px; }
+  .ddz-bid-btn { padding: 7px 14px; font-size: 13px; }
+  .ddz-btn { font-size: 15px; padding: 10px 25px; }
+  .ddz-btn-play { padding: 15px 34px; }
+  .ddz-btn-pass, .ddz-btn-hint { padding: 13px 28px; }
+  .ddz-hand { min-height: 84px; padding-top: 14px; }
 }
-

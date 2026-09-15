@@ -179,8 +179,9 @@ export default defineConfig({
             },
           },
           {
-            // 恶魔主题 BGM（3.2MB）：只在真正播放时缓存，不占安装流量
-            urlPattern: /\.m4a$/i,
+            // 音频（恶魔主题 BGM 3.2MB、斗地主牌桌 BGM 2.1MB）：
+            // 只在真正播放时缓存，不占安装流量
+            urlPattern: /\.(m4a|mp3)$/i,
             handler: 'CacheFirst',
             options: {
               cacheName: 'pond-media',
