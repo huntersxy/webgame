@@ -37,17 +37,18 @@ const RANK_LABEL: Record<number, string> = {
   30: '大王',
 };
 /* ── 牌面雪碧图 ──
- * cards.png 是 8 列网格，每格 128×192（2× 于显示尺寸）。
- * 牌序与 gen-ddz-art.py 一致：黑桃 A..K、红心 A..K、梅花 A..K、方块 A..K、小王、大王。 */
+ * cards.png 是 8 列 × 7 行的网格，每格 128×192（2× 于显示尺寸）。
+ * 牌序与 scripts/gen-ddz-art.py 一致：
+ *   行 0 黑桃、行 1 红心、行 2 梅花、行 3 方块（A..K），行 4 小王、行 5 大王。
+ * 贴图不在这里算缩放，改用百分比定位，见 applyCardBg()。 */
 const SHEET_COLS = 8;
-const SHEET_TILE_W = 128;
-const SHEET_TILE_H = 192;
-const SHEET_W = SHEET_COLS * SHEET_TILE_W;
 const SHEET_ROWS = 7;
-const SHEET_H = SHEET_ROWS * SHEET_TILE_H;
 const SHEET_RANKS = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'] as const;
-/* 雪碧图按 2× 出图，缩到 0.484 正好对上 CSS 里的牌宽高 */
-const SHEET_SCALE = 0.484;
+/** 打包顺序里的花色段，必须与 gen-ddz-art.py 的 SUITS 一致 */
+const SHEET_SUITS = ['spade', 'heart', 'club', 'diamond'] as const;
+/** 大小王在打包顺序里的位置：4 花色 × 13 张之后 */
+const SHEET_JOKER_SMALL = 52;
+const SHEET_JOKER_BIG = 53;
 
 /** 牌值（3..17）→ 雪碧图里的点数记号 */
 const RANK_TO_SHEET: Record<number, string> = {
@@ -458,24 +459,40 @@ export class DoudizhuController {
     });
   }
 
-  /** 把一张牌贴到 cards.png 的对应格子上 */
+  /**
+   * 把一张牌贴到 cards.png 的对应格子上。
+   *
+   * 用百分比而不是像素：`background-size: 800% 700%` 让整张雪碧图正好是网格的
+   * 8×7 倍，每一格与元素同大小；`background-position` 的百分比相对
+   * (元素尺寸 - 图尺寸) 解析，所以第 n 格正好落在 n/(cols-1)。这样无论 CSS
+   * 把牌排成 62×93 的手牌、52×78 的出牌，还是窄屏的 40×60，贴图都自动对齐，
+   * JS 里不必再维护一份缩放系数。
+   */
   private applyCardBg(el: HTMLElement, c: DdzCard): void {
-    const row = this.sheetRow(c);
-    const rank = c.code === 20 ? 'small' : c.code === 30 ? 'big' : (RANK_TO_SHEET[c.code] ?? 'A');
-    const idx = row * SHEET_RANKS.length + (SHEET_RANKS as readonly string[]).indexOf(rank);
+    const idx = this.sheetIndex(c);
     const col = idx % SHEET_COLS;
     const line = Math.floor(idx / SHEET_COLS);
     el.style.backgroundImage = 'url("/ddz/cards.png")';
     el.style.backgroundRepeat = 'no-repeat';
-    el.style.backgroundSize = `${SHEET_W * SHEET_SCALE}px ${SHEET_H * SHEET_SCALE}px`;
-    el.style.backgroundPosition = `${-col * SHEET_TILE_W * SHEET_SCALE}px ${-line * SHEET_TILE_H * SHEET_SCALE}px`;
+    el.style.backgroundSize = `${SHEET_COLS * 100}% ${SHEET_ROWS * 100}%`;
+    el.style.backgroundPosition = `${(col / (SHEET_COLS - 1)) * 100}% ${(line / (SHEET_ROWS - 1)) * 100}%`;
   }
 
-  /** 牌在雪碧图里的行：0 黑桃 1 红心 2 梅花 3 方块 4 小王 5 大王 */
-  private sheetRow(c: DdzCard): number {
-    if (c.code === 20) return 4;
-    if (c.code === 30) return 5;
-    return c.suit;
+  /**
+   * 牌在雪碧图里的**平铺序号**（0..53）。
+   *
+   * 必须与 gen-ddz-art.py 的打包顺序严格一致：脚本先按
+   * 黑桃 → 红心 → 梅花 → 方块 把 4×13 张牌依次排成一条线，再接上小王、大王，
+   * 然后按 8 列一行装箱。所以序号是「花色段 × 13 + 点数位」，
+   * 而**不是**「雪碧图行号 × 13 + 点数位」——雪碧图一行只有 8 格，
+   * 花色段和雪碧图行号根本不是一回事。搞混会让除黑桃外的每种花色都错位。
+   */
+  private sheetIndex(c: DdzCard): number {
+    if (c.code === 20) return SHEET_JOKER_SMALL;
+    if (c.code === 30) return SHEET_JOKER_BIG;
+    const suit = (SHEET_SUITS as readonly string[]).indexOf(SHEET_SUITS[c.suit] ?? 'spade');
+    const rank = (SHEET_RANKS as readonly string[]).indexOf(RANK_TO_SHEET[c.code] ?? 'A');
+    return (suit < 0 ? 0 : suit) * SHEET_RANKS.length + (rank < 0 ? 0 : rank);
   }
 
   /** 底牌：地主确定前是牌背，之后翻成真牌 */

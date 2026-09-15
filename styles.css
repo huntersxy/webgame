@@ -970,11 +970,16 @@ footer::before {
   transform: rotate(-5deg);
 }
 
-/* ══ 牌桌主体 ══ */
+/* ══ 牌桌主体 ══
+   牌桌宽度跟随容器，窄屏靠收紧内边距与牌尺寸适配，不做横向溢出。
+   内边距必须容纳木框的画宽：frame.png 的透明内洞在 760×560 的图上四边各留 36px，
+   摊到实际尺寸约 34px。padding 小于它，木纹就会压住贴边的座位。 */
 .ddz-table {
   position: relative;
+  width: 100%;
+  max-width: 100%;
   border-radius: 26px;
-  padding: 22px;
+  padding: 30px;
   min-height: 560px;
   border: 3px solid var(--ddz-wood-dark);
   box-shadow:
@@ -1001,7 +1006,7 @@ footer::before {
   background: url("/ddz/frame.png") center / 100% 100% no-repeat;
   pointer-events: none;
 }
-.ddz-table-inner { position: relative; z-index: 2; min-height: 516px; }
+.ddz-table-inner { position: relative; z-index: 2; min-height: 488px; }
 
 /* ══ 座位 ══
    左右两家的名牌靠边对齐：名字朝内、头像朝外，和牌桌主角的座位呼应。 */
@@ -1186,11 +1191,13 @@ footer::before {
 /* ══ 手牌扇面 ══ */
 .ddz-hand {
   position: relative;
-  display: flex; justify-content: center; align-items: flex-end;
-  height: 112px; padding: 22px 10px 8px;
+  display: flex; align-items: flex-end;
+  height: 118px; padding: 26px 10px 8px;
   overflow-x: auto; overflow-y: hidden;
   scrollbar-width: thin;
 }
+/* 用 margin:auto 而不是 justify-content:center 居中。
+   后者在内容溢出时会让起始边不可达，第一张牌被挤出可滚动区域、点不到也看不见。 */
 .ddz-card {
   position: relative; flex: none;
   width: var(--ddz-card-w); height: var(--ddz-card-h);
@@ -1202,7 +1209,8 @@ footer::before {
   -webkit-tap-highlight-color: transparent;
   user-select: none;
 }
-.ddz-card:first-child { margin-left: 0; }
+.ddz-card:first-child { margin-left: auto; }
+.ddz-card:last-child { margin-right: auto; }
 .ddz-card img { width: 100%; height: 100%; display: block; border-radius: 7px; }
 .ddz-card::after {
   content: ''; position: absolute; inset: 0; border-radius: 7px;
@@ -1224,13 +1232,13 @@ footer::before {
 @media (prefers-reduced-motion: reduce) { .ddz-card.dealt { animation: none; } }
 
 /* ══ 桌上打出的牌 ══ */
+/* 贴图位置由 JS 按百分比写入（见 ddz-controller.ts 的 applyCardBg），
+   这里只定尺寸；写死 background-size 会和 JS 打架。 */
 .ddz-mini {
   position: relative; flex: none;
   width: 52px; height: 78px;
   border-radius: 6px; overflow: hidden;
-  background-image: url("/ddz/cards.png");
   background-repeat: no-repeat;
-  background-size: 819.2px 1075.2px;
   filter: drop-shadow(1px 2px 3px rgba(0, 0, 0, .45));
 }
 .ddz-mini::after {
@@ -1304,8 +1312,9 @@ footer::before {
 /* ══ 窄屏 ══ */
 @media (max-width: 720px) {
   #view-ddz { --ddz-card-w: 46px; --ddz-card-h: 69px; --ddz-span: 22px; }
-  .ddz-table { padding: 16px; min-height: 470px; border-radius: 20px; }
-  .ddz-table-inner { min-height: 436px; }
+  /* 木框内洞约 4.7% 宽，窄屏按同比例收，别让木纹压住座位 */
+  .ddz-table { padding: 22px 18px; min-height: 440px; border-radius: 18px; }
+  .ddz-table-inner { min-height: 396px; }
   .ddz-portrait { width: 44px; height: 44px; }
   .ddz-avatar-img { inset: 4px; width: 36px; height: 36px; }
   .ddz-avatar-ring { width: 44px; height: 44px; }

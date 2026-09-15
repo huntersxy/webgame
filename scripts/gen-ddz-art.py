@@ -234,7 +234,7 @@ def round_mask(size, radius):
     return m
 
 
-def make_wood_frame(w, h, thickness=24, radius=36):
+def make_wood_frame(w, h, thickness=20, radius=36):
     """木质外框：木纹 + 内侧阴影，中心透明，直接罩在桌布上。"""
     import random
     img = Image.new('RGBA', (w, h), (0, 0, 0, 0))
@@ -436,7 +436,9 @@ def build_ui() -> None:
     log('绘制 UI 元件…')
     os.makedirs(UI_DIR, exist_ok=True)
     make_felt(760, 560).save(os.path.join(OUT_DIR, 'felt.jpg'), quality=88)
-    make_wood_frame(760, 560).save(os.path.join(OUT_DIR, 'frame.png'))
+    # 木框厚度直接决定「绒布可用区域」：frame.png 会被拉伸到牌桌尺寸，
+    # 木纹画多宽，贴边的座位就被压住多少。20px 是观感与余量的平衡点。
+    make_wood_frame(760, 560, thickness=20).save(os.path.join(OUT_DIR, 'frame.png'))
     make_back().save(os.path.join(UI_DIR, 'card-back.png'))
     make_glow('glow')
     make_timer_ring('timer-ring')
