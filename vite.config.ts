@@ -165,9 +165,10 @@ export default defineConfig({
         navigateFallback: '/index.html',
         cleanupOutdatedCaches: true,
         clientsClaim: true,
-        // 不自动 skipWaiting：留一张旧页面在新版本就绪后仍然可用，
-        // 直到玩家点「刷新」为止（见 src/pwa.ts）。
-        skipWaiting: false,
+        // 自动 skipWaiting：新版本装好即接管，配合 src/pwa.ts 的自动刷新。
+        // 早先设成 false（等玩家点提示）在纯静态站点上会自锁——入口 HTML 里的
+        // 构建号来自被旧 SW 缓存的 HTML，永远不变，新 SW 便永远停在 waiting。
+        skipWaiting: true,
         runtimeCaching: [
           {
             urlPattern: engineAssetPattern,
@@ -196,7 +197,8 @@ export default defineConfig({
   ],
   server: {
     port: 5173,
-    open: true,
+    // 不自动开浏览器：本机常有正在使用的窗口，自动弹出会打断手上的事。
+    open: false,
     headers: crossOriginIsolationHeaders,
   },
   preview: {
