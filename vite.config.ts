@@ -19,12 +19,12 @@ const crossOriginIsolationHeaders = {
  * 而且多数访客只玩其中一两款。改为运行时 CacheFirst：玩家真正用到的引擎
  * 第一次加载后即落盘，之后断网也能开局。
  */
-const ENGINE_DIRS = ['rapfi', 'go', 'xqnn', 'xqwlight', 'egaroucid', 'ddz'];
+const ENGINE_DIRS = ['rapfi', 'go', 'xqnn', 'xqwlight', 'egaroucid', 'ddz', 'ort'];
 
 /** 运行时缓存的 URL 匹配（不锚定行首，兼容部署到子目录的情况）
- *  除引擎目录外，还兜住 onnxruntime-web 的 glue/二进制——它们经 Vite 资源
- *  管线落在 /assets/ 下（文件名带 hash），按前缀匹配即可。 */
-const engineAssetPattern = new RegExp(`/(${ENGINE_DIRS.join('|')})/|/assets/ort-wasm-simd-threaded`);
+ *  覆盖各引擎目录；onnxruntime 的 glue/二进制现在也在 /ort/ 下，
+ *  改走 public/ 是为了避开静态主机对 .mjs 的 MIME 缺失（见 src/ai/ddz-worker.ts）。 */
+const engineAssetPattern = new RegExp(`/(${ENGINE_DIRS.join('|')})/`);
 
 /**
  * 不值得再压一遍的文件。

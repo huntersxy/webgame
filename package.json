@@ -9,9 +9,9 @@
   },
   "scripts": {
     "dev": "vite",
-    "predev": "node scripts/copy-tfjs-wasm.mjs",
+    "predev": "node scripts/copy-tfjs-wasm.mjs && node scripts/copy-ort-wasm.mjs",
     "build": "tsc --noEmit && vite build",
-    "prebuild": "node scripts/copy-tfjs-wasm.mjs",
+    "prebuild": "node scripts/copy-tfjs-wasm.mjs && node scripts/copy-ort-wasm.mjs",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "lint": "biome lint .",

@@ -9,12 +9,13 @@
 
 // 只取 wasm 后端构建：主入口会拖入 webgl/webgpu 与 28MB 的 jsep 运行时，这里用不到
 import * as ort from 'onnxruntime-web/wasm';
-// glue（.mjs）与 14MB 的 .wasm 二进制都走 Vite 资源管线（?url）：
-// /public 下的文件在 dev 模式会被转换中间件拒绝作为 ES 模块导入；
-// 走 ?url 解析则 dev 指向 node_modules 原文件、构建后自动落成带 hash 的
-// assets 副本（brotli 约 2.6MB），两态一致且无重复部署。
-import ortGlueUrl from 'onnxruntime-web/ort-wasm-simd-threaded.mjs?url';
-import ortWasmUrl from 'onnxruntime-web/ort-wasm-simd-threaded.wasm?url';
+// glue 与 14MB 的 .wasm 二进制放在 /public/ort/ 下，由 scripts/copy-ort-wasm.mjs
+// 在 predev / prebuild 时从 node_modules 同步过去。
+//
+// 为什么不走 Vite 的 ?url：那样构建产物是带 hash 的 /assets/*.mjs，而 .mjs 在不少
+// 静态主机上没有映射成 JavaScript MIME（返回 application/octet-stream），浏览器对
+// 动态 import() 做 MIME 检查会直接拒绝，模型就加载不起来。改成 public/ 下的 .js
+// 后缀后，任何主机都会按 JavaScript 下发。
 import type { DdzState } from '../ddz/game';
 import { getObs } from '../ddz/encoder';
 import type { DdzWorkerResponse } from '../ddz/douzero';
@@ -24,25 +25,20 @@ function reply(msg: DdzWorkerResponse): void {
 }
 
 /** 角色 → 会话 */
-const sessions: Partial<Record<'landlord' | 'landlord_up' | 'landlord_down', ort.InferenceSession>> =
-  {};
+const sessions: Partial<Record<'landlord' | 'landlord_up' | 'landlord_down', ort.InferenceSession>> = {};
 
 function configureEnv(): void {
-  // wasmPaths 对象形式：glue（.mjs）与 .wasm 二进制的 URL 都由 Vite 资源
-  // 管线给出（dev → node_modules 原文件；构建 → /assets/ 带 hash 副本），
-  // 避免 /public 文件在 dev 下被转换中间件拒绝作为 ES 模块导入。
+  // 固定路径：由 copy-ort-wasm.mjs 同步到 public/ort/，dev 与构建两态一致。
   ort.env.wasm.wasmPaths = {
-    mjs: ortGlueUrl,
-    wasm: ortWasmUrl,
+    mjs: '/ort/ort-wasm-simd-threaded.js',
+    wasm: '/ort/ort-wasm-simd-threaded.wasm',
   };
   // 单线程：网络极小（每层几百神经元），单线程已 <10ms，且不依赖 SAB
   ort.env.wasm.numThreads = 1;
   ort.env.wasm.proxy = false;
 }
 
-async function warmUp(
-  models: { landlord: ArrayBuffer; landlord_up: ArrayBuffer; landlord_down: ArrayBuffer },
-): Promise<void> {
+async function warmUp(models: { landlord: ArrayBuffer; landlord_up: ArrayBuffer; landlord_down: ArrayBuffer }): Promise<void> {
   configureEnv();
   const roles = ['landlord', 'landlord_up', 'landlord_down'] as const;
   let done = 0;
