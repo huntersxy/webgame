@@ -25,6 +25,7 @@
 | ♞ 中国象棋 | `#/xiangqi` | 完整规则（蹩马腿、塞象眼、飞将、困毙判负）；神经网络与经典引擎二选一，四档难度，棋盘可翻转 |
 | ⚫⚪ 黑白棋 | `#/othello` | 8×8 翻转棋（奥赛罗）；位置权重 + 行动力评估、迭代加深 α-β、终局精确求解，四档难度，支持停手自动处理 |
 | ⚔️ 军棋 · 陆战棋 | `#/junqi` | 明棋（自定义摆阵）/ 揭棋（暗棋）两种玩法，人机四档难度，AI 互搏观战 |
+| 🃏 斗地主 | `#/ddz` | 标准三人玩法（叫分定地主、完整牌型、炸弹/王炸/春天翻倍）；DouZero WP 神经网络在 Web Worker 内推理 |
 | 🌪️ 龙卷风成长记 | `#/tornado` | 大鱼吃小鱼式成长，六个量级从街道一路卷到全地球 |
 | 🏰 战役 | `#/campaign` | 五子棋风格化守关 AI，破防获胜解锁下一关 |
 
@@ -55,12 +56,12 @@ npm run lint       # Biome 静态检查
 npm run check      # Biome 检查 + 格式检查
 npm run format     # Biome 自动格式化
 npm run icons      # 重新生成 PWA 图标（改品牌色后用）
-npm test           # 10 套引擎自测，共 398 项
+npm test           # 11 套引擎自测，共 481 项
 npm test -- othello    # 只跑其中一套（套件名见 scripts/run-tests.mjs）
 npm run test:othello:smoke    # 浏览器接口冒烟（需先跑起 dev server）
 ```
 
-测试分布：五子棋 29 · 军棋 66 · Rapfi 18 · 象棋 FEN 16 · 象棋 α-β 8 · 象棋神经网络 32 · XQWLight 22 · 龙卷风 76 · 黑白棋 27 · 黑白棋控制器 15 · 围棋 95。
+测试分布：五子棋 29 · 军棋 66 · Rapfi 18 · 象棋 FEN 16 · 象棋 α-β 8 · 象棋神经网络 32 · XQWLight 22 · 龙卷风 76 · 斗地主 77 · 黑白棋 27 · 黑白棋控制器 15 · 围棋 95。
 
 ## AI 引擎
 
@@ -123,6 +124,15 @@ npm run test:othello:smoke    # 浏览器接口冒烟（需先跑起 dev server�
 - 揭棋信息模型：己方棋子始终可见，对方仅知已暴露的身份；位置、旗区守备与威胁只统计已知信息，暗子按编制先验折算期望威胁
 - 明棋支持自定义摆阵并实时校验（军旗入大本营、地雷限后两排、炸弹不进第一排、行营留空）
 
+### 斗地主
+
+- **规则引擎**：`src/ddz/rules.ts` 移植自 [DouZero](https://github.com/kwai/DouZero)（Apache-2.0）的走法生成与牌型判定（`move_generator.py` / `move_detector.py` / `move_selector.py`），覆盖全部 15 类牌型（单、对、三、三带一/二、顺子、连对、飞机及其带牌、四带二/两对、炸弹、王炸），压牌过滤与官方一致
+- **AI**：DouZero WP（ICML 2021 开源斗地主模型）的三个角色 Q 网络——`landlord.onnx`（373 维输入）、`landlord_up.onnx` / `landlord_down.onnx`（484 维输入），各约 6MB（均 <10MB），随站点分发
+- **编码**：`src/ddz/encoder.ts` 对齐官方 `env.py` 的 `get_obs` 系列——`x` 为角色相关特征拼接，`z` 为最近 15 手历史重塑为 5×162 喂 LSTM；牌值沿用上游编码（`2=17`、`小王=20`、`大王=30`）
+- **推理**：模型在独立 Web Worker 内由 onnxruntime-web（WASM 后端，单线程）前向，主线程只做预取与转发；argmax Q 选走法
+- **兜底**：模型加载完成前由内置牌理启发式应战（跟最小、不拆炸弹、对手将走完才交炸弹）；叫分走手牌强度评分表（大王 4 + 小王 3 + 火箭 4 + 炸弹 8 + 2×3 + A×1，≥18 叫 3 分）
+- **计分**：底分（叫分值）× 倍数（每次炸弹翻倍，春天/反春再 ×2），地主 ±2 份、农民各 ±1 份
+
 ## 部署
 
 推送 `master` 会自动触发 **引擎自测 → 类型检查与构建 → FTP 上传 `dist/`**，也可在 [Actions](https://github.com/huntersxy/webgame/actions) 手动触发。工作流见 [deploy.yml](.github/workflows/deploy.yml)。
@@ -155,7 +165,7 @@ server {
 
     # 引擎资源与围棋权重：URL 带 ?v=<版本号>，可长期缓存
     # 注意：location 内出现 add_header 后，server 级的 add_header 不再继承，需重复声明
-    location ~* ^/(rapfi|go|xqnn|xqwlight|egaroucid)/ {
+    location ~* ^/(rapfi|go|xqnn|xqwlight|egaroucid|ddz)/ {
         add_header Cache-Control "public, max-age=31536000, immutable" always;
         add_header Cross-Origin-Opener-Policy "same-origin" always;
         add_header Cross-Origin-Embedder-Policy "require-corp" always;

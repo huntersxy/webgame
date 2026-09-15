@@ -4,8 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <title>汐兮雨的小鱼池 — 五子棋 · 中国象棋 · 军棋 · 休闲小游戏</title>
-<meta name="description" content="汐兮雨的小鱼池是一个免注册、无广告、离线可玩的网页游戏平台：五子棋、中国象棋、军棋（陆战棋）、龙卷风成长记。AI 全部在浏览器本地计算，打开即玩。">
-<meta name="keywords" content="五子棋,中国象棋,军棋,陆战棋,网页游戏,在线棋类游戏,AI对弈,小游戏,休闲游戏,小鱼池">
+<meta name="description" content="汐兮雨的小鱼池是一个免注册、无广告、离线可玩的网页游戏平台：五子棋、中国象棋、军棋（陆战棋）、斗地主、龙卷风成长记。AI 全部在浏览器本地计算，打开即玩。">
+<meta name="keywords" content="五子棋,中国象棋,军棋,陆战棋,斗地主,网页游戏,在线棋类游戏,AI对弈,小游戏,休闲游戏,小鱼池">
 <meta name="theme-color" content="#10a88c">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="汐兮雨的小鱼池">
@@ -30,6 +30,7 @@
     <button class="tab" data-tab="othello">黑白棋</button>
     <button class="tab" data-tab="xiangqi">中国象棋</button>
     <button class="tab" data-tab="junqi">军棋</button>
+    <button class="tab" data-tab="ddz">斗地主</button>
   </nav>
   <div class="top-status"><span id="global-status-dot"></span><span id="global-status-text">AI 就绪</span></div>
 </header>
@@ -53,7 +54,7 @@
           <div class="stats">
             <div><b id="stat-games">0</b><i>累计对局</i></div>
             <div><b id="stat-wins">0</b><i>你的胜场</i></div>
-            <div><b>5</b><i>已上线游戏</i></div>
+            <div><b>7</b><i>已上线游戏</i></div>
           </div>
         </div>
         <div class="hero-art" aria-hidden="true">
@@ -198,6 +199,24 @@
           <div class="game-foot">
             <span class="price">免费</span>
             <button class="btn primary" data-goto="junqi">立即开玩</button>
+          </div>
+        </div>
+      </article>
+
+      <article class="game-card">
+        <div class="game-thumb ddz-thumb">
+          <span class="ddz-fan c1">🂡</span>
+          <span class="ddz-fan c2">🂱</span>
+          <span class="ddz-fan c3">🃁</span>
+          <span class="ddz-landlord">地主</span>
+        </div>
+        <div class="game-body">
+          <h3>斗地主 <span class="chip new">神经网络</span></h3>
+          <p>经典三人斗地主：叫分抢地主、三代飞机全牌型。AI 本地跑 DouZero WP（ICML 2021 开源冠军模型），牌风硬朗。</p>
+          <div class="tags"><span>人机对战</span><span>完整牌型</span><span>炸弹翻倍</span><span>DouZero AI</span></div>
+          <div class="game-foot">
+            <span class="price">免费</span>
+            <button class="btn primary" data-goto="ddz">立即开玩</button>
           </div>
         </div>
       </article>
@@ -765,6 +784,118 @@
           <p><b>终局</b>：双方连续虚手即终局，按<b>中国规则数子</b>——盘上活子 + 围住的空点，白方另加贴目（9/13 路 7 目，19 路 7.5 目）。AI 会顺带用神经网络判断死子并按死子扣除，若不认可可点「继续下棋」接着下。</p>
           <p><b>请神上身</b>：开启后棋盘上常驻标出<b>当前局面最佳点</b>（紫色「神」标记，满配搜索），每落一手自动重算；再点一次「送神离开」即关闭。<b>求一着</b>是单次提示（绿色「推荐」圈），<b>形势判断</b>铺出双方归属并可再点一次关闭。</p>
           <p><b>AI 说明</b>：本地运行 KataGo 官方最小神经网络（g170-b6c96，约 3.8MB，约 103 万参数），由 TensorFlow.js 在浏览器内前向（优先 WebGPU，其次 WebGL，再退 WASM/CPU），配合 PUCT 树搜索。四档难度 = 访问量与思考时间预算；「求一着」与恶魔档为满配搜索。</p>
+        </details>
+      </aside>
+    </div>
+  </section>
+  <section id="view-ddz" class="view">
+    <div class="page-head">
+      <nav class="crumbs"><a href="#/" data-goto="home">游戏库</a><span>/</span><b>斗地主</b></nav>
+      <div class="page-actions">
+        <button class="btn plain" data-goto="home">← 返回游戏库</button>
+      </div>
+    </div>
+    <div class="layout">
+      <div class="board-wrap">
+        <div class="board-head">
+          <h2>斗地主 <small>DOU DI ZHOU · DouZero 神经网络 AI</small></h2>
+          <div id="ddz-turn" class="turn-pill">叫分中…</div>
+        </div>
+        <div id="ddz-engine-load" class="engine-load hidden">
+          <div class="el-head">
+            <span class="el-dot"></span>
+            <span id="ddz-engine-state">AI 模型加载中…</span>
+            <b id="ddz-engine-pct"></b>
+          </div>
+          <div class="el-bar"><i id="ddz-engine-bar"></i></div>
+          <p class="el-tip">首次进入需下载约 <b>17MB</b> 模型（DouZero WP 三个角色网络，每个 &lt;10MB）。加载期间<b>照常可以出牌</b>——先用内置牌理顶着打。</p>
+        </div>
+        <div class="ddz-table">
+          <div class="ddz-seat top-left">
+            <div class="ddz-seat-head">
+              <span class="ddz-avatar">🐧</span>
+              <div class="ddz-seat-meta">
+                <b id="ddz-name-2">电脑·左家</b>
+                <span id="ddz-role-2" class="ddz-role hidden">地主</span>
+              </div>
+              <span id="ddz-cnt-2" class="ddz-cnt">17 张</span>
+            </div>
+            <div id="ddz-played-2" class="ddz-played"></div>
+          </div>
+          <div class="ddz-seat top-right">
+            <div class="ddz-seat-head">
+              <span class="ddz-avatar">🦊</span>
+              <div class="ddz-seat-meta">
+                <b id="ddz-name-1">电脑·右家</b>
+                <span id="ddz-role-1" class="ddz-role hidden">地主</span>
+              </div>
+              <span id="ddz-cnt-1" class="ddz-cnt">17 张</span>
+            </div>
+            <div id="ddz-played-1" class="ddz-played right"></div>
+          </div>
+          <div class="ddz-middle">
+            <div class="ddz-bottom-row">
+              <span class="ddz-bottom-label">底牌</span>
+              <div id="ddz-bottom" class="ddz-bottom"></div>
+            </div>
+            <div id="ddz-bidbar" class="ddz-bidbar hidden">
+              <span>该你叫分：</span>
+              <button class="btn plain" data-bid="0">不叫</button>
+              <button class="btn plain" data-bid="1">1 分</button>
+              <button class="btn plain" data-bid="2">2 分</button>
+              <button class="btn primary" data-bid="3">3 分</button>
+            </div>
+          </div>
+          <div class="ddz-seat bottom-seat">
+            <div class="ddz-seat-head">
+              <span class="ddz-avatar">🙂</span>
+              <div class="ddz-seat-meta">
+                <b>你</b>
+                <span id="ddz-role-0" class="ddz-role hidden">地主</span>
+              </div>
+              <span id="ddz-cnt-0" class="ddz-cnt">17 张</span>
+            </div>
+            <div id="ddz-played-0" class="ddz-played center"></div>
+            <div id="ddz-hand" class="ddz-hand"></div>
+          </div>
+        </div>
+        <div class="ddz-actions">
+          <button id="ddz-pass" class="btn plain" disabled>⊘ 不出</button>
+          <button id="ddz-play" class="btn primary" disabled>出牌</button>
+          <button id="ddz-hint" class="btn soft" disabled>💡 提示</button>
+        </div>
+        <div id="ddz-result" class="result-banner hidden"></div>
+      </div>
+      <aside class="panel">
+        <div class="panel-block">
+          <h3>对局设置</h3>
+          <label class="row"><span>引擎</span>
+            <div class="seg" id="ddz-engine"><button data-v="auto" class="on" title="优先使用 DouZero 神经网络；未就绪时先用内置牌理顶着打">DouZero AI</button><button data-v="heuristic" title="内置牌理启发式（弱）；不加载、不等模型">内置牌理</button></div>
+          </label>
+          <div class="engine-note" id="ddz-engine-note">模型加载中：先用内置牌理应战，加载完成后自动切换。</div>
+          <div class="engine-note">规则：<b>标准三人斗地主</b> · 叫分定地主 · 炸弹/王炸翻倍 · 春天再翻倍</div>
+        </div>
+        <div class="panel-block">
+          <div class="btn-grid">
+            <button id="ddz-new" class="btn primary">新开一局</button>
+            <button id="ddz-sound" class="btn plain on">🔊 音效开</button>
+          </div>
+        </div>
+        <div class="panel-block info-box">
+          <div class="info-line"><span>身份</span><b id="ddz-side">叫分中</b></div>
+          <div class="info-line"><span>底分</span><b id="ddz-base">—</b></div>
+          <div class="info-line"><span>倍数</span><b id="ddz-mult">×1</b></div>
+          <div class="info-line"><span>本局得分</span><b id="ddz-score">—</b></div>
+        </div>
+        <div class="panel-block">
+          <h4 class="log-head">对局记录</h4>
+          <div class="thinklog" id="ddz-log"><div class="empty">叫分与出牌会记录在这里</div></div>
+        </div>
+        <details class="rules"><summary>规则与玩法说明</summary>
+          <p>三人一副牌：每人 17 张，留 3 张底牌。轮流<b>叫分</b>（0~3 分），最高分者当<b>地主</b>拿走底牌，另外两家是一伙的「农民」。地主先出，任意合法牌型皆可；下家要出<b>同型更大</b>或用<b>炸弹</b>压，都压不起就「不出」。先出完手牌的一方获胜。</p>
+          <p><b>牌型</b>：单张、对子、三张、三带一、三带二、顺子（≥5 张，不含 2 和王）、连对（≥3 对）、飞机（连续三张，可带同数单/对）、四带二（可带两单或两对）、炸弹（四张同点）、王炸（双王，最大）。炸弹与王炸可以压任何非炸弹牌型，且每出一次<b>倍数翻倍</b>；地主一张未出（春天）或农民只让地主出一手（反春）再翻倍。</p>
+          <p><b>计分</b>：最终得分 = 底分（叫分值）× 倍数。地主赢 ±2 份，农民各 ±1 份。</p>
+          <p><b>AI 说明</b>：对手由本地运行的 <b>DouZero WP</b>（ICML 2021 开源斗地主冠军模型，Apache-2.0）驱动，三个角色网络（地主 / 地主上家 / 地主下家）各约 6MB，由 onnxruntime-web 在 Web Worker 内前向推理，全程离线。模型就绪前先用内置牌理启发式应战。</p>
         </details>
       </aside>
     </div>

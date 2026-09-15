@@ -42,6 +42,7 @@ const SUITES = [
   { name: 'xqnn', entries: ['tests/xqnn.test.mts'], external: TFJS },
   { name: 'xqwlight', entries: ['tests/xqwlight.test.mts'] },
   { name: 'tornado', entries: ['tests/tornado.test.mts'] },
+  { name: 'ddz', entries: ['tests/ddz.test.mts'] },
   { name: 'go', entries: ['tests/go.test.mts'], format: 'cjs' },
   {
     name: 'othello',

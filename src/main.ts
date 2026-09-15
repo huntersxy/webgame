@@ -13,6 +13,7 @@ import { TornadoController } from './controllers/tornado-controller';
 import { JunqiController } from './controllers/junqi-controller';
 import { GoController } from './controllers/go-controller';
 import { OthelloController } from './controllers/othello-controller';
+import { DoudizhuController } from './controllers/ddz-controller';
 import { setupDemonAssets } from './ui/demon';
 import { setupPWA } from './pwa';
 import { mustEl } from './ui/dom';
@@ -25,8 +26,8 @@ function setGlobalStatus(t: string): void {
 (window as any).setGlobalStatus = setGlobalStatus;
 
 // ── Hash router ──
-type ViewName = 'home' | 'tornado' | 'gomoku' | 'campaign' | 'othello' | 'xiangqi' | 'junqi' | 'go';
-const routes = ['home', 'tornado', 'gomoku', 'campaign', 'othello', 'xiangqi', 'junqi', 'go'] as const;
+type ViewName = 'home' | 'tornado' | 'gomoku' | 'campaign' | 'othello' | 'xiangqi' | 'junqi' | 'go' | 'ddz';
+const routes = ['home', 'tornado', 'gomoku', 'campaign', 'othello', 'xiangqi', 'junqi', 'go', 'ddz'] as const;
 
 const views: Record<ViewName, HTMLElement> = {
   home: mustEl('view-home'),
@@ -37,6 +38,7 @@ const views: Record<ViewName, HTMLElement> = {
   xiangqi: mustEl('view-xiangqi'),
   junqi: mustEl('view-junqi'),
   go: mustEl('view-go'),
+  ddz: mustEl('view-ddz'),
 };
 
 function isView(v: string): v is ViewName {
@@ -67,6 +69,7 @@ function applyView(name: ViewName): void {
   if (name === 'tornado') tornadoCtrl.redraw();
   if (name === 'junqi') junqiCtrl.redraw();
   if (name === 'go') { goCtrl.redraw(); goCtrl.warmUp(); }
+  if (name === 'ddz') { ddzCtrl.redraw(); ddzCtrl.warmUp(); }
 }
 
 function routeFromHash(): ViewName {
@@ -100,6 +103,7 @@ const tornadoCtrl = new TornadoController(tornadoCanvas, audio);
 const junqiCtrl = new JunqiController(junqiCanvas, ai, audio);
 const goCtrl = new GoController(goCanvas, ai, audio);
 const othelloCtrl = new OthelloController(othelloCanvas, ai, audio);
+const ddzCtrl = new DoudizhuController(audio);
 // 暴露给控制台/自动化冒烟使用（scripts/othello-smoke.mjs）
 (window as any).othelloCtrl = othelloCtrl;
 
