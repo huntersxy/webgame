@@ -13,13 +13,16 @@ const crossOriginIsolationHeaders = {
 };
 
 /**
- * 引擎资产目录（含 WASM、权重、开局库，合计约 27MB）。
+ * 运行时按需缓存的资产目录（含 WASM、权重、开局库，合计约 27MB）。
  *
  * 这些文件**不进 Service Worker 预缓存清单**——否则首次安装就要拉 27MB，
  * 而且多数访客只玩其中一两款。改为运行时 CacheFirst：玩家真正用到的引擎
  * 第一次加载后即落盘，之后断网也能开局。
+ *
+ * `ruffle` 是 Flash 播放器运行时（约 14MB，其中真正下载的 SIMD 内核约 3.8MB），
+ * `games` 是随站点分发的游戏本体；两者同理——只有进到龙卷风页才需要。
  */
-const ENGINE_DIRS = ['rapfi', 'go', 'xqnn', 'xqwlight', 'egaroucid', 'ddz', 'ort'];
+const ENGINE_DIRS = ['rapfi', 'go', 'xqnn', 'xqwlight', 'egaroucid', 'ddz', 'ort', 'ruffle', 'games'];
 
 /** 运行时缓存的 URL 匹配（不锚定行首，兼容部署到子目录的情况）
  *  覆盖各引擎目录；onnxruntime 的 glue/二进制现在也在 /ort/ 下，

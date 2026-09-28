@@ -577,51 +577,61 @@ canvas { max-width: 100%; height: auto; border-radius: 10px; cursor: pointer; }
 
 /* ── Tornado page ── */
 .hint-line { font-size: 12px; color: var(--faint); background: #f2f6f5; border: 1px solid var(--line); padding: 6px 12px; border-radius: 99px; }
-.tier-list { display: flex; flex-direction: column; gap: 7px; }
-.tier-item { display: flex; align-items: center; gap: 10px; padding: 8px 11px; border-radius: var(--radius-sm); background: #f7faf8; border: 1px solid var(--line); transition: .18s; }
-.tier-item .n { width: 24px; height: 24px; flex: none; border-radius: 50%; display: grid; place-items: center; font-size: 12px; font-weight: 800; background: var(--surface); border: 1px solid var(--line); color: var(--muted); }
-.tier-item .t { flex: 1; min-width: 0; }
-.tier-item .t b { display: block; font-size: 13px; }
-.tier-item .t small { display: block; font-size: 10px; color: var(--faint); letter-spacing: 1.5px; }
-.tier-item .st { font-size: 14px; }
-.tier-item.current { background: var(--accent-soft); border-color: #bfe5dc; box-shadow: 0 0 0 2px rgba(14,159,133,.08); }
-.tier-item.current .n { background: var(--accent); border-color: var(--accent); color: #fff; }
-.tier-item.done { opacity: .72; }
-.tier-item.done .st::after { content: '✓'; color: #22c55e; font-weight: 800; }
-.tier-item.current .st::after { content: '▶'; color: var(--accent-ink); font-size: 11px; }
-#t-canvas { cursor: crosshair; }
 
-/* ── 龙卷风：连击徽标 ── */
-/* 浮在棋盘左上角，只在有连击时出现（避免静态界面干扰） */
-.combo-badge {
+/* 《龙卷风牧场》舞台：原作是固定 640×480 的 Flash 舞台，
+   这里按容器宽度等比缩放（保持 4:3），不拉伸、不留黑边错位。 */
+.ranch-holder {
+  position: relative;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 14px;
+  background: linear-gradient(180deg, #eaf4f8, #f7faf8);
+}
+.ranch-stage {
+  position: relative;
+  width: 100%;
+  max-width: 640px;
+  aspect-ratio: 4 / 3;
+  border-radius: 10px;
+  overflow: hidden;
+  background: #6c8fbf; /* 与原作标题页底色一致，载入时不闪白 */
+  box-shadow: 0 6px 20px rgba(28, 43, 51, .14);
+}
+.ranch-stage ruffle-player,
+.ranch-stage ruffle-embed,
+.ranch-stage ruffle-object {
+  display: block;
+  width: 100% !important;
+  height: 100% !important;
+}
+/* Ruffle 未接管前（脚本未就绪/加载中）保持占位，不让布局跳动 */
+.ranch-stage:empty::after {
+  content: '';
   position: absolute;
-  top: 22px;
-  left: 22px;
-  padding: 6px 12px;
-  border-radius: 999px;
-  font-size: 14px;
-  font-weight: 800;
-  letter-spacing: .3px;
-  color: #fff;
-  background: linear-gradient(135deg, #f59e0b, #ef4444);
-  box-shadow: 0 3px 10px rgba(239, 68, 68, .35);
-  pointer-events: none;
-  transition: opacity .12s linear;
+  inset: 0;
+  background: linear-gradient(100deg, transparent 30%, rgba(255, 255, 255, .22) 50%, transparent 70%);
+  animation: ranch-shimmer 1.4s linear infinite;
 }
-.combo-badge.hidden { display: none; }
-
-/* ── 龙卷风：冲刺按钮状态 ── */
-.dash-btn { transition: .16s; }
-.dash-btn.ready {
-  background: var(--accent-soft);
-  border-color: var(--accent);
-  color: var(--accent-ink);
-  font-weight: 700;
-  box-shadow: 0 0 0 2px rgba(16, 168, 140, .16);
+@keyframes ranch-shimmer {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(100%); }
 }
+.ranch-status {
+  font-size: 12px;
+  color: var(--muted);
+  text-align: center;
+  min-height: 18px;
+}
+.ranch-status.hidden { display: none; }
+.ranch-failed { background: #fdf2f2; }
+.ranch-note { font-size: 12.5px; color: var(--muted); line-height: 1.7; }
+.ranch-note b { color: var(--ink); }
+.ranch-note.small { font-size: 11.5px; margin-top: 10px; color: var(--faint); }
 
-/* ── 龙卷风：本关目标达成 ── */
-#t-goal.done { color: #b45309; }
+@media (max-width: 640px) {
+  .ranch-holder { padding: 8px; }
+}
 
 /* ── Campaign ── */
 .camp-progress { margin-bottom: 12px; }

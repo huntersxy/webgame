@@ -9,9 +9,9 @@
   },
   "scripts": {
     "dev": "vite",
-    "predev": "node scripts/copy-tfjs-wasm.mjs && node scripts/copy-ort-wasm.mjs",
+    "predev": "node scripts/copy-tfjs-wasm.mjs && node scripts/copy-ort-wasm.mjs && node scripts/copy-ruffle.mjs",
     "build": "tsc --noEmit && vite build",
-    "prebuild": "node scripts/copy-tfjs-wasm.mjs && node scripts/copy-ort-wasm.mjs",
+    "prebuild": "node scripts/copy-tfjs-wasm.mjs && node scripts/copy-ort-wasm.mjs && node scripts/copy-ruffle.mjs",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "lint": "biome lint .",
@@ -21,13 +21,11 @@
     "test": "node scripts/run-tests.mjs",
     "test:othello:smoke": "node scripts/othello-smoke.mjs",
     "test:tornado:smoke": "node scripts/tornado-smoke.mjs",
-    "test:tornado:fallback": "node scripts/tornado-fallback-smoke.mjs",
-    "check:shaders": "node scripts/check-shaders.mjs",
-    "test:tornado:compare": "node scripts/tornado-backend-compare.mjs",
     "test:site": "node scripts/site-regression.mjs"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.13",
+    "@ruffle-rs/ruffle": "^0.6.0",
     "esbuild": "^0.28.2",
     "typescript": "^7.0.2",
     "vite": "^8.3.0",
@@ -40,7 +38,6 @@
     "@tensorflow/tfjs-backend-webgl": "^4.22.0",
     "@tensorflow/tfjs-backend-webgpu": "^4.22.0",
     "@tensorflow/tfjs-core": "^4.22.0",
-    "onnxruntime-web": "^1.30.0",
-    "vgpu": "^0.5.0"
+    "onnxruntime-web": "^1.30.0"
   }
 }

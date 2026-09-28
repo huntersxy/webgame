@@ -4,13 +4,13 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <title>汐兮雨的小鱼池 — 五子棋 · 中国象棋 · 军棋 · 休闲小游戏</title>
-<meta name="description" content="汐兮雨的小鱼池是一个免注册、无广告、离线可玩的网页游戏平台：五子棋、中国象棋、军棋（陆战棋）、斗地主、龙卷风成长记。AI 全部在浏览器本地计算，打开即玩。">
+<meta name="description" content="汐兮雨的小鱼池是一个免注册、无广告、离线可玩的网页游戏平台：五子棋、中国象棋、军棋（陆战棋）、斗地主、龙卷风牧场。AI 全部在浏览器本地计算，打开即玩。">
 <meta name="keywords" content="五子棋,中国象棋,军棋,陆战棋,斗地主,网页游戏,在线棋类游戏,AI对弈,小游戏,休闲游戏,小鱼池">
 <meta name="theme-color" content="#10a88c">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="汐兮雨的小鱼池">
 <meta property="og:title" content="汐兮雨的小鱼池">
-<meta property="og:description" content="免注册 · 无广告 · 离线可玩：五子棋、中国象棋、军棋（自定义摆阵 / 揭棋 / AI 互搏）、龙卷风成长记，AI 全部在浏览器本地计算。">
+<meta property="og:description" content="免注册 · 无广告 · 离线可玩：五子棋、中国象棋、军棋（自定义摆阵 / 揭棋 / AI 互搏）、龙卷风牧场，AI 全部在浏览器本地计算。">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%2310a88c'/%3E%3Ctext x='32' y='44' font-size='34' text-anchor='middle'%3E%F0%9F%90%9F%3C/text%3E%3C/svg%3E">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <link rel="stylesheet" href="/styles.css">
@@ -93,9 +93,9 @@
           </div>
         </div>
         <div class="game-body">
-          <h3>龙卷风成长记 <span class="chip hot">NEW</span></h3>
-          <p>大鱼吃小鱼式成长：卷走比你小的一切壮大自己，撞上更大的只会被弹开、零惩罚。清空一个量级，镜头拉远——从街道一路卷到全地球。</p>
-          <div class="tags"><span>单人休闲</span><span>键盘 / 触屏</span><span>六段量级</span><span>弹开无伤</span></div>
+          <h3>龙卷风牧场 <span class="chip hot">NEW</span></h3>
+          <p>经典 Flash 小游戏原版：操控龙卷风在农场上横冲直撞，卷起地上的东西壮大自己，12 天内交出买家见过最强的龙卷风。内置 Flash 播放器，打开即玩，无需安装插件。</p>
+          <div class="tags"><span>单人休闲</span><span>鼠标 / 触屏</span><span>12 天期限</span><span>免插件</span></div>
           <div class="game-foot">
             <span class="price">免费</span>
             <button class="btn primary" data-goto="tornado">立即开玩</button>
@@ -242,54 +242,39 @@
     </div><!-- /home-layout -->
   </section>
 
-  <!-- ═══════════ 龙卷风成长记 ═══════════ -->
+  <!-- ═══════════ 龙卷风牧场 ═══════════ -->
   <section id="view-tornado" class="view">
     <div class="page-head">
-      <nav class="crumbs"><a href="#/" data-goto="home">游戏库</a><span>/</span><b>龙卷风成长记</b></nav>
+      <nav class="crumbs"><a href="#/" data-goto="home">游戏库</a><span>/</span><b>龙卷风牧场</b></nav>
       <div class="page-actions">
-        <div id="t-turn" class="turn-pill">当前量级 街道内</div>
+        <div class="turn-pill">Flash 原版 · 免插件</div>
       </div>
     </div>
     <div class="layout">
       <div class="board-wrap">
         <div class="board-head">
-          <h2>龙卷风成长记 <small>TORNADO RISE · 大鱼吃小鱼</small></h2>
-          <div class="hint-line">WASD / 方向键移动 · 按住画面即可牵引龙卷风 · 空格冲刺</div>
+          <h2>龙卷风牧场 <small>TORNADO RANCH · 原版 Flash</small></h2>
+          <div class="hint-line">移动鼠标牵引龙卷风 · 卷起地面上的东西 · 点画面交互</div>
         </div>
-        <div class="canvas-holder">
-          <canvas id="t-canvas" width="640" height="640"></canvas>
-          <div id="t-combo" class="combo-badge hidden"></div>
+        <div class="canvas-holder ranch-holder">
+          <div id="t-stage" class="ranch-stage"></div>
+          <div id="t-status" class="ranch-status">正在加载…</div>
         </div>
-        <div id="t-result" class="result-banner hidden"></div>
       </div>
       <aside class="panel">
         <div class="panel-block">
-          <h3>量级进度</h3>
-          <div class="tier-list" id="t-tier-list"></div>
-        </div>
-        <div class="panel-block info-box">
-          <div class="info-line"><span>当前量级</span><b id="t-tier">街道内 · 1/6</b></div>
-          <div class="info-line"><span>已卷走</span><b id="t-eaten">0 / 16</b></div>
-          <div class="bar"><i id="t-progress" style="width:0%"></i></div>
-          <div class="info-line"><span>得分</span><b id="t-score">0</b></div>
-          <div class="info-line"><span>最高分</span><b id="t-best">0</b></div>
-          <div class="info-line small"><span>体型</span><b id="t-radius">小型</b></div>
-          <div class="info-line small"><span>本关目标</span><b id="t-goal">目标 0 / 0</b></div>
-          <div class="info-line small"><span>状态</span><b id="t-status">吞噬中…</b></div>
+          <h3>关于这一作</h3>
+          <p class="ranch-note">原作 Flash 小游戏《龙卷风牧场》。由编译成 WebAssembly 的 Flash 播放器在浏览器内解释执行——<b>不需要安装 Flash 插件</b>，游戏文件与播放器都随本站一起分发，不依赖任何第三方站点。</p>
         </div>
         <div class="panel-block">
           <div class="btn-grid">
-            <button id="t-dash" class="btn soft dash-btn">💨 冲刺（空格）</button>
             <button id="t-restart" class="btn primary">↻ 重新开始</button>
           </div>
-          <div class="btn-grid">
-            <button id="t-restart-tier" class="btn soft" title="重新生成当前量级的建筑与地形，得分回滚到本关开始">⤓ 本关重置</button>
-            <button id="t-sound" class="btn plain on">🔊 音效开</button>
-          </div>
+          <p class="ranch-note small">重新载入游戏本体，回到标题画面。关卡进度与存档都保存在浏览器本地。</p>
         </div>
-        <details class="rules" open><summary>玩法说明</summary><p>你是一株初始只有 22px 的小龙卷风。<b>比它小的建筑统统卷走</b>（体积按面积增长，被卷起的建筑会旋转着吸进风眼）；<b>比它大的建筑带 🔒 标记，现在还卷不动</b>，撞上去只会被弹开、没有任何惩罚——长大后再回来。地图上的<b>湖泊、巨石、雪山、树林是地形障碍，永远无法破坏</b>，绕着走。清空本阶段全部建筑后，镜头自动拉远、你相对缩小，进入下一个更大的量级：街道 → 楼房 → 城市 → 国家 → 洲 → 全地球。</p></details>
-        <details class="rules" open><summary>进阶：连击 · 冲刺 · 量级目标</summary><p><b>连击</b>：吃掉一个物体后 2.2 秒内再吃下一个就累计一层，每层把得分提高 12%（最多 12 层，约 2.3 倍）。连击倍率与剩余时间会显示在棋盘上——想拿高分就得一路不停地找猎物。<br><b>冲刺</b>：攒够 4 层连击后按<b>空格</b>（或手机双击画面、点侧栏按钮）向当前方向爆发冲刺，用来追上快逃的猎物或脱出包围。冲刺消耗 4 层连击，冷却 0.9 秒。<br><b>量级目标</b>：每关除「吃光」外还有一条分数线，达成即评为高效通关。通关时按达成的量级目标数给出 S / A / B / C 评价——想拿 S 就得靠连击。</p></details>
-        <details class="rules"><summary>操作</summary><p>桌面：WASD 或方向键推风；也可用鼠标/手指按住画面任意位置，龙卷风会持续向该点加速；空格冲刺。移动端：单指按住拖动牵引，双击画面冲刺。</p></details>
+        <details class="rules" open><summary>玩法说明</summary><p>你操控一株龙卷风在农场上移动，把地面上的东西卷进来壮大自己，再拿去换钱。雇主给你 <b>12 天</b> 时间，要交出他见过最强的龙卷风。画面左侧是<b>生命值</b>（爱心）与<b>能量</b>条：能量涨到红线以上，才能卷走地面上的任意东西。关卡逐关解锁，撑过一关才开下一关。</p></details>
+        <details class="rules" open><summary>操作</summary><p>移动鼠标（或手指）牵引龙卷风，它朝指针方向移动，靠近什么就卷什么。剧情与菜单用鼠标点击；过场提示可按 <b>ESC</b> 跳过。</p></details>
+        <details class="rules"><summary>技术说明</summary><p>这一页运行的是原始 SWF 文件，由 <b>Ruffle</b>（Rust 编写、编译为 WebAssembly 的 Flash 播放器）解释执行。首次进入需要下载约 3.8&nbsp;MB 的播放器内核，之后由浏览器缓存；游戏本体约 1.7&nbsp;MB。首次加载需要几秒，请稍候。</p></details>
       </aside>
     </div>
   </section>

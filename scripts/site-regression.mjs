@@ -1,9 +1,9 @@
 /* ────────────────────────────────────────────────────────────
  *  scripts/site-regression.mjs — 站点整体回归冒烟
  *
- *  改动《龙卷风成长记》的渲染与玩法后，确认站点其余部分没被牵连：
+ *  改动页面后，确认站点其余部分没被牵连：
  *    · 九条路由逐个进入，视图都被激活；2D 画布有实际内容
- *      （WebGPU 画布无法用 drawImage 读回，那一页由后端对照脚本按 PNG 校验）
+ *      （龙卷风页是 Flash 播放器，改为等它把游戏载起来）
  *    · Service Worker 已注册、预缓存已写入（离线仍可开局）
  *    · 全程无未捕获异常
  *
@@ -81,16 +81,40 @@ try {
   const routes = ['home', 'gomoku', 'go', 'xiangqi', 'othello', 'junqi', 'ddz', 'tornado', 'campaign'];
   for (const r of routes) {
     await ev(`location.hash = '#/${r}'`);
-    await sleep(r === 'go' || r === 'ddz' ? 2200 : 900);   // 围棋/斗地主加载引擎，多等一下
+    // 围棋/斗地主加载引擎；龙卷风页要下载并初始化 Flash 播放器内核，都要多等
+    if (r === 'tornado') {
+      // 播放器元素出现只说明运行时起来了，SWF 还在下载；等状态行清空才算就绪
+      for (let i = 0; i < 90; i++) {
+        const ready = await ev(`(() => {
+          const p = document.querySelector('#t-stage ruffle-player');
+          const s = document.getElementById('t-status');
+          return !!p && (!s || s.classList.contains('hidden'));
+        })()`);
+        if (ready) break;
+        await sleep(1000);
+      }
+    } else {
+      await sleep(r === 'go' || r === 'ddz' ? 2200 : 900);
+    }
     const st = JSON.parse(await ev(`(() => {
       const v = document.getElementById('view-${r}');
       const active = v ? v.classList.contains('active') : false;
+      // 龙卷风页没有 canvas：Flash 播放器由 Ruffle 以自定义元素挂载，
+      // 游戏是否真的起来看 t-stage 里有没有 ruffle-player，以及状态行是否已清空。
+      if (v && v.querySelector('.ranch-stage')) {
+        const host = v.querySelector('#t-stage');
+        const player = v.querySelector('ruffle-player');
+        const status = document.getElementById('t-status');
+        return JSON.stringify({
+          active, kind: 'flash',
+          hasPlayer: !!player,
+          statusText: status && !status.classList.contains('hidden') ? status.textContent : '',
+          painted: null,   // Flash 页不按像素计数判定，见下方 ok 条件
+        });
+      }
       const cvs = v ? v.querySelector('canvas') : null;
-      // WebGPU 画布在合成前无法被 drawImage 读回（会得到全透明），
-      // 所以只对 2D 画布用像素探针；WebGPU 那页另由后端对照脚本按 PNG 校验。
-      const backend = document.documentElement.dataset.tornadoBackend || null;
       let painted = null;
-      if (cvs && backend !== 'webgpu') {
+      if (cvs) {
         const probe = document.createElement('canvas');
         probe.width = 64; probe.height = 64;
         const p = probe.getContext('2d');
@@ -100,10 +124,10 @@ try {
         for (let i = 0; i < d.length; i += 4) if (d[i+3] > 8) n++;
         painted = n;
       }
-      return JSON.stringify({ active, hasCanvas: !!cvs, painted, backend });
+      return JSON.stringify({ active, kind: 'canvas', hasCanvas: !!cvs, painted });
     })()`));
-    const ok = st.active && (st.painted === null || st.painted > 50);
-    check(`#/${r} 视图激活${st.painted !== null && st.hasCanvas ? '且画布有内容' : ''}`, ok, JSON.stringify(st));
+    const ok = st.active && !st.statusText && (st.kind === 'flash' ? st.hasPlayer : st.painted === null || st.painted > 50);
+    check(`#/${r} 视图激活${st.kind === 'flash' ? '且 Flash 游戏已挂载' : st.painted !== null && st.hasCanvas ? '且画布有内容' : ''}`, ok, JSON.stringify(st));
   }
 
   // ── PWA 离线能力：Service Worker 已注册且预缓存就绪 ──

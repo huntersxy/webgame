@@ -12,7 +12,7 @@
 ![PWA](https://img.shields.io/badge/PWA-%E5%8F%AF%E5%AE%89%E8%A3%85-5A0FC8?logo=pwa&logoColor=white)
 ![License](https://img.shields.io/badge/License-MIT-2ea44f)
 
-**五子棋** · **围棋** · **中国象棋** · **军棋（陆战棋）** · **龙卷风成长记** · **战役**
+**五子棋** · **围棋** · **中国象棋** · **军棋（陆战棋）** · **龙卷风牧场** · **战役**
 
 </div>
 
@@ -26,7 +26,7 @@
 | ⚫⚪ 黑白棋 | `#/othello` | 8×8 翻转棋（奥赛罗）；位置权重 + 行动力评估、迭代加深 α-β、终局精确求解，四档难度，支持停手自动处理 |
 | ⚔️ 军棋 · 陆战棋 | `#/junqi` | 明棋（自定义摆阵）/ 揭棋（暗棋）两种玩法，人机四档难度，AI 互搏观战 |
 | 🃏 斗地主 | `#/ddz` | 标准三人玩法（叫分定地主、完整牌型、炸弹/王炸/春天翻倍）；DouZero WP 神经网络在 Web Worker 内推理；写实牌桌皮肤 + 经典配乐 |
-| 🌪️ 龙卷风成长记 | `#/tornado` | 大鱼吃小鱼式成长，六个量级从街道一路卷到全地球；连击倍率、冲刺、量级目标；WebGPU 渲染（无 WebGPU 时自动回退 Canvas 2D） |
+| 🌪️ 龙卷风牧场 | `#/tornado` | 经典 Flash 小游戏原版：操控龙卷风在农场上卷走东西壮大自己，12 天期限；内置 Flash 播放器，无需安装插件 |
 | 🏰 战役 | `#/campaign` | 五子棋风格化守关 AI，破防获胜解锁下一关 |
 
 ## 特性
@@ -35,9 +35,10 @@
 - **可安装 PWA** — Service Worker 预缓存应用外壳，引擎权重按首次使用落盘，断网也能开局；支持「添加到主屏幕」，引擎权重会申请持久化存储，不会被浏览器在磁盘紧张时回收
 - **Web Worker 隔离搜索** — 深度计算在独立线程，界面不卡顿
 - **Canvas 2D 渲染** — 木纹棋盘、落子动画、思考过程可视化（深度 / 节点 / 评估 / 主变 / 访问量）
-- **龙卷风的 WebGPU 渲染** — 《龙卷风成长记》由 [vgpu](https://vgpu.sh) 驱动：程序化地表按世界坐标逐像素着色，图形图元走实例化绘制，CG 与过场动画由片元着色器实时生成。无 WebGPU 的浏览器自动回退同一套 Canvas 2D 渲染路径，玩法与判定完全一致
+- **Flash 原版游戏免插件运行** — 《龙卷风牧场》以原始 SWF 文件随站点分发，由 [Ruffle](https://ruffle.rs)（Rust 编写、编译为 WebAssembly 的 Flash 播放器）在浏览器内解释执行。播放器内核按需加载并由 Service Worker 缓存，不依赖任何第三方站点
 - **程序化音效** — Web Audio 实时合成；音频文件只用于两处配乐（恶魔主题、斗地主牌桌），均按需缓存
-- **程序化美术** — 斗地主的牌面、桌布、木框、头像、按钮全部由 `scripts/gen-ddz-art.py` 生成，龙卷风的 CG 与过场画面由着色器生成，仓库不存第三方 UI 素材- **触控与鼠标统一** — Pointer 事件一套代码，手机可直接开局
+- **程序化美术** — 斗地主的牌面、桌布、木框、头像、按钮全部由 `scripts/gen-ddz-art.py` 生成，仓库不存第三方 UI 素材
+- **触控与鼠标统一** — Pointer 事件一套代码，手机可直接开局
 - **模型随站点分发** — 推理权重均为静态资源，无外部服务调用
 - **预压缩分发** — 构建同时产出 brotli 与 gzip 副本，nginx 直接静态下发；WASM 也在压缩范围内（首启少下约 3.2MB）
 
@@ -65,14 +66,11 @@ npm test -- othello    # 只跑其中一套（套件名见 scripts/run-tests.mjs
 
 ```bash
 npm run test:othello:smoke    # 黑白棋浏览器冒烟
-npm run test:tornado:smoke    # 龙卷风：后端判定、连击、冲刺、量级目标
-npm run test:tornado:fallback # 龙卷风：无 WebGPU 时回退 Canvas 2D（两种失败场景）
-npm run test:tornado:compare  # 龙卷风：同一确定性世界下的双后端画面对照
+npm run test:tornado:smoke    # 龙卷风：Flash 播放器装配、画面内容、输入生效
 npm run test:site             # 站点回归：九条路由 + PWA 离线能力
-npm run check:shaders         # WGSL 设备级校验（保留字 / 类型 / 采样控制流）
 ```
 
-测试分布：五子棋 29 · 军棋 66 · Rapfi 18 · 象棋 FEN 16 · 象棋 α-β 8 · 象棋神经网络 32 · XQWLight 22 · 龙卷风 118 · 斗地主 77 · 黑白棋 27 · 黑白棋控制器 15 · 围棋 95。
+测试分布：五子棋 29 · 军棋 66 · Rapfi 18 · 象棋 FEN 16 · 象棋 α-β 8 · 象棋神经网络 32 · XQWLight 22 · 斗地主 77 · 黑白棋 27 · 黑白棋控制器 15 · 围棋 95。
 
 ## AI 引擎
 
@@ -152,22 +150,15 @@ npm run check:shaders         # WGSL 设备级校验（保留字 / 类型 / 采�
 
 牌桌 BGM 为 `public/ddz/bgm/ddz-theme.mp3`（经典斗地主配乐），默认关闭，由面板的「音乐」开关控制；与牌面同属 `/ddz/` 目录，走 Service Worker 的运行时缓存。
 
-### 龙卷风成长记
+### 龙卷风牧场
 
-渲染由 [vgpu](https://github.com/vercel-labs/vgpu)（MIT）驱动，代码在 `src/tornado/gpu/`。模拟层与渲染层分离：`src/tornado/game.ts` 只负责规则、碰撞与相机，两个渲染后端共用同一份派生状态，因此相机构图、转场时序与玩法判定在两条路径上完全一致。
+这一页运行的是原作 Flash 小游戏《龙卷风牧场》本体，不是重制版。游戏以原始 SWF 文件随站点分发，由 [Ruffle](https://ruffle.rs) 在浏览器内解释执行——访客不需要安装 Flash 插件，也不需要访问任何第三方站点。
 
-- **倾斜正交相机**：相机俯角 60°，正交投影（非透视）。正交下世界到屏幕是仿射变换，尺度处处均匀，指针拾取可精确求逆，上帝视角的 XY 操作手感不变；纵向按 `sinθ` 压缩，因此能看见建筑侧面与高度
-- **地表**：无限程序化地貌。格子的种类与明暗由世界坐标的整数哈希决定，因此改为逐像素着色后不再需要 CPU 铺砖循环；同一支哈希在 JS 与 WGSL 两侧逐位一致（`hashInt`，见下方校验），换后端不会换地貌。地表同时采样阴影贴图，接收立体物体的投影
-- **立体网格**：物体是真实的盒体底座，地形障碍是锥体（山、树冠）与盒体（巨石），全部带法线、走深度测试、接受光照并投出阴影。几何在 `mesh.ts` 里用代码生成（盒 / 柱 / 锥 / 漏斗），仓库不存第三方模型
-- **emoji 贴花**：emoji 仍作物体标识，但改为贴在底座顶面的水平面片，随视角一起透视压缩，像摆在沙盘上的棋子。它在进入本关时栅格化成图集，避免逐帧逐字 `fillText`（实测 DPR2 下 300 次 `fillText` 为 1.68ms，填充圆为 0.16ms）
-- **龙卷风**：程序化漏斗网格（沿高度渐缩并带喇叭口），走深度与光照，会遮挡城市也被城市遮挡；旋转螺纹由片元着色器按世界坐标实时计算，不引入贴图
-- **碎屑**：被卷起的尘土与杂物在 GPU 上模拟——compute 着色器每帧推进粒子状态（绕轴旋转、半径随高度外扩、上升后重生），顶点阶段直接读同一块 storage buffer 定位实例，全程不回 CPU，粒子数随龙卷风半径增长（上限 512）
-- **阴影**：方向光正交投影渲染到 1024² 的 `depth32float` 贴图，主通道与地表都用比较采样器做 2×2 PCF。绕序声明为 `frontFace: "cw"`——主相机把世界 y 翻成屏幕 y，这一次取反会翻转三角形绕序
-- **后期**：亮部提取 + 两趟可分离高斯模糊（半分辨率）产生泛光；移轴景深按屏幕纵向距离虚化上下缘，把俯视画面读成微缩模型；暗角与过场调色沿用原有实现
-- **CG 与过场**：开场与结局画面、量级跃迁的信箱边条与字幕，均由片元着色器实时生成（天空、地平线、龙卷风剪影、程序化地球与星空），不引入任何图片资源
-- **回退路径**：`navigator.gpu` 缺失、设备申请失败或运行中设备丢失时，自动切回 Canvas 2D 渲染，玩法与判定不变。vgpu 走动态 `import()`，只在进入该页时加载，独立成 chunk，不影响主包与其余游戏
-- **着色器校验**：`npm run check:shaders` 抽出 WGSL 交给 `vgpu check --require-validation` 做设备级校验，可发现保留字、类型不匹配、在非一致控制流中采样纹理、顶点阶段调用片元专用内建等只在运行时才会暴露的问题
-- **一致性验证**：`npm run test:tornado:compare` 用固定种子生成同一条世界，跑一段确定性步进后比对两个后端的**玩法指纹**（分数、吞噬数、半径、坐标、量级、状态、连击、目标共 10 项，要求完全相等），并确认两个后端都渲染出完整画面。立体化之后两条路径的画面本就不再相同（Canvas 2D 不重刻光影），因此判据是玩法一致而非逐像素相同。地表哈希另有逐位一致性单测（JS 的 `Math.imul` 与 WGSL 的 u32 运算位模式相同）
+- **播放器**：Ruffle 编译为 WebAssembly，运行时（脚本 + 两个内核变体）由 `scripts/copy-ruffle.mjs` 从 npm 包同步到 `public/ruffle/`。`ruffle.js` 在运行时按内容哈希名去 `fetch` 自己的 core 分块与 `.wasm`，这些引用打包器看不见，因此必须原样放在 `public/` 下
+- **内核选择**：Ruffle 启动时先探测 WebAssembly 扩展（SIMD、符号扩展、饱和浮点等），全部具备才取 SIMD 内核，否则回退通用内核，因此两个 `.wasm` 都要分发
+- **加载时机**：脚本在进入本页时才注入，不影响首屏与其余游戏；内核与游戏本体走 Service Worker 的运行时 `CacheFirst`，首次进入后即落盘，之后断网也能玩
+- **外链拦截**：游戏内有指向原站点的链接，统一配置为 `openUrlMode: "deny"`，点击不会把访客带离本站
+- **浏览器冒烟**：`npm run test:tornado:smoke` 用 headless Edge 打开真实页面，确认播放器挂载、画面有实际内容、点击能推进游戏，且 `ruffle.js` / `.wasm` / `.swf` 全部来自本站。像素判定走截图解码（`scripts/png.mjs`）——Ruffle 的画布是 WebGL2 且未开 `preserveDrawingBuffer`，在页面里 `drawImage` 读回来恒为全透明
 
 ## 部署
 
@@ -302,12 +293,9 @@ webgame/
     │                          evaluate · search（与 α-β 融合）· engine · model-assets
     ├── xiangqi/               象棋：rules · eval · search（内置 α-β）· fen · xqwlight（经典引擎客户端）
     ├── junqi/                 军棋：rules（棋盘 / 铁路 / 战斗 / 摆阵 / 暗子）· ai · render
-    ├── tornado/               龙卷风成长记：game.ts（规则 / 碰撞 / 相机 / 转场）
-    │   └── gpu/               vgpu 渲染器：renderer · shaders（WGSL）· mesh / meshes（立体几何）
-    │                          mesh-shaders（网格 / 贴花 / 碎屑 WGSL）· debris（GPU 碎屑）
-    │                          camera（倾斜正交与太阳投影）· cg（CG 与过场）· atlas · decor
     ├── campaign/              战役模式守关 AI
     ├── controllers/           各游戏控制器（棋盘状态、AI 调度、面板与日志）
+    │                          tornado-controller.ts（Flash 播放器宿主）
     └── ui/                    渲染器（五子棋 / 象棋 / 围棋）· 音频 · 主题 · 格式化 · dom（元素取用）
 ```
 
@@ -323,8 +311,8 @@ webgame/
 - **TypeScript**（strict）· **Vite 8**
 - **Web Workers** — 搜索与推理独立线程
 - **TensorFlow.js** — 围棋与象棋神经网络推理，后端按需动态加载
-- **vgpu / WebGPU** — 《龙卷风成长记》的渲染、CG 与过场动画
-- **Canvas 2D / Web Audio** — 各棋类渲染、龙卷风的回退路径与程序化音效
+- **Ruffle / WebAssembly** — 《龙卷风牧场》的 Flash 运行时
+- **Canvas 2D / Web Audio** — 各棋类渲染与程序化音效
 
 ## 许可与致谢
 
@@ -337,9 +325,11 @@ webgame/
 | [KataGo 神经网络](https://katagotraining.org/network_license/) | KataGo Neural Network License | 围棋权重，声明见 `public/go/NOTICE.md` |
 | [yingwang/chinese_chess](https://github.com/yingwang/chinese_chess) | MIT | 象棋神经网络权重 |
 | [TensorFlow.js](https://github.com/tensorflow/tfjs) | Apache-2.0 | 推理运行时 |
-| [vgpu](https://github.com/vercel-labs/vgpu) | MIT | 《龙卷风成长记》的 WebGPU 渲染库 |
+| [Ruffle](https://github.com/ruffle-rs/ruffle) | MIT / Apache-2.0 | Flash 播放器运行时（`public/ruffle/`，附两份许可原文） |
 | [English pattern playing cards deck](https://commons.wikimedia.org/wiki/File:English_pattern_playing_cards_deck.svg) | 公有领域 | 斗地主牌面矢量图，由 `scripts/gen-ddz-art.py` 切分并光栅化 |
 
 其余美术资源（斗地主牌桌、按钮、头像、头衔牌等）均由 `scripts/gen-ddz-art.py` 程序化生成，不含第三方素材。
+
+《龙卷风牧场》的游戏本体是第三方 Flash 小游戏，以原始 SWF 文件随站点分发，仅作演示与存档用途；其著作权归原作者所有。
 
 实现过程中参考过的开源项目（不包含其代码）：[web-katrain](https://github.com/Sir-Teo/web-katrain)（围棋管线对照与回归基准）、[lightvector/KataGo](https://github.com/lightvector/KataGo)（网络结构与输入定义）。

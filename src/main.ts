@@ -75,7 +75,7 @@ function applyView(name: ViewName): void {
     xiangqiCtrl.redraw();
     xiangqiCtrl.warmUp();
   }
-  if (name === 'tornado') tornadoCtrl.redraw();
+  if (name === 'tornado') tornadoCtrl.start();
   if (name === 'junqi') junqiCtrl.redraw();
   if (name === 'go') {
     goCtrl.redraw();
@@ -108,7 +108,6 @@ const ai = new AIBridge();
 const gomokuCanvas = mustEl<HTMLCanvasElement>('gomoku-canvas');
 const xiangqiCanvas = mustEl<HTMLCanvasElement>('xiangqi-canvas');
 const campaignCanvas = mustEl<HTMLCanvasElement>('camp-canvas');
-const tornadoCanvas = mustEl<HTMLCanvasElement>('t-canvas');
 const junqiCanvas = mustEl<HTMLCanvasElement>('jq-canvas');
 const goCanvas = mustEl<HTMLCanvasElement>('go-canvas');
 const othelloCanvas = mustEl<HTMLCanvasElement>('othello-canvas');
@@ -116,11 +115,13 @@ const othelloCanvas = mustEl<HTMLCanvasElement>('othello-canvas');
 const gomokuCtrl = new GomokuController(gomokuCanvas, ai, audio);
 const xiangqiCtrl = new XiangqiController(xiangqiCanvas, ai, audio);
 const campaignCtrl = new CampaignController(campaignCanvas, audio);
-const tornadoCtrl = new TornadoController(tornadoCanvas, audio);
 const junqiCtrl = new JunqiController(junqiCanvas, ai, audio);
 const goCtrl = new GoController(goCanvas, ai, audio);
 const othelloCtrl = new OthelloController(othelloCanvas, ai, audio);
 const ddzCtrl = new DoudizhuController(audio);
+// 龙卷风页跑的是原作 Flash 游戏本体，控制器只负责装配 Ruffle 运行时。
+const tornadoCtrl = new TornadoController(mustEl('t-stage'), mustEl('t-status'));
+mustEl('t-restart').addEventListener('click', () => void tornadoCtrl.restart());
 // 暴露给控制台/自动化冒烟使用（scripts/othello-smoke.mjs）
 (window as any).othelloCtrl = othelloCtrl;
 
