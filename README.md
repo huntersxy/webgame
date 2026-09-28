@@ -26,7 +26,7 @@
 | ⚫⚪ 黑白棋 | `#/othello` | 8×8 翻转棋（奥赛罗）；位置权重 + 行动力评估、迭代加深 α-β、终局精确求解，四档难度，支持停手自动处理 |
 | ⚔️ 军棋 · 陆战棋 | `#/junqi` | 明棋（自定义摆阵）/ 揭棋（暗棋）两种玩法，人机四档难度，AI 互搏观战 |
 | 🃏 斗地主 | `#/ddz` | 标准三人玩法（叫分定地主、完整牌型、炸弹/王炸/春天翻倍）；DouZero WP 神经网络在 Web Worker 内推理；写实牌桌皮肤 + 经典配乐 |
-| 🌪️ 龙卷风成长记 | `#/tornado` | 大鱼吃小鱼式成长，六个量级从街道一路卷到全地球 |
+| 🌪️ 龙卷风成长记 | `#/tornado` | 大鱼吃小鱼式成长，六个量级从街道一路卷到全地球；连击倍率、冲刺、量级目标；WebGPU 渲染（无 WebGPU 时自动回退 Canvas 2D） |
 | 🏰 战役 | `#/campaign` | 五子棋风格化守关 AI，破防获胜解锁下一关 |
 
 ## 特性
@@ -35,9 +35,9 @@
 - **可安装 PWA** — Service Worker 预缓存应用外壳，引擎权重按首次使用落盘，断网也能开局；支持「添加到主屏幕」，引擎权重会申请持久化存储，不会被浏览器在磁盘紧张时回收
 - **Web Worker 隔离搜索** — 深度计算在独立线程，界面不卡顿
 - **Canvas 2D 渲染** — 木纹棋盘、落子动画、思考过程可视化（深度 / 节点 / 评估 / 主变 / 访问量）
+- **龙卷风的 WebGPU 渲染** — 《龙卷风成长记》由 [vgpu](https://vgpu.sh) 驱动：程序化地表按世界坐标逐像素着色，图形图元走实例化绘制，CG 与过场动画由片元着色器实时生成。无 WebGPU 的浏览器自动回退同一套 Canvas 2D 渲染路径，玩法与判定完全一致
 - **程序化音效** — Web Audio 实时合成；音频文件只用于两处配乐（恶魔主题、斗地主牌桌），均按需缓存
-- **程序化美术** — 斗地主的牌面、桌布、木框、头像、按钮全部由 `scripts/gen-ddz-art.py` 生成，仓库不存第三方 UI 素材
-- **触控与鼠标统一** — Pointer 事件一套代码，手机可直接开局
+- **程序化美术** — 斗地主的牌面、桌布、木框、头像、按钮全部由 `scripts/gen-ddz-art.py` 生成，龙卷风的 CG 与过场画面由着色器生成，仓库不存第三方 UI 素材- **触控与鼠标统一** — Pointer 事件一套代码，手机可直接开局
 - **模型随站点分发** — 推理权重均为静态资源，无外部服务调用
 - **预压缩分发** — 构建同时产出 brotli 与 gzip 副本，nginx 直接静态下发；WASM 也在压缩范围内（首启少下约 3.2MB）
 
@@ -57,12 +57,22 @@ npm run lint       # Biome 静态检查
 npm run check      # Biome 检查 + 格式检查
 npm run format     # Biome 自动格式化
 npm run icons      # 重新生成 PWA 图标（改品牌色后用）
-npm test           # 11 套引擎自测，共 481 项
+npm test           # 11 套引擎自测，共 523 项
 npm test -- othello    # 只跑其中一套（套件名见 scripts/run-tests.mjs）
-npm run test:othello:smoke    # 浏览器接口冒烟（需先跑起 dev server）
 ```
 
-测试分布：五子棋 29 · 军棋 66 · Rapfi 18 · 象棋 FEN 16 · 象棋 α-β 8 · 象棋神经网络 32 · XQWLight 22 · 龙卷风 76 · 斗地主 77 · 黑白棋 27 · 黑白棋控制器 15 · 围棋 95。
+以下脚本用 headless Edge 驱动真实页面，需先跑起 `npm run preview`（或 dev server）。它们不在 CI 里执行——CI 只跑 lint、单测与构建，不引入浏览器依赖。
+
+```bash
+npm run test:othello:smoke    # 黑白棋浏览器冒烟
+npm run test:tornado:smoke    # 龙卷风：后端判定、连击、冲刺、量级目标
+npm run test:tornado:fallback # 龙卷风：无 WebGPU 时回退 Canvas 2D（两种失败场景）
+npm run test:tornado:compare  # 龙卷风：同一确定性世界下的双后端画面对照
+npm run test:site             # 站点回归：九条路由 + PWA 离线能力
+npm run check:shaders         # WGSL 设备级校验（保留字 / 类型 / 采样控制流）
+```
+
+测试分布：五子棋 29 · 军棋 66 · Rapfi 18 · 象棋 FEN 16 · 象棋 α-β 8 · 象棋神经网络 32 · XQWLight 22 · 龙卷风 118 · 斗地主 77 · 黑白棋 27 · 黑白棋控制器 15 · 围棋 95。
 
 ## AI 引擎
 
@@ -141,6 +151,17 @@ npm run test:othello:smoke    # 浏览器接口冒烟（需先跑起 dev server�
 - **重跑**：`python scripts/gen-ddz-art.py`，需要 Pillow 与本机的 Chrome / Edge（用于光栅化矢量牌面，可用 `CHROME_BIN` 指定路径）
 
 牌桌 BGM 为 `public/ddz/bgm/ddz-theme.mp3`（经典斗地主配乐），默认关闭，由面板的「音乐」开关控制；与牌面同属 `/ddz/` 目录，走 Service Worker 的运行时缓存。
+
+### 龙卷风成长记
+
+渲染由 [vgpu](https://github.com/vercel-labs/vgpu)（MIT）驱动，代码在 `src/tornado/gpu/`。模拟层与渲染层分离：`src/tornado/game.ts` 只负责规则、碰撞与相机，两个渲染后端共用同一份派生状态，因此相机构图、转场时序与玩法判定在两条路径上完全一致。
+
+- **地表**：无限程序化地貌。格子的种类与明暗由世界坐标的整数哈希决定，因此改为逐像素着色后不再需要 CPU 铺砖循环；同一支哈希在 JS 与 WGSL 两侧逐位一致（`hashInt`，见下方校验），换后端不会换地貌
+- **图形图元**：物体 emoji、地形障碍、粒子、涟漪环全部走一次实例化绘制。emoji 在进入本关时栅格化成图集，避免逐帧逐字 `fillText`（实测 DPR2 下 300 次 `fillText` 为 1.68ms，填充圆为 0.16ms）；圆角矩形、椭圆、三角形等形状由片元着色器按有符号距离场绘制
+- **CG 与过场**：开场与结局画面、量级跃迁的信箱边条与字幕，均由片元着色器实时生成（天空、地平线、龙卷风剪影、程序化地球与星空），不引入任何图片资源
+- **回退路径**：`navigator.gpu` 缺失、设备申请失败或运行中设备丢失时，自动切回 Canvas 2D 渲染，玩法与判定不变。vgpu 走动态 `import()`，只在进入该页时加载，独立成 chunk，不影响主包与其余游戏
+- **着色器校验**：`npm run check:shaders` 抽出 WGSL 交给 `vgpu check --require-validation` 做设备级校验，可发现保留字、类型不匹配、在非一致控制流中采样纹理等只在运行时才会暴露的问题
+- **一致性验证**：`npm run test:tornado:compare` 用固定种子生成同一条世界，分别以两个后端渲染并比对解码后的像素——两端的平均色差在个位数量级，证明移植是逐项对齐而非近似。地表哈希另有逐位一致性单测（JS 的 `Math.imul` 与 WGSL 的 u32 运算位模式相同）
 
 ## 部署
 
@@ -275,7 +296,8 @@ webgame/
     │                          evaluate · search（与 α-β 融合）· engine · model-assets
     ├── xiangqi/               象棋：rules · eval · search（内置 α-β）· fen · xqwlight（经典引擎客户端）
     ├── junqi/                 军棋：rules（棋盘 / 铁路 / 战斗 / 摆阵 / 暗子）· ai · render
-    ├── tornado/               龙卷风成长记引擎
+    ├── tornado/               龙卷风成长记：game.ts（规则 / 碰撞 / 相机 / 转场）
+    │   └── gpu/               vgpu 渲染器：renderer · shaders（WGSL）· cg（CG 与过场）· atlas · decor
     ├── campaign/              战役模式守关 AI
     ├── controllers/           各游戏控制器（棋盘状态、AI 调度、面板与日志）
     └── ui/                    渲染器（五子棋 / 象棋 / 围棋）· 音频 · 主题 · 格式化 · dom（元素取用）
@@ -290,10 +312,11 @@ webgame/
 
 ## 技术栈
 
-- **TypeScript**（strict）· **Vite 6**
+- **TypeScript**（strict）· **Vite 8**
 - **Web Workers** — 搜索与推理独立线程
 - **TensorFlow.js** — 围棋与象棋神经网络推理，后端按需动态加载
-- **Canvas 2D / Web Audio** — 渲染与程序化音效
+- **vgpu / WebGPU** — 《龙卷风成长记》的渲染、CG 与过场动画
+- **Canvas 2D / Web Audio** — 各棋类渲染、龙卷风的回退路径与程序化音效
 
 ## 许可与致谢
 
@@ -306,6 +329,7 @@ webgame/
 | [KataGo 神经网络](https://katagotraining.org/network_license/) | KataGo Neural Network License | 围棋权重，声明见 `public/go/NOTICE.md` |
 | [yingwang/chinese_chess](https://github.com/yingwang/chinese_chess) | MIT | 象棋神经网络权重 |
 | [TensorFlow.js](https://github.com/tensorflow/tfjs) | Apache-2.0 | 推理运行时 |
+| [vgpu](https://github.com/vercel-labs/vgpu) | MIT | 《龙卷风成长记》的 WebGPU 渲染库 |
 | [English pattern playing cards deck](https://commons.wikimedia.org/wiki/File:English_pattern_playing_cards_deck.svg) | 公有领域 | 斗地主牌面矢量图，由 `scripts/gen-ddz-art.py` 切分并光栅化 |
 
 其余美术资源（斗地主牌桌、按钮、头像、头衔牌等）均由 `scripts/gen-ddz-art.py` 程序化生成，不含第三方素材。

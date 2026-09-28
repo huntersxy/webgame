@@ -254,10 +254,11 @@
       <div class="board-wrap">
         <div class="board-head">
           <h2>龙卷风成长记 <small>TORNADO RISE · 大鱼吃小鱼</small></h2>
-          <div class="hint-line">WASD / 方向键移动 · 按住画面即可牵引龙卷风</div>
+          <div class="hint-line">WASD / 方向键移动 · 按住画面即可牵引龙卷风 · 空格冲刺</div>
         </div>
         <div class="canvas-holder">
           <canvas id="t-canvas" width="640" height="640"></canvas>
+          <div id="t-combo" class="combo-badge hidden"></div>
         </div>
         <div id="t-result" class="result-banner hidden"></div>
       </div>
@@ -273,19 +274,22 @@
           <div class="info-line"><span>得分</span><b id="t-score">0</b></div>
           <div class="info-line"><span>最高分</span><b id="t-best">0</b></div>
           <div class="info-line small"><span>体型</span><b id="t-radius">小型</b></div>
+          <div class="info-line small"><span>本关目标</span><b id="t-goal">目标 0 / 0</b></div>
           <div class="info-line small"><span>状态</span><b id="t-status">吞噬中…</b></div>
         </div>
         <div class="panel-block">
           <div class="btn-grid">
+            <button id="t-dash" class="btn soft dash-btn">💨 冲刺（空格）</button>
             <button id="t-restart" class="btn primary">↻ 重新开始</button>
-            <button id="t-restart-tier" class="btn soft" title="重新生成当前量级的建筑与地形，得分回滚到本关开始">⤓ 本关重置</button>
           </div>
           <div class="btn-grid">
+            <button id="t-restart-tier" class="btn soft" title="重新生成当前量级的建筑与地形，得分回滚到本关开始">⤓ 本关重置</button>
             <button id="t-sound" class="btn plain on">🔊 音效开</button>
           </div>
         </div>
         <details class="rules" open><summary>玩法说明</summary><p>你是一株初始只有 22px 的小龙卷风。<b>比它小的建筑统统卷走</b>（体积按面积增长，被卷起的建筑会旋转着吸进风眼）；<b>比它大的建筑带 🔒 标记，现在还卷不动</b>，撞上去只会被弹开、没有任何惩罚——长大后再回来。地图上的<b>湖泊、巨石、雪山、树林是地形障碍，永远无法破坏</b>，绕着走。清空本阶段全部建筑后，镜头自动拉远、你相对缩小，进入下一个更大的量级：街道 → 楼房 → 城市 → 国家 → 洲 → 全地球。</p></details>
-        <details class="rules"><summary>操作</summary><p>桌面：WASD 或方向键推风；也可用鼠标/手指按住画面任意位置，龙卷风会持续向该点加速。移动端：单指按住拖动牵引即可。</p></details>
+        <details class="rules" open><summary>进阶：连击 · 冲刺 · 量级目标</summary><p><b>连击</b>：吃掉一个物体后 2.2 秒内再吃下一个就累计一层，每层把得分提高 12%（最多 12 层，约 2.3 倍）。连击倍率与剩余时间会显示在棋盘上——想拿高分就得一路不停地找猎物。<br><b>冲刺</b>：攒够 4 层连击后按<b>空格</b>（或手机双击画面、点侧栏按钮）向当前方向爆发冲刺，用来追上快逃的猎物或脱出包围。冲刺消耗 4 层连击，冷却 0.9 秒。<br><b>量级目标</b>：每关除「吃光」外还有一条分数线，达成即评为高效通关。通关时按达成的量级目标数给出 S / A / B / C 评价——想拿 S 就得靠连击。</p></details>
+        <details class="rules"><summary>操作</summary><p>桌面：WASD 或方向键推风；也可用鼠标/手指按住画面任意位置，龙卷风会持续向该点加速；空格冲刺。移动端：单指按住拖动牵引，双击画面冲刺。</p></details>
       </aside>
     </div>
   </section>

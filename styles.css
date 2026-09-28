@@ -591,6 +591,38 @@ canvas { max-width: 100%; height: auto; border-radius: 10px; cursor: pointer; }
 .tier-item.current .st::after { content: '▶'; color: var(--accent-ink); font-size: 11px; }
 #t-canvas { cursor: crosshair; }
 
+/* ── 龙卷风：连击徽标 ── */
+/* 浮在棋盘左上角，只在有连击时出现（避免静态界面干扰） */
+.combo-badge {
+  position: absolute;
+  top: 22px;
+  left: 22px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: .3px;
+  color: #fff;
+  background: linear-gradient(135deg, #f59e0b, #ef4444);
+  box-shadow: 0 3px 10px rgba(239, 68, 68, .35);
+  pointer-events: none;
+  transition: opacity .12s linear;
+}
+.combo-badge.hidden { display: none; }
+
+/* ── 龙卷风：冲刺按钮状态 ── */
+.dash-btn { transition: .16s; }
+.dash-btn.ready {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 700;
+  box-shadow: 0 0 0 2px rgba(16, 168, 140, .16);
+}
+
+/* ── 龙卷风：本关目标达成 ── */
+#t-goal.done { color: #b45309; }
+
 /* ── Campaign ── */
 .camp-progress { margin-bottom: 12px; }
 .camp-progress span { font-size: 12px; color: var(--muted); display: block; margin-bottom: 6px; }

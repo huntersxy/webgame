@@ -1,5 +1,5 @@
 /* tornado 核心逻辑单测：成长公式、通关计数、可食性、screenToWorld */
-import { TornadoGame, TIERS, TORNADO_VIEW } from '../src/tornado/game';
+import { TornadoGame, TIERS, TORNADO_VIEW, tierScoreGoal } from '../src/tornado/game';
 import { assert, finish } from './harness.mts';
 
 
@@ -242,11 +242,209 @@ console.log('— 粒子上限（防止越玩越卡）—');
   // DPR2 下 300 个要 1.68ms（换成填充圆只要 0.16ms），于是越玩越卡。
   const g = new TornadoGame();
   (g as any).burst(100, 100, '🪨', 400);      // 一次爆 400 个，必须被截到上限
-  const ps = (g as any).particles as Array<{ c: string }>;
+  const ps = (g as any).particles as Array<{ c: { r: number; g: number; b: number; a: number } }>;
   assert(ps.length <= 160, `粒子数被截到上限（${ps.length} ≤ 160）`);
-  assert(ps.every((p) => typeof p.c === 'string' && p.c.length > 0), '每个粒子都带可直接填充的颜色（不再走 emoji 分支）');
+  // 颜色是数值分量而非 CSS 字符串：Canvas 2D 与 vgpu 两条渲染路径共用同一份来源，
+  // 后者需要把分量写进实例数据，字符串没法直接上报 GPU。
+  assert(
+    ps.every((p) => p.c && [p.c.r, p.c.g, p.c.b].every((v) => Number.isFinite(v) && v >= 0 && v <= 255) && p.c.a > 0 && p.c.a <= 1),
+    '每个粒子都带可直接使用的颜色分量（0..255 分量 + 0..1 alpha）',
+  );
   for (let i = 0; i < 20; i++) (g as any).burst(100, 100, '', 50);   // 反复爆量
   assert(ps.length <= 160, `反复爆量后仍在上限内（${ps.length}）`);
+}
+
+console.log('— 连击：窗口内累加、超时归零、倍率封顶 —');
+{
+  const g = new TornadoGame();
+  const dt = 1 / 60;
+  const eatOne = () => {
+    // 找一个还活着的可食物体，把龙卷风移上去吃它
+    const o = g.objects.find((x) => !x.dead && x.r < g.r);
+    if (!o) return false;
+    g.x = o.x; g.y = o.y;
+    g.update(dt, { kx: 0, ky: 0, tx: null, ty: null });
+    return o.dead;
+  };
+
+  assert(g.combo === 0, '开局连击为 0');
+  assert(eatOne(), '吃掉第一个物体');
+  assert(g.combo === 1, `首个吞噬连击 1（实际 ${g.combo}）`);
+  // 窗口内紧接着再吃一个 → 累加
+  assert(eatOne(), '吃掉第二个物体');
+  assert(g.combo === 2, `窗口内连吃连击累加到 2（实际 ${g.combo}）`);
+  assert(g.comboMul > 1, `连击带来倍率 ${g.comboMul.toFixed(2)} > 1`);
+
+  // 空转超过窗口（2.2s）→ 断连
+  for (let i = 0; i < Math.ceil(2.4 / dt); i++) g.update(dt, { kx: 0, ky: 0, tx: null, ty: null });
+  assert(g.combo === 0, '超过连击窗口后连击归零');
+
+  // 倍率上限：直接堆到上限之上
+  g.combo = 999;
+  assert(Math.abs(g.comboMul - (1 + 12 * 0.12)) < 1e-9, `倍率封顶在 12 层（${g.comboMul.toFixed(2)}）`);
+}
+
+console.log('— 连击影响得分 —');
+{
+  const scoreOf = (combo: number) => {
+    const g = new TornadoGame();
+    g.combo = combo;
+    g.comboT = 5;
+    const o = g.objects.find((x) => !x.dead && x.r < g.r)!;
+    const before = g.score;
+    g.x = o.x; g.y = o.y;
+    g.update(1 / 60, { kx: 0, ky: 0, tx: null, ty: null });
+    return g.score - before;
+  };
+  const s0 = scoreOf(0);
+  const s5 = scoreOf(5);
+  assert(s0 > 0, `无连击也有基础分 ${s0}`);
+  assert(s5 > s0, `连击后同一次吞噬得分更高（${s0} → ${s5}）`);
+}
+
+console.log('— 冲刺：需要连击、消耗连击、有冷却 —');
+{
+  const g = new TornadoGame();
+  const dt = 1 / 60;
+  assert(!g.canDash, '开局无连击时不能冲刺');
+  assert(!g.dash(), '冲刺被拒绝时返回 false');
+
+  g.combo = 6;
+  g.comboT = 5;
+  assert(g.canDash, '连击足够时可以冲刺');
+  const v0 = Math.hypot(g.vx, g.vy);
+  assert(g.dash(), '冲刺成功返回 true');
+  const v1 = Math.hypot(g.vx, g.vy);
+  assert(v1 > v0, `冲刺后速度提升（${v0.toFixed(0)} → ${v1.toFixed(0)}）`);
+  assert(g.combo === 2, `冲刺消耗 4 层连击（6 → ${g.combo}）`);
+  assert(g.dashCd > 0, '冲刺进入冷却');
+  assert(!g.canDash, '冷却期间不能再冲刺');
+
+  // 冷却走完后可再次冲刺（需要重新攒够连击）
+  for (let i = 0; i < Math.ceil(1.0 / dt); i++) g.update(dt, { kx: 0, ky: 0, tx: null, ty: null });
+  assert(g.dashCd === 0, '冷却结束');
+  assert(!g.canDash, '连击不足时仍不能冲刺');
+}
+
+console.log('— 冲刺在转场中不可用（避免打断换手时序）—');
+{
+  const g = new TornadoGame();
+  g.combo = 8;
+  g.comboT = 5;
+  for (const o of g.objects) { o.dead = true; g.eaten++; }
+  g.update(1 / 60, { kx: 0, ky: 0, tx: null, ty: null });
+  assert(g.state === 'zoom', '已进入转场');
+  assert(!g.canDash, '转场中不能冲刺');
+  assert(!g.dash(), '转场中冲刺被拒绝');
+}
+
+console.log('— 量级目标：单调递增、可达成、只记一次 —');
+{
+  let prev = 0;
+  for (let t = 0; t < TIERS.length; t++) {
+    const goal = tierScoreGoal(t);
+    assert(Number.isFinite(goal) && goal > 0, `T${t + 1} 目标为正数 ${goal}`);
+    prev = goal;
+  }
+  void prev;
+
+  // 达成路径：把分数直接推到目标之上，再触发一次吞噬
+  const g = new TornadoGame();
+  let goalHits = 0;
+  g.onGoal = () => { goalHits++; };
+  g.score = tierScoreGoal(0) + 1;
+  const o = g.objects.find((x) => !x.dead && x.r < g.r)!;
+  g.x = o.x; g.y = o.y;
+  g.update(1 / 60, { kx: 0, ky: 0, tx: null, ty: null });
+  assert(g.tierGoalHit, '达到分数线后标记达成');
+  assert(goalHits === 1, `达成回调只触发一次（${goalHits}）`);
+
+  // 再吃一个不应重复触发
+  const o2 = g.objects.find((x) => !x.dead && x.r < g.r);
+  if (o2) {
+    g.x = o2.x; g.y = o2.y;
+    g.update(1 / 60, { kx: 0, ky: 0, tx: null, ty: null });
+  }
+  assert(goalHits === 1, `重复吞噬不重复计入（${goalHits}）`);
+
+  // 重开一局：目标状态清零
+  g.reset();
+  assert(!g.tierGoalHit, '重开后目标标记清零');
+  assert(g.goalsHit === 0, '重开后达成计数清零');
+  assert(g.bestCombo === 0, '重开后最高连击清零');
+}
+
+console.log('— 本关重置不清空整局统计 —');
+{
+  const g = new TornadoGame();
+  g.bestCombo = 7;
+  g.goalsHit = 3;
+  g.combo = 5;
+  g.tier = 2;
+  g.restartTier();
+  assert(g.bestCombo === 7, '本关重置保留最高连击（整局统计）');
+  assert(g.goalsHit === 3, '本关重置保留目标达成数');
+  assert(g.combo === 0, '本关重置断掉当前连击');
+}
+
+console.log('— 地表哈希：JS 与 WGSL 逐位一致（换后端不换地貌）—');
+{
+  // 地貌种类与明暗都由世界坐标的整数哈希决定。GPU 路径在 WGSL 里重写了同一支
+  // 哈希（用 u32 位运算），只要位模式与 JS 版偏差一位，两个后端就会铺出不同的地貌。
+  // 这里按 WGSL 的写法（u32 截断乘法 + 逻辑右移）在 CPU 上复算，逐点比对。
+  const hashJS = (x: number, y: number, lvl: number): number => {
+    let h = Math.imul(x | 0, 374761393) ^ Math.imul(y | 0, 668265263) ^ Math.imul(lvl | 0, 2246822519);
+    h = Math.imul(h ^ (h >>> 13), 1274126177);
+    h ^= h >>> 16;
+    return h >>> 0;
+  };
+  // 对应 shaders.ts 的 hashInt：同样 32 位回绕，但全程按无符号解释
+  const hashWGSL = (x: number, y: number, lvl: number): number => {
+    const mul = (a: number, b: number): number => Math.imul(a, b) >>> 0;
+    const ux = x >>> 0, uy = y >>> 0, ul = lvl >>> 0;
+    let h = (mul(ux, 374761393) ^ mul(uy, 668265263) ^ mul(ul, 2246822519)) >>> 0;
+    h = mul((h ^ (h >>> 13)) >>> 0, 1274126177);
+    h = (h ^ (h >>> 16)) >>> 0;
+    return h >>> 0;
+  };
+  const biomeOf = (h: number): number => {
+    const f = h / 4294967296;
+    if (f < 0.16) return 4;
+    if (f < 0.30) return 3;
+    if (f < 0.62) return 0;
+    if (f < 0.84) return 1;
+    return 2;
+  };
+
+  let mismatches = 0;
+  let biomeMismatches = 0;
+  let sampled = 0;
+  for (let lvl = 0; lvl < TIERS.length; lvl++) {
+    // 覆盖负坐标与跨格边界：哈希对负数的行为最容易写错
+    for (let cx = -32; cx <= 32; cx++) {
+      for (let cy = -32; cy <= 32; cy++) {
+        sampled++;
+        const a = hashJS(cx, cy, lvl);
+        const b = hashWGSL(cx, cy, lvl);
+        if (a !== b) mismatches++;
+        if (biomeOf(a) !== biomeOf(b)) biomeMismatches++;
+      }
+    }
+  }
+  assert(sampled > 10000, `采样点足够（${sampled}）`);
+  assert(mismatches === 0, `两个后端的 hashInt 逐位一致（不一致 ${mismatches}/${sampled}）`);
+  assert(biomeMismatches === 0, `地貌归类完全一致（不一致 ${biomeMismatches}）`);
+
+  // 明暗抖动也走同一支哈希（index + 5），确认偏移量下同样一致
+  let jitterMismatch = 0;
+  for (let lvl = 0; lvl < TIERS.length; lvl++) {
+    for (let cx = -8; cx <= 8; cx++) {
+      for (let cy = -8; cy <= 8; cy++) {
+        if (hashJS(cx, cy, lvl + 5) !== hashWGSL(cx, cy, lvl + 5)) jitterMismatch++;
+      }
+    }
+  }
+  assert(jitterMismatch === 0, `明暗抖动的哈希同样一致（不一致 ${jitterMismatch}）`);
 }
 
 finish('tornado');

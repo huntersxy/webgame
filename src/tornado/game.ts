@@ -128,7 +128,7 @@ const SEG_DUR = [1.5, 1.5, 1.6, 1.7, 1.8];
  */
 const HANDOFF_P = 1;
 /** 风眼铺开时参与调色的圆环宽度，需覆盖到屏幕四角 */
-const WIPE_SPAN = VIEW * 0.74;
+export const WIPE_SPAN = VIEW * 0.74;
 /** 地面装饰离屏画布的分辨率（1120 世界单位映射到这么多像素） */
 const DECOR_PX = 512;
 /**
@@ -138,8 +138,45 @@ const DECOR_PX = 512;
 const DECOR_TILE_CAP = 16;
 /** 粒子数上限：连续快吃时粒子会堆到上百个，超出就挤掉最老的（防止越玩越卡） */
 const PARTICLE_CAP = 160;
-/** 无贴图「风色」粒子的固定色 */
-const WIND_PARTICLE = 'rgba(150,168,182,.55)';
+/** 无贴图「风色」粒子的固定色（数值分量，两个渲染后端共用同一份来源） */
+const WIND_PARTICLE: Rgb = { r: 150, g: 168, b: 182, a: 0.55 };
+
+/* ══════════════ 玩法拓展：连击 / 冲刺 / 量级目标 ══════════════ */
+
+/**
+ * 连击窗口（秒）：吃掉一个物体后这么久内再吃下一个就累计连击。
+ * 窗口偏短是有意的——连击要奖励「主动找猎物」，而不是站在原地等。
+ */
+const COMBO_WINDOW = 2.2;
+/** 连击上限：倍率封顶，避免后期一吃就爆分 */
+const COMBO_MAX = 12;
+/**
+ * 连击倍率：每级 +12%，第 12 级约 2.3 倍。
+ * 用分段递增而不是线性，前期涨得快（给正反馈）、后期收得慢（不失控）。
+ */
+function comboMultiplier(combo: number): number {
+  return 1 + Math.min(combo, COMBO_MAX) * 0.12;
+}
+
+/** 冲刺：消耗连击换取一次爆发位移，用于追上快逃的猎物或脱出包围 */
+const DASH_COST = 4;          // 需要的连击层数
+const DASH_SPEED_K = 2.6;     // 冲刺瞬间速度 = 本关最大速度 × 该系数
+const DASH_COOLDOWN = 0.9;    // 冲刺冷却（秒）
+
+/**
+ * 量级目标：每个量级除「吃光」外，另有一条分数线。
+ * 达到即算「高效通关」，在过场里给出评价——给熟练玩家一个额外的追求。
+ */
+export function tierScoreGoal(tier: number): number {
+  const def = TIERS[Math.min(tier, TIERS.length - 1)];
+  // 目标 = 吃光本关的最低收益 × 1.6，靠连击才能轻松越过
+  const base = def.count * (Math.round(def.baseR * 0.7) * 10 + tier * 50);
+  return Math.round(base * 1.6);
+}
+
+
+/** 颜色：分量为 0..255，a 为 0..1。渲染层按需转成 CSS 或 GPU 实例数据 */
+export interface Rgb { r: number; g: number; b: number; a: number }
 
 export interface Obj {
   x: number; y: number; r: number; e: string; seed: number; dead: boolean;
@@ -152,9 +189,11 @@ export interface Terrain {
   x: number; y: number; r: number; seed: number;
 }
 interface Particle {
-  x: number; y: number; vx: number; vy: number; life: number; max: number; c: string; sz: number;
+  x: number; y: number; vx: number; vy: number; life: number; max: number; c: Rgb; sz: number;
 }
-interface Ring { x: number; y: number; r: number; max: number; life: number; c: string }
+interface Ring { x: number; y: number; r: number; max: number; life: number; c: Rgb }
+
+export type { Particle, Ring };
 
 export interface Input {
   kx: number; ky: number;          // 键盘方向 (-1..1)
@@ -162,6 +201,68 @@ export interface Input {
 }
 
 export type GameState = 'play' | 'zoom' | 'win';
+
+/**
+ * 一帧的派生渲染状态。Canvas 2D 与 vgpu 两条路径都从这里取值，
+ * 因此相机构图、转场进度与龙卷风屏幕位置在两个后端上完全一致。
+ */
+export interface TornadoRenderState {
+  /** 是否处于镜头推远的转场中 */
+  zooming: boolean;
+  /** 转场段内进度 0..1 */
+  p: number;
+  /** 转场中是否已换手到新世界（决定绘制哪一套量级内容） */
+  drawingNew: boolean;
+  /** 当前正在绘制的量级索引 */
+  idx: number;
+  /** 世界 → 屏幕比例尺 */
+  floorScale: number;
+  /** 相机在世界坐标中的视心 */
+  floorCam: { x: number; y: number };
+  /** 当前镜头比例尺 */
+  viewScale: number;
+  /** 龙卷风屏幕 x */
+  sx: number;
+  /** 龙卷风屏幕 y */
+  sy: number;
+  /** 龙卷风屏幕半径（px） */
+  screenR: number;
+  /** 龙卷风当前半径（世界单位）：判定物体可食性 */
+  radius: number;
+  /** 转场时新旧世界逐像素对齐用的世界偏移 */
+  worldOffset: { x: number; y: number };
+  /** 屏震强度 0..1 */
+  shake: number;
+}
+
+/** 转场遮罩：风眼向外「吃掉」旧世界的圆形范围（屏幕像素） */
+export interface WipeState {
+  /** 半径 */
+  radius: number;
+  /** true＝只保留圆外（旧世界被吃掉）；false＝只保留圆内（新世界铺开） */
+  invert: boolean;
+  /** 该层整体不透明度 */
+  alpha: number;
+}
+
+/** 暗角强度：0 表示完全不画（可被 CG/过场覆盖） */
+const VIGNETTE_ALPHA = 0.09;
+
+/** 转场中两套世界各自的遮罩与不透明度（与 render 的分支一一对应） */
+export function wipeStatesFor(rs: TornadoRenderState): { old?: WipeState; current: WipeState } {
+  if (!rs.zooming) return { current: { radius: WIPE_SPAN, invert: false, alpha: 1 } };
+  if (!rs.drawingNew) {
+    // 旧世界：风眼从中心吃掉它，同时整体淡出——不和新地形硬碰硬
+    return { current: { radius: WIPE_SPAN * (1 - clamp(rs.p / 0.34, 0, 1)), invert: true, alpha: Math.max(0, 1 - rs.p / 0.62) } };
+  }
+  // 新世界：围绕风眼铺开，外围旧地形先淡出、再随铺开被完全接管
+  return {
+    old: { radius: WIPE_SPAN * (1 - clamp(rs.p / 0.34, 0, 1)), invert: true, alpha: Math.max(0, 1 - rs.p / 0.62) },
+    current: { radius: WIPE_SPAN * ease(clamp(rs.p / 0.66, 0, 1)), invert: false, alpha: clamp((rs.p - 0.34) / 0.32, 0, 1) },
+  };
+}
+
+export function vignetteAlpha(): number { return VIGNETTE_ALPHA; }
 
 export class TornadoGame {
   state: GameState = 'play';
@@ -186,6 +287,23 @@ export class TornadoGame {
   time = 0;
   world = VIEW * WORLD_K;
 
+  /* ── 玩法拓展状态 ── */
+
+  /** 连击层数：窗口内连续吞噬累加，超时归零 */
+  combo = 0;
+  /** 连击剩余窗口（秒） */
+  comboT = 0;
+  /** 本次连击的峰值（结算与评效用） */
+  bestCombo = 0;
+  /** 冲刺冷却剩余（秒） */
+  dashCd = 0;
+  /** 冲刺触发的视觉强度 0..1（供渲染做拖影/拉伸） */
+  dashFx = 0;
+  /** 本量级是否已达成分数目标 */
+  tierGoalHit = false;
+  /** 已达成目标的量级数（结算评价用） */
+  goalsHit = 0;
+
   private transCur = 0;      // 当前段序号
   private transP = 0;        // 当前段内进度
   private transTime = 0;     // 当前段已经过秒数
@@ -201,6 +319,8 @@ export class TornadoGame {
   onBounce: () => void = () => {};
   onTierUp: (tier: number) => void = () => {};
   onWin: () => void = () => {};
+  /** 本量级分数线达成（tier 为达成的量级） */
+  onGoal: (tier: number) => void = () => {};
 
   constructor() {
     this.reset();
@@ -216,6 +336,14 @@ export class TornadoGame {
     this.transP = 0;
     this.transTime = 0;
     this.handoffDone = false;
+    // 连击/冲刺/目标是整局统计，重开时一并清零
+    this.combo = 0;
+    this.comboT = 0;
+    this.bestCombo = 0;
+    this.dashCd = 0;
+    this.dashFx = 0;
+    this.goalsHit = 0;
+    this.tierGoalHit = false;
     this.buildTier();
     this.placePlayer();
     this.state = 'play';
@@ -231,6 +359,10 @@ export class TornadoGame {
     this.transP = 0;
     this.transTime = 0;
     this.handoffDone = false;
+    // 连击断掉、冷却保留（避免靠反复重开刷冲刺）
+    this.combo = 0;
+    this.comboT = 0;
+    this.tierGoalHit = false;
     this.buildTier();
     this.placePlayer();
     this.state = 'play';
@@ -314,6 +446,50 @@ export class TornadoGame {
   /** 通关进度以实际生成物为准，避免 spawn 失败导致永久软锁 */
   get total(): number { return this.objects.length; }
 
+  /** 当前连击倍率（分数与提示都用它） */
+  get comboMul(): number { return comboMultiplier(this.combo); }
+
+  /** 冲刺是否可用：有足够连击、冷却已过、且不在转场中 */
+  get canDash(): boolean {
+    return this.state === 'play' && this.dashCd <= 0 && this.combo >= DASH_COST;
+  }
+
+  /**
+   * 冲刺：消耗连击换取一次爆发位移。
+   * 方向取当前速度方向；静止时朝指针/朝向，都没有则朝右——保证按键总有反馈。
+   * 返回是否真的冲出去了（供控制器决定要不要播音效）。
+   */
+  dash(): boolean {
+    if (!this.canDash) return false;
+    const v = Math.hypot(this.vx, this.vy);
+    let dx: number;
+    let dy: number;
+    if (v > 1) {
+      dx = this.vx / v; dy = this.vy / v;
+    } else {
+      dx = 1; dy = 0;
+    }
+    const speed = TIERS[this.tier].moveV * DASH_SPEED_K;
+    this.vx = dx * speed;
+    this.vy = dy * speed;
+    this.combo = Math.max(0, this.combo - DASH_COST);
+    this.comboT = this.combo > 0 ? COMBO_WINDOW : 0;
+    this.dashCd = DASH_COOLDOWN;
+    this.dashFx = 1;
+    this.shake = Math.max(this.shake, 0.5);
+    this.burst(this.x, this.y, '', 12);
+    return true;
+  }
+
+  /** 本量级分数线达成检查（达成后只记一次，供过场评效） */
+  private checkTierGoal(): void {
+    if (this.tierGoalHit) return;
+    if (this.score - this.tierStartScore < tierScoreGoal(this.tier)) return;
+    this.tierGoalHit = true;
+    this.goalsHit++;
+    this.onGoal(this.tier);
+  }
+
   /**
    * 渲染用的龙卷风屏幕半径（px）。
    * 用「本关标称屏幕半径 → 下一关标称屏幕半径」在整段转场里插值，
@@ -338,6 +514,14 @@ export class TornadoGame {
     dt = Math.min(dt, 0.033);
     this.time += dt;
     this.shake = Math.max(0, this.shake - dt * 3);
+
+    // 连击窗口自然衰减；归零即断连
+    if (this.comboT > 0) {
+      this.comboT = Math.max(0, this.comboT - dt);
+      if (this.comboT === 0) this.combo = 0;
+    }
+    this.dashCd = Math.max(0, this.dashCd - dt);
+    this.dashFx = Math.max(0, this.dashFx - dt * 2.4);
 
     // 吸入动画推进
     for (const o of this.objects) {
@@ -404,11 +588,16 @@ export class TornadoGame {
         o.dead = true;
         o.suck = { t: 0, sx: o.x, sy: o.y };
         this.eaten++;
-        this.score += Math.round(o.r * 10) + this.tier * 50;
+        // 连击：窗口内连续吞噬逐级累加，分数按倍率结算
+        this.combo = Math.min(COMBO_MAX, this.combo + 1);
+        this.comboT = COMBO_WINDOW;
+        if (this.combo > this.bestCombo) this.bestCombo = this.combo;
+        this.score += Math.round((o.r * 10 + this.tier * 50) * this.comboMul);
         this.r = Math.min(R_MAX, Math.sqrt(this.r * this.r + o.r * o.r * 0.9));
         this.burst(o.x, o.y, o.e, 10);
-        this.rings.push({ x: o.x, y: o.y, r: o.r, max: this.r * 1.6, life: 0.45, c: 'rgba(14,159,133,.55)' });
+        this.rings.push({ x: o.x, y: o.y, r: o.r, max: this.r * 1.6, life: 0.45, c: RING_COLOR });
         this.onEat(o.r > 26);
+        this.checkTierGoal();
         if (this.eaten >= this.total) this.beginTransition();
       } else {
         // 弹开：无惩罚
@@ -626,16 +815,40 @@ export class TornadoGame {
     ctx.restore();
   }
 
-  render(ctx: CanvasRenderingContext2D): void {
+  /**
+   * 一帧渲染所需的全部派生状态（相机、比例尺、转场进度、龙卷风屏幕位置）。
+   *
+   * 抽出来是为了让 Canvas 2D 与 vgpu 两条渲染路径共用同一支计算——
+   * 只要这里的语义不变，两个后端的相机与换手时序就逐像素一致，
+   * 不会出现「换个后端画面就错位」这类只有肉眼能发现的问题。
+   */
+  renderState(): TornadoRenderState {
     const zooming = this.state === 'zoom';
-    const p = this.transP;
-    // 换手前后各画一套世界，用连续量驱动，换手帧两侧绘制结果一致
-    const drawingNew = zooming && this.handoffDone;
-    /** 当前正在绘制的世界所属量级（换手前是旧世界，换手后是新世界） */
-    const idx = Math.max(0, Math.min(drawingNew ? this.tier : this.tier - 1, TIERS.length - 1));
-    /** 世界 → 屏幕比例尺：以 viewScale 为准，与画地表用的那一支完全一致 */
     const floorScale = this.viewScale;
     const floorCam = this.camAnchor();
+    // 换手前后各画一套世界，用连续量驱动，换手帧两侧绘制结果一致
+    const drawingNew = zooming && this.handoffDone;
+    return {
+      zooming,
+      p: this.transP,
+      drawingNew,
+      // 当前正在绘制的世界所属量级（换手前是旧世界，换手后是新世界）
+      idx: Math.max(0, Math.min(drawingNew ? this.tier : this.tier - 1, TIERS.length - 1)),
+      floorScale,
+      floorCam,
+      viewScale: this.viewScale,
+      sx: VIEW / 2 + (this.x - floorCam.x) * floorScale,
+      sy: VIEW / 2 + (this.y - floorCam.y) * floorScale,
+      screenR: this.dispScreenR,
+      radius: this.r,
+      worldOffset: { x: this.worldOffset.x, y: this.worldOffset.y },
+      shake: this.shake,
+    };
+  }
+
+  render(ctx: CanvasRenderingContext2D): void {
+    const rs = this.renderState();
+    const { zooming, p, drawingNew, idx, floorScale, floorCam } = rs;
 
     ctx.save();
     ctx.clearRect(0, 0, VIEW, VIEW);
@@ -647,9 +860,7 @@ export class TornadoGame {
     this.drawFloor(ctx, floorCam, floorScale, idx);
 
     /* ② 龙卷风：位置按风眼接力，屏幕尺寸由 dispScreenR 给出，全程连续 */
-    const sx = VIEW / 2 + (this.x - floorCam.x) * floorScale;
-    const sy = VIEW / 2 + (this.y - floorCam.y) * floorScale;
-    this.drawTornado(ctx, sx, sy, this.dispScreenR);
+    this.drawTornado(ctx, rs.sx, rs.sy, rs.screenR);
 
     /* ③ 世界内容：地面装饰 + 地貌 + 建筑，全部挂在世界坐标系里 */
     const paint = (index: number, offset: { x: number; y: number }, alpha: number) => {
@@ -707,7 +918,7 @@ export class TornadoGame {
 
     /* ④ 粒子/环/震动：只属于当前世界 */
     ctx.save();
-    ctx.translate(VIEW / 2 + this.shake * (Math.random() - 0.5) * 8, VIEW / 2 + this.shake * (Math.random() - 0.5) * 8);
+    ctx.translate(VIEW / 2 + rs.shake * (Math.random() - 0.5) * 8, VIEW / 2 + rs.shake * (Math.random() - 0.5) * 8);
     ctx.scale(this.viewScale, this.viewScale);
     ctx.translate(-floorCam.x, -floorCam.y);
     this.drawFx(ctx);
@@ -1005,7 +1216,7 @@ export class TornadoGame {
     for (const rg of this.rings) {
       ctx.beginPath();
       ctx.arc(rg.x, rg.y, rg.r, 0, Math.PI * 2);
-      ctx.strokeStyle = rg.c;
+      ctx.strokeStyle = cssRgb(rg.c);
       ctx.globalAlpha = Math.max(0, rg.life / 0.45);
       ctx.lineWidth = 3;
       ctx.stroke();
@@ -1013,7 +1224,7 @@ export class TornadoGame {
     }
     for (const p of this.particles) {
       ctx.globalAlpha = Math.max(0, p.life / p.max);
-      ctx.fillStyle = p.c;
+      ctx.fillStyle = cssRgb(p.c);
       ctx.beginPath();
       ctx.arc(p.x, p.y, p.sz, 0, Math.PI * 2);
       ctx.fill();
@@ -1121,14 +1332,14 @@ interface GroundCol {
   water: string;    // 水
   grid: string;     // 地面细网格（读起来像地图/路网）
 }
+export type { GroundCol };
 
 /**
  * 各量级的地表配色：低量级是城市灰绿，中量级田野与林地，高量级海洋。
  * 只作为 patch 的填充色，不参与数值插值——转场时靠「换手瞬间切到新配色」
  * 加风眼铺开遮蔽，避免把 'rgb()' 当十六进制解析这类坑。
  */
-const GROUND: GroundCol[] = [
-  { base: '#ccd6c9', arable: '#c3d2a4', forest: '#98b487', town: '#cdc7bd', water: '#a3c4d9', grid: 'rgba(92,112,96,.16)' },
+export const GROUND: GroundCol[] = [  { base: '#ccd6c9', arable: '#c3d2a4', forest: '#98b487', town: '#cdc7bd', water: '#a3c4d9', grid: 'rgba(92,112,96,.16)' },
   { base: '#dccfb1', arable: '#d3c58d', forest: '#a3b47b', town: '#cbc0a9', water: '#a9c6d6', grid: 'rgba(122,100,60,.16)' },
   { base: '#c7cfdc', arable: '#c3c3ae', forest: '#9c9c86', town: '#c6c3bb', water: '#9fbdd2', grid: 'rgba(64,80,104,.16)' },
   { base: '#cbd4af', arable: '#c6cf96', forest: '#91ae72', town: '#bfbcae', water: '#95b8ce', grid: 'rgba(86,92,56,.16)' },
@@ -1185,10 +1396,30 @@ function smoothstep(t: number): number {
 }
 function clamp(v: number, a: number, b: number): number { return Math.max(a, Math.min(b, v)); }
 
-/** 粒子颜色：按量级轮换色相（与旧实现同族，但始终是可直接 fill 的颜色） */
-function particleColor(tier: number, i: number): string {
-  return `hsla(${(tier * 47 + i * 30) % 360},45%,55%,.9)`;
+/** 粒子颜色：按量级轮换色相（与旧实现同族，但始终是可直接填充的颜色） */
+function particleColor(tier: number, i: number): Rgb {
+  return hslaToRgb((tier * 47 + i * 30) % 360, 0.45, 0.55, 0.9);
 }
+
+/** hsl（h 为度，s/l 为 0..1）→ 数值分量；与 CSS hsla() 同语义 */
+export function hslaToRgb(h: number, s: number, l: number, a: number): Rgb {
+  const c = (1 - Math.abs(2 * l - 1)) * s;
+  const hp = (((h % 360) + 360) % 360) / 60;
+  const x = c * (1 - Math.abs((hp % 2) - 1));
+  const [r1, g1, b1] =
+    hp < 1 ? [c, x, 0] : hp < 2 ? [x, c, 0] : hp < 3 ? [0, c, x]
+      : hp < 4 ? [0, x, c] : hp < 5 ? [x, 0, c] : [c, 0, x];
+  const m = l - c / 2;
+  return { r: (r1 + m) * 255, g: (g1 + m) * 255, b: (b1 + m) * 255, a };
+}
+
+/** 数值分量 → CSS 颜色 */
+export function cssRgb(c: Rgb): string {
+  return `rgba(${Math.round(c.r)},${Math.round(c.g)},${Math.round(c.b)},${c.a})`;
+}
+
+/** 吞噬涟漪的固定色（与旧实现同色） */
+const RING_COLOR: Rgb = { r: 14, g: 159, b: 133, a: 0.55 };
 /** 确定性伪随机（地形/装饰按量级种子生成，每帧一致） */
 function mulberry32(a: number): () => number {
   return () => {

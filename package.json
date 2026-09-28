@@ -19,7 +19,12 @@
     "check": "biome check .",
     "icons": "python scripts/generate-pwa-icons.py",
     "test": "node scripts/run-tests.mjs",
-    "test:othello:smoke": "node scripts/othello-smoke.mjs"
+    "test:othello:smoke": "node scripts/othello-smoke.mjs",
+    "test:tornado:smoke": "node scripts/tornado-smoke.mjs",
+    "test:tornado:fallback": "node scripts/tornado-fallback-smoke.mjs",
+    "check:shaders": "node scripts/check-shaders.mjs",
+    "test:tornado:compare": "node scripts/tornado-backend-compare.mjs",
+    "test:site": "node scripts/site-regression.mjs"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.13",
@@ -35,6 +40,7 @@
     "@tensorflow/tfjs-backend-webgl": "^4.22.0",
     "@tensorflow/tfjs-backend-webgpu": "^4.22.0",
     "@tensorflow/tfjs-core": "^4.22.0",
-    "onnxruntime-web": "^1.30.0"
+    "onnxruntime-web": "^1.30.0",
+    "vgpu": "^0.5.0"
   }
 }
