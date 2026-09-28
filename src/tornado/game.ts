@@ -28,6 +28,31 @@ const VIEW = 640;
 const WORLD_K = 1.75;
 const R_MAX = 220;
 
+/**
+ * 相机俯角：倾斜正交（不是透视）。
+ *
+ * 为什么是正交而不是透视：正交投影下「世界 → 屏幕」是仿射变换，没有透视除法，
+ * 因此尺度在屏幕上处处均匀（这正是上帝视角的手感来源），逆变换也是闭式的、
+ * 线性的——指针拾取可以精确可逆。换成透视后逆变换变成投影除法，同一段世界
+ * 位移在不同屏幕位置对应不同像素位移，XY 操作的手感会漂。
+ *
+ * 投影式（h 为高度，地面 h = 0）：
+ *   screen_x = VIEW/2 + (gx - camx) * s
+ *   screen_y = VIEW/2 + (gy - camy) * s * sinθ - h * s * cosθ
+ * 横向完全不变，只有纵向按 sinθ 压缩——所以倾斜不改变左右移动的手感，
+ * 也不会让世界在屏幕上旋转。
+ */
+export const CAM_PITCH = (60 * Math.PI) / 180;
+/** 纵向压缩系数：地面在屏幕上被压扁的比例 */
+export const TILT_SIN = Math.sin(CAM_PITCH);
+/** 高度在屏幕上的增益：同样高度的物体看起来有多高 */
+export const TILT_COS = Math.cos(CAM_PITCH);
+/**
+ * 抵消地面压扁所需的纵向放大：贴地的图元（地貌格、底板、阴影）跟着地面一起
+ * 被 sinθ 压扁，而「立着的东西」（emoji 字形）要乘这个系数回到正立比例。
+ */
+const UPRIGHT = 1 / TILT_SIN;
+
 export interface TierDef {
   name: string;
   en: string;
@@ -231,6 +256,11 @@ export interface TornadoRenderState {
   radius: number;
   /** 转场时新旧世界逐像素对齐用的世界偏移 */
   worldOffset: { x: number; y: number };
+  /**
+   * 纵向压缩系数（倾斜正交的 sinθ）。两个后端都必须用它：
+   * 世界 y 方向在屏幕上的比例尺是 floorScale * tiltSin，横向是 floorScale。
+   */
+  tiltSin: number;
   /** 屏震强度 0..1 */
   shake: number;
 }
@@ -753,9 +783,13 @@ export class TornadoGame {
    * 世界 → 屏幕相机变换（与 paint 用的是同一支）。
    * 地表与建筑都必须用它：早先 drawFloor 把它当成屏幕坐标直接平铺，
    * 于是相机一移动，格子钉在屏幕上不动、建筑跟着动，两者相对滑动。
+   *
+   * 倾斜正交下纵向额外乘 TILT_SIN（地面被压扁），横向不变；
+   * d 因此不再等于 a。screenToWorld 用的是同一组系数的逆。
    */
   private camMatrix(scale: number, cam: { x: number; y: number }): { a: number; d: number; e: number; f: number } {
-    return { a: scale, d: scale, e: VIEW / 2 - cam.x * scale, f: VIEW / 2 - cam.y * scale };
+    const sy = scale * TILT_SIN;
+    return { a: scale, d: sy, e: VIEW / 2 - cam.x * scale, f: VIEW / 2 - cam.y * sy };
   }
 
   /** 最近一次地表绘制用的相机矩阵（单测校验地表与建筑同步；每次渲染都会刷新） */
@@ -779,18 +813,21 @@ export class TornadoGame {
     const col = groundAt(index);
     const s = Math.max(scale, 1e-4);
     const span = VIEW / s;                     // 屏幕可见的世界宽度
+    // 纵向被 sinθ 压扁，屏幕同样高度能看到更多世界 → 纵向可见跨度更大
+    const spanY = VIEW / (s * TILT_SIN);
     const size = clamp(150 / s, 96, 420);      // 每屏约 4 个地貌格（世界单位）
     const x0 = Math.floor((cam.x - span / 2) / size) * size;
-    const y0 = Math.floor((cam.y - span / 2) / size) * size;
+    const y0 = Math.floor((cam.y - spanY / 2) / size) * size;
     const nx = Math.ceil(span / size) + 2;
+    const ny = Math.ceil(spanY / size) + 2;
     this.floorMatrix = this.camMatrix(s, cam);
 
     ctx.save();
     ctx.translate(VIEW / 2, VIEW / 2);
-    ctx.scale(s, s);
+    ctx.scale(s, s * TILT_SIN);
     ctx.translate(-cam.x, -cam.y);
     // ① 地貌拼块：固定网格，走到哪都是同一片地貌
-    for (let j = 0; j < nx; j++) {
+    for (let j = 0; j < ny; j++) {
       for (let i = 0; i < nx; i++) {
         const wx = x0 + i * size;
         const wy = y0 + j * size;
@@ -807,10 +844,10 @@ export class TornadoGame {
     ctx.lineWidth = 1.4 / s;
     const g0 = 64;
     const gx0 = Math.floor((cam.x - span / 2) / g0) * g0;
-    const gy0 = Math.floor((cam.y - span / 2) / g0) * g0;
+    const gy0 = Math.floor((cam.y - spanY / 2) / g0) * g0;
     ctx.beginPath();
-    for (let x = gx0; x <= cam.x + span / 2 + g0; x += g0) { ctx.moveTo(x, cam.y - span); ctx.lineTo(x, cam.y + span); }
-    for (let y = gy0; y <= cam.y + span / 2 + g0; y += g0) { ctx.moveTo(cam.x - span, y); ctx.lineTo(cam.x + span, y); }
+    for (let x = gx0; x <= cam.x + span / 2 + g0; x += g0) { ctx.moveTo(x, cam.y - spanY); ctx.lineTo(x, cam.y + spanY); }
+    for (let y = gy0; y <= cam.y + spanY / 2 + g0; y += g0) { ctx.moveTo(cam.x - span, y); ctx.lineTo(cam.x + span, y); }
     ctx.stroke();
     ctx.restore();
   }
@@ -838,10 +875,11 @@ export class TornadoGame {
       floorCam,
       viewScale: this.viewScale,
       sx: VIEW / 2 + (this.x - floorCam.x) * floorScale,
-      sy: VIEW / 2 + (this.y - floorCam.y) * floorScale,
+      sy: VIEW / 2 + (this.y - floorCam.y) * floorScale * TILT_SIN,
       screenR: this.dispScreenR,
       radius: this.r,
       worldOffset: { x: this.worldOffset.x, y: this.worldOffset.y },
+      tiltSin: TILT_SIN,
       shake: this.shake,
     };
   }
@@ -868,23 +906,19 @@ export class TornadoGame {
       ctx.save();
       ctx.globalAlpha = alpha;
       const s = this.viewScale;
-      const halfW = VIEW / (2 * s);
+      const rect = this.visibleWorldRect(s, offset);
       ctx.translate(VIEW / 2, VIEW / 2);
-      ctx.scale(s, s);
+      ctx.scale(s, s * TILT_SIN);
       ctx.translate(-floorCam.x - offset.x, -floorCam.y - offset.y);
       // 装饰重复铺满视野：世界之外也是同样的路网/田垄，边界不再是"空地形"。
       // 每关的纹样预渲染成离屏画布，平铺时只做 drawImage；
       // 数量设上限——推得很远时格子会碎成几百片，那时交给地表网格即可。
       const decor = this.tierDecor(index);
       const W = VIEW * WORLD_K;
-      const vx0 = floorCam.x + offset.x - halfW;
-      const vx1 = floorCam.x + offset.x + halfW;
-      const vy0 = floorCam.y + offset.y - halfW;
-      const vy1 = floorCam.y + offset.y + halfW;
-      const tx0 = Math.floor(vx0 / W);
-      const tx1 = Math.floor(vx1 / W);
-      const ty0 = Math.floor(vy0 / W);
-      const ty1 = Math.floor(vy1 / W);
+      const tx0 = Math.floor(rect.x0 / W);
+      const tx1 = Math.floor(rect.x1 / W);
+      const ty0 = Math.floor(rect.y0 / W);
+      const ty1 = Math.floor(rect.y1 / W);
       let budget = DECOR_TILE_CAP;
       for (let ty = ty0; ty <= ty1 && budget > 0; ty++) {
         for (let tx = tx0; tx <= tx1 && budget > 0; tx++) {
@@ -893,8 +927,8 @@ export class TornadoGame {
         }
       }
       for (const t of this.terrain) this.drawTerrain(ctx, t);
-      const M = halfW + 200;
-      this.drawObjects(ctx, floorCam.x + offset.x - M, floorCam.y + offset.y - M, floorCam.x + offset.x + M, floorCam.y + offset.y + M);
+      // 剔除盒按倾斜后的可见范围给，否则上下边缘会漏画物体
+      this.drawObjects(ctx, rect.x0 - 200, rect.y0 - 200, rect.x1 + 200, rect.y1 + 200);
       ctx.restore();
     };
 
@@ -919,7 +953,7 @@ export class TornadoGame {
     /* ④ 粒子/环/震动：只属于当前世界 */
     ctx.save();
     ctx.translate(VIEW / 2 + rs.shake * (Math.random() - 0.5) * 8, VIEW / 2 + rs.shake * (Math.random() - 0.5) * 8);
-    ctx.scale(this.viewScale, this.viewScale);
+    ctx.scale(this.viewScale, this.viewScale * TILT_SIN);
     ctx.translate(-floorCam.x, -floorCam.y);
     this.drawFx(ctx);
     ctx.restore();
@@ -1171,7 +1205,7 @@ export class TornadoGame {
         ctx.save();
         ctx.translate(px + Math.cos(ang) * rad, py + Math.sin(ang) * rad * 0.55 - e * this.r * 0.9);
         ctx.rotate(ang * 0.8);
-        ctx.scale(sc, sc);
+        ctx.scale(sc, sc * UPRIGHT);
         ctx.font = `${o.r * 2.25}px "Segoe UI Emoji","Noto Color Emoji",serif`;
         ctx.fillText(o.e, 0, 0);
         ctx.restore();
@@ -1179,7 +1213,8 @@ export class TornadoGame {
       }
       const bob = Math.sin(this.time * 1.4 + o.seed) * 1.6;
       const edible = this.r > o.r;
-      // 建筑地基：深色圆角底板，让建筑"落地"而不是漂浮贴纸
+      // 建筑地基：深色圆角底板，让建筑"落地"而不是漂浮贴纸。
+      // 底板是贴地的，所以跟着地面一起被 sinθ 压扁——这正是"躺在地上"的观感。
       ctx.beginPath();
       ctx.roundRect(o.x - o.r * 1.02, o.y - o.r * 0.62, o.r * 2.04, o.r * 1.62, o.r * 0.34);
       ctx.fillStyle = 'rgba(38,52,60,.20)';
@@ -1195,13 +1230,21 @@ export class TornadoGame {
         ctx.strokeStyle = 'rgba(140,120,110,.45)';
         ctx.lineWidth = 2;
         ctx.stroke();
+      }
+      // emoji 是「立在底板上的棋子」：抵消地面的纵向压扁，让它保持正立而不是被拉扁。
+      // 锚点取底板中心偏下，于是它像插在底座上，而不是悬在半空。
+      ctx.save();
+      ctx.translate(o.x, o.y);
+      ctx.scale(1, UPRIGHT);
+      if (!edible) {
         ctx.globalAlpha = 0.45;
         ctx.font = `${Math.max(12, o.r * 0.55)}px "Segoe UI Emoji","Noto Color Emoji",serif`;
-        ctx.fillText('🔒', o.x + o.r * 0.62, o.y - o.r * 0.42 + bob);
+        ctx.fillText('🔒', o.r * 0.62, -o.r * 0.42 + bob);
         ctx.globalAlpha = 1;
       }
       ctx.font = `${o.r * 2.25}px "Segoe UI Emoji","Noto Color Emoji",serif`;
-      ctx.fillText(o.e, o.x, o.y + bob);
+      ctx.fillText(o.e, 0, bob);
+      ctx.restore();
     }
   }
 
@@ -1259,14 +1302,35 @@ export class TornadoGame {
     ctx.fillRect(0, 0, VIEW, VIEW);
   }
 
-  /** 屏幕(canvas)逻辑坐标 → 世界坐标，与 render 的相机变换互逆 */
+  /**
+   * 屏幕(canvas)逻辑坐标 → 世界坐标，与 render 的相机变换互逆。
+   * 纵向要除以 TILT_SIN 还原被压扁的地面；横向不受倾斜影响。
+   */
   screenToWorld(sx: number, sy: number): { x: number; y: number } {
     const cam = this.camAnchor();
     const sc = this.shifting ? this.viewScale : TIERS[this.tier].camScale;
     return {
       x: cam.x + (sx - VIEW / 2) / sc,
-      y: cam.y + (sy - VIEW / 2) / sc,
+      y: cam.y + (sy - VIEW / 2) / (sc * TILT_SIN),
     };
+  }
+
+  /**
+   * 屏幕可见的世界范围（转场时新旧世界用不同的比例尺与偏移）。
+   *
+   * 倾斜后纵向可见范围变大：屏幕高度 VIEW 对应 VIEW / (s·sinθ) 个世界单位。
+   * 地表 LOD、装饰平铺与剔除都要用它，否则上下会出现未绘制的空白。
+   */
+  visibleWorldRect(scale: number, offset: { x: number; y: number }): {
+    x0: number; y0: number; x1: number; y1: number;
+  } {
+    const s = Math.max(scale, 1e-4);
+    const halfW = VIEW / (2 * s);
+    const halfH = VIEW / (2 * s * TILT_SIN);
+    const cam = this.camAnchor();
+    const cx = cam.x + offset.x;
+    const cy = cam.y + offset.y;
+    return { x0: cx - halfW, y0: cy - halfH, x1: cx + halfW, y1: cy + halfH };
   }
 
   private drawTornado(ctx: CanvasRenderingContext2D, x: number, y: number, radius: number): void {

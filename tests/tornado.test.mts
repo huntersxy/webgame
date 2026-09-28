@@ -1,5 +1,5 @@
 /* tornado 核心逻辑单测：成长公式、通关计数、可食性、screenToWorld */
-import { TornadoGame, TIERS, TORNADO_VIEW, tierScoreGoal } from '../src/tornado/game';
+import { TornadoGame, TIERS, TORNADO_VIEW, tierScoreGoal, TILT_SIN } from '../src/tornado/game';
 import { assert, finish } from './harness.mts';
 
 
@@ -40,6 +40,47 @@ console.log('— screenToWorld 与相机一致 —');
   g.x = g.world / 2; g.y = g.world / 2;
   const w = g.screenToWorld(TORNADO_VIEW / 2, TORNADO_VIEW / 2);
   assert(Math.abs(w.x - g.x) < 1 && Math.abs(w.y - g.y) < 1, '视心映射到玩家附近');
+}
+
+console.log('— 倾斜正交：投影与拾取精确互逆 —');
+{
+  // 倾斜只压缩纵向，横向不变。指针拾取依赖逆变换精确，
+  // 所以这里用「世界 → 屏幕 → 世界」的往返误差来钉死它：
+  // 任何一处比例尺不一致（例如漏乘 sinθ）都会让点选系统性偏移。
+  const g = new TornadoGame();
+  g.reset();
+  g.x = g.world * 0.4; g.y = g.world * 0.6;
+  const cam = { x: g.x, y: g.y };
+  const s = g.viewScale;
+  const toScreen = (wx: number, wy: number) =>
+    [TORNADO_VIEW / 2 + (wx - cam.x) * s, TORNADO_VIEW / 2 + (wy - cam.y) * s * TILT_SIN] as const;
+
+  let maxErr = 0;
+  for (const wx of [cam.x - 300, cam.x, cam.x + 300]) {
+    for (const wy of [cam.y - 300, cam.y, cam.y + 300]) {
+      const [sx, sy] = toScreen(wx, wy);
+      const back = g.screenToWorld(sx, sy);
+      maxErr = Math.max(maxErr, Math.abs(back.x - wx), Math.abs(back.y - wy));
+    }
+  }
+  assert(maxErr < 1e-9, `往返误差 ${maxErr.toExponential(1)} 可忽略`);
+
+  // 纵向确实被压缩了：同样的世界位移，屏幕纵向位移是横向的 sinθ 倍
+  const [, sy0] = toScreen(cam.x, cam.y);
+  const [, sy1] = toScreen(cam.x, cam.y + 100);
+  const [sx0] = toScreen(cam.x, cam.y);
+  const [sx1] = toScreen(cam.x + 100, cam.y);
+  const dyPx = Math.abs(sy1 - sy0);
+  const dxPx = Math.abs(sx1 - sx0);
+  assert(Math.abs(dyPx / dxPx - TILT_SIN) < 1e-9,
+    `纵向压缩比 ${(dyPx / dxPx).toFixed(4)} === sinθ ${TILT_SIN.toFixed(4)}`);
+  assert(dyPx < dxPx, '倾斜后纵向位移小于横向（地面被压扁）');
+
+  // 纵向可见的世界范围要相应变大，否则上下边缘会露出未绘制区域
+  const rect = g.visibleWorldRect(s, { x: 0, y: 0 });
+  assert(rect.y1 - rect.y0 > rect.x1 - rect.x0, '倾斜后纵向可见范围大于横向');
+  assert(Math.abs((rect.y1 - rect.y0) - (rect.x1 - rect.x0) / TILT_SIN) < 1e-6,
+    '纵向可见范围 = 横向 / sinθ');
 }
 
 console.log('— 严格大于才可吃（相等弹开）—');
@@ -216,11 +257,11 @@ console.log('— 地表与世界内容同步（同一相机变换）—');
   const b = camAt(760, 560);
   assert(!!a && !!b, 'render 会记录地表所用的相机矩阵');
 
-  // paint 的变换：translate(VIEW/2) → scale(s) → translate(-cam)
+  // paint 的变换：translate(VIEW/2) → scale(s, s·sinθ) → translate(-cam)
   const worldToScreen = (m: { a: number; d: number; e: number; f: number }, wx: number, wy: number) =>
     [m.a * wx + m.e, m.d * wy + m.f] as const;
   const s = 1;                                  // T1 的 camScale
-  const paint = { a: s, d: s, e: 320 - 560 * s, f: 320 - 560 * s };
+  const paint = { a: s, d: s * TILT_SIN, e: 320 - 560 * s, f: 320 - 560 * s * TILT_SIN };
   const grid = worldToScreen(a, 260, 260);
   const building = worldToScreen(paint, 260, 260);
   assert(Math.abs(grid[0] - building[0]) < 1e-6 && Math.abs(grid[1] - building[1]) < 1e-6,
@@ -228,7 +269,7 @@ console.log('— 地表与世界内容同步（同一相机变换）—');
 
   // 相机右移 200：同一世界点的屏幕位移必须是 -200px，两个层完全相同
   const gridB = worldToScreen(b, 260, 260);
-  const buildingB = worldToScreen({ ...paint, e: 320 - 760 * s, f: 320 - 560 * s }, 260, 260);
+  const buildingB = worldToScreen({ ...paint, e: 320 - 760 * s, f: 320 - 560 * s * TILT_SIN }, 260, 260);
   const gridShift = gridB[0] - grid[0];
   const buildingShift = buildingB[0] - building[0];
   assert(Math.abs(gridShift - (-200)) < 1e-6, `相机右移 200 → 格子屏幕位移 ${gridShift.toFixed(1)}px`);

@@ -35,25 +35,36 @@ function extract(file, name) {
 }
 
 const SHADERS = path.join(ROOT, 'src/tornado/gpu/shaders.ts');
+const fullscreenVs = extract(SHADERS, 'FULLSCREEN_VS') ?? '';
 const CG = path.join(ROOT, 'src/tornado/gpu/cg.ts');
 const cgCommon = extract(CG, 'CG_COMMON') ?? '';
+const MESH = path.join(ROOT, 'src/tornado/gpu/mesh-shaders.ts');
+const meshCommon = extract(MESH, 'MESH_COMMON') ?? '';
 
 const targets = [
-  { name: 'FLOOR_WGSL', file: SHADERS },
+  { name: 'FLOOR_WGSL', file: SHADERS, inject: { FULLSCREEN_VS: fullscreenVs } },
   { name: 'SPRITE_WGSL', file: SHADERS },
-  { name: 'TORNADO_WGSL', file: SHADERS },
-  { name: 'COMPOSITE_WGSL', file: SHADERS },
-  { name: 'CG_INTRO_WGSL', file: CG, inject: cgCommon },
-  { name: 'CG_FINALE_WGSL', file: CG, inject: cgCommon },
+  { name: 'COMPOSITE_MAIN_WGSL', file: SHADERS, inject: { FULLSCREEN_VS: fullscreenVs } },
+  { name: 'BLOOM_WGSL', file: SHADERS, inject: { FULLSCREEN_VS: fullscreenVs } },
+  { name: 'CG_INTRO_WGSL', file: CG, inject: { CG_COMMON: cgCommon } },
+  { name: 'CG_FINALE_WGSL', file: CG, inject: { CG_COMMON: cgCommon } },
+  { name: 'MESH_WGSL', file: MESH, inject: { MESH_COMMON: meshCommon } },
+  { name: 'DECAL_WGSL', file: MESH, inject: { MESH_COMMON: meshCommon } },
+  { name: 'SHADOW_WGSL', file: MESH },
+  { name: 'FUNNEL_WGSL', file: MESH, inject: { MESH_COMMON: meshCommon } },
+  { name: 'DEBRIS_SIM_WGSL', file: MESH },
+  { name: 'DEBRIS_DRAW_WGSL', file: MESH, inject: { MESH_COMMON: meshCommon } },
 ];
 
 const written = [];
 for (const t of targets) {
   let body = extract(t.file, t.name);
   if (body === null) { console.error(`未找到 ${t.name}（${t.file}）`); continue; }
-  // 用正则 + 函数式替换：既是字面量匹配，也避免替换串里的 $& / $' 被当成
-  // 特殊替换模式（CG 源码里出现 $ 时不会污染注入结果）。
-  if (t.inject) body = body.replace(/\$\{CG_COMMON\}/g, () => t.inject);
+  // 逐个替换 ${NAME} 占位符。用函数式替换：既是字面量匹配，也避免替换串里的
+  // $& / $' 被当成特殊替换模式（着色器源码里出现 $ 时不会污染注入结果）。
+  for (const [key, value] of Object.entries(t.inject ?? {})) {
+    body = body.replace(new RegExp(`\\$\\{${key}\\}`, 'g'), () => value);
+  }
   const out = path.join(TMP, `wgsl-${t.name}.wgsl`);
   writeFileSync(out, body);
   written.push({ ...t, out, lines: body.split('\n').length });

@@ -44,18 +44,26 @@ import {
 import type { Buffer } from '@vgpu/core';
 
 import {
-  TORNADO_VIEW, TIERS, GROUND, WIPE_SPAN, wipeStatesFor, vignetteAlpha,
+  TORNADO_VIEW, TIERS, GROUND, WIPE_SPAN, wipeStatesFor, vignetteAlpha, TILT_COS,
   type GroundCol, type Obj, type Particle, type Ring, type Terrain, type TornadoRenderState,
 } from '../game';
 import { buildAtlas, glyphsFor, type Atlas } from './atlas';
+import { SUN_DIR, sunViewProj, tornadoViewProj } from './camera';
 import { CG_FINALE_WGSL, CG_INTRO_WGSL } from './cg';
 import { buildDecorCanvas, DECOR_PX, DECOR_WORLD } from './decor';
-import { COMPOSITE_WGSL, FLOOR_WGSL, SPRITE_WGSL, TORNADO_WGSL } from './shaders';
+import { createDebrisLayer, type DebrisLayer } from './debris';
+import { DEBRIS_MAX } from './mesh-shaders';
+import { createDecalLayer, createMeshLayer, MESH_BOX, MESH_CONE, MESH_FUNNEL, type DecalLayer, type MeshLayer } from './meshes';
+import {
+  SCENE_CAM_OFFSET, SCENE_FOG_OFFSET, SCENE_PARAMS_OFFSET, SCENE_SUN_OFFSET,
+  SCENE_SUNVP_OFFSET, SCENE_UNIFORM_FLOATS, SCENE_VIEWPROJ_OFFSET,
+} from './mesh-shaders';
+import { BLOOM_WGSL, COMPOSITE_MAIN_WGSL, FLOOR_WGSL, SPRITE_WGSL } from './shaders';
 
-/* 实例里 kind 字段的取值，与 SPRITE_WGSL 的分支一一对应 */
+/* 实例里 kind 字段的取值，与 SPRITE_WGSL 的分支一一对应。
+   1 / 2（圆角矩形及其描边）在立体化之后不再使用——物体底座已改为真实网格，
+   贴地的圆形与三角仍在用。 */
 const K_TEXTURE = 0;
-const K_ROUND_RECT = 1;
-const K_ROUND_RECT_STROKE = 2;
 const K_ELLIPSE = 3;
 const K_ELLIPSE_RING = 4;
 const K_TRIANGLE = 5;
@@ -82,9 +90,75 @@ const PALETTE_SLOTS = 5;
  */
 const FLOOR_GRIDCOL_OFFSET = 8;
 const FLOOR_PALETTE_OFFSET = 12;
-/** cols 数组之后：decorWorld, decorMix, pad, pad */
+/**
+ * cols 数组之后：decorWorld, decorMix, tiltSin, shadowStrength 共 4 个 float。
+ * 随后是 sunViewProj(mat4x4f)，WGSL 要求 16 字节对齐 —— 偏移正好落在 16 的倍数上，
+ * 无需额外填充。整块 = 4 + 4 + 6*5*4 + 4 + 16 = 148 个 float。
+ */
 const FLOOR_DECOR_OFFSET = FLOOR_PALETTE_OFFSET + TIERS.length * PALETTE_SLOTS * 4;
-const FLOOR_UNIFORM_FLOATS = FLOOR_DECOR_OFFSET + 4;
+const FLOOR_SUNVP_OFFSET = FLOOR_DECOR_OFFSET + 4;
+/**
+ * sunViewProj(mat4x4f) 之后：sunDir(vec4) + relief(vec4) = 8 个 float。
+ * 两者都是 vec4，天然 16 字节对齐，接在 mat4 之后无需填充。
+ */
+const FLOOR_SUNDIR_OFFSET = FLOOR_SUNVP_OFFSET + 16;
+const FLOOR_RELIEF_OFFSET = FLOOR_SUNDIR_OFFSET + 4;
+const FLOOR_UNIFORM_FLOATS = FLOOR_RELIEF_OFFSET + 4;
+
+/**
+ * 阴影正交盒要罩住的最大建筑高度（世界单位）。
+ * 取得比实际最高建筑略大即可：盒子越大，同样的阴影贴图分辨率下阴影越糊。
+ */
+const MAX_BUILD_HEIGHT = 140;
+/** 阴影贴图边长（设备像素） */
+const SHADOW_SIZE = 1024;
+
+/* ── 地表质感参数 ──────────────────────────────────────── */
+
+/**
+ * 地面起伏强度。地面占画面九成以上，纯色格子加多少颜色都还是「平的」；
+ * 这一层用 fbm 高度场求法线，按太阳方向出明暗，才有地貌的体积感。
+ * 必须克制：求法线的差分对噪声极敏感，强度偏大时地面会退化成电视雪花。
+ * 0.28 左右是「看得出起伏、又不像噪声」。
+ */
+const GROUND_RELIEF = 0.28;
+/**
+ * 地貌边界过渡宽度（格内归一化距离）。硬边的色块正是「像色板」的直接原因，
+ * 在边界附近把相邻地貌混起来就消掉了。0.22 只影响边界一带。
+ */
+const GROUND_BLEND = 0.22;
+/**
+ * 水面高光强度。实测（REL=0.28 下统计近白像素占比）：
+ * 0.85 → 7.6% 的像素被冲白（水面读成白云），0.45 → 2.7%，0.25 → 0%。
+ * 取 0.40：有明确的反光带，又不至于整片过曝。
+ */
+const WATER_SPECULAR = 0.40;
+
+/* ── 后期参数 ──────────────────────────────────────────── */
+
+/** 泛光强度：过高会让浅色地表糊成一片，0.34 左右是「发光但不刺眼」 */
+const BLOOM_STRENGTH = 0.30;
+/**
+ * 亮部阈值。地表是明亮粉彩（亮度常在 0.7~0.85），阈值必须明显高于它，
+ * 否则整片地面都算亮部，泛光退化成给全屏加白。
+ * 0.90 只留下高光、碎屑与龙卷风边缘。
+ */
+const BLOOM_THRESHOLD = 0.90;
+/** 软膝：阈值附近的过渡宽度，避免出现硬边光斑 */
+const BLOOM_KNEE = 0.22;
+/** 模糊半径倍数（纹素）：半分辨率上 1.6 约等于全分辨率的 3px 柔光 */
+const BLOOM_RADIUS = 1.6;
+/**
+ * 移轴景深强度。俯视视角下这一项把画面读成「微缩模型」，
+ * 是收益最高的一招；0 即关闭。
+ * 但要克制：虚化区里放着的正是玩家要吃的东西，糊过头就没法玩了。
+ */
+const DOF_AMOUNT = 0.62;
+/** 聚焦带半高（归一化屏幕高度 0..1）：带内保持锐利。
+ *  0.55 表示屏幕中间约 55% 高度完全清晰，只有最上下缘才明显虚化。 */
+const DOF_BAND = 0.55;
+/** 过渡带宽度：从清晰到最糊的过渡距离 */
+const DOF_FALLOFF = 0.45;
 
 export interface GpuWorld {
   objects: Obj[];
@@ -93,6 +167,12 @@ export interface GpuWorld {
   rings: Ring[];
   tier: number;
   time: number;
+  /** 龙卷风的世界位置与半径（网格漏斗要用世界坐标，不能只给屏幕位置） */
+  tornadoX: number;
+  tornadoY: number;
+  tornadoR: number;
+  /** 冲刺特效强度 0..1（漏斗会随之拉长） */
+  dashFx: number;
 }
 
 /**
@@ -200,7 +280,25 @@ export async function createGpuRenderer(
 
   /* ── 渲染目标 ────────────────────────────────────────── */
 
-  const scene: Target = vgpuTarget(gpu, { size, format: 'rgba8unorm', label: 'tornado-scene' });
+  /**
+   * 场景目标带深度附件：立体网格需要深度测试才能正确互相遮挡。
+   * 格式 rgba8unorm（不用 HDR：本机核显上 rgba16float + MSAA 的填充率代价
+   * 换来的收益有限，泛光改为在合成阶段按阈值提取亮部实现）。
+   */
+  const scene: Target = vgpuTarget(gpu, {
+    size, format: 'rgba8unorm', depth: 'depth24plus', label: 'tornado-scene',
+  });
+
+  /* ── 阴影贴图（独立深度目标，只用于投影） ─────────────── */
+
+  const shadowTarget: Target = vgpuTarget(gpu, {
+    size: [SHADOW_SIZE, SHADOW_SIZE], format: 'rgba8unorm', depth: 'depth32float', label: 'tornado-shadow-map',
+  });
+  const shadowMatrix = new Float32Array(16);
+  const shadowBuf: Buffer = gpu.device.createBuffer({
+    size: 16 * 4, usage: ['uniform', 'copy_dst'], label: 'tornado-shadow-u',
+  });
+  const shadowSamp = vgpuSampler(gpu, { compare: 'less-equal' });
 
   /* ── uniform 缓冲（core Buffer：可写原始字节） ───────── */
 
@@ -210,23 +308,64 @@ export async function createGpuRenderer(
   const spriteBuf: Buffer = gpu.device.createBuffer({
     size: 4 * 4, usage: ['uniform', 'copy_dst'], label: 'tornado-sprite-u',
   });
-  const tornadoBuf: Buffer = gpu.device.createBuffer({
-    size: 8 * 4, usage: ['uniform', 'copy_dst'], label: 'tornado-cone-u',
-  });
+  // 龙卷风漏斗现在是立体网格（见 meshes.ts），不再需要全屏 SDF 的 uniform。
+
   const compBuf: Buffer = gpu.device.createBuffer({
-    // 16 个 float = 64 字节，与 WGSL 的 CompU 结构体等大
-    size: 16 * 4, usage: ['uniform', 'copy_dst'], label: 'tornado-comp-u',
+    // 20 个 float = 80 字节，与 WGSL 的 CompU 结构体等大
+    size: 20 * 4, usage: ['uniform', 'copy_dst'], label: 'tornado-comp-u',
   });
+  /**
+   * 泛光 uniform：**每趟一个独立缓冲**。
+   *
+   * 不能三趟共用一个缓冲再逐趟改写：`set()`/`Buffer.write()` 底层是
+   * `queue.writeBuffer`，它在提交前就全部生效，而三个 pass 是提交后才执行的——
+   * 于是三趟都会读到最后一次写入的值（提取模式被当成模糊模式），
+   * 泛光结果整片糊白。一个缓冲配一趟，内容才是各自想要的。
+   */
+  const bloomBufs: Buffer[] = [0, 1, 2].map((i) => gpu.device.createBuffer({
+    size: 8 * 4, usage: ['uniform', 'copy_dst'], label: `tornado-bloom-u${i}`,
+  }));
   const cgBuf: Buffer = gpu.device.createBuffer({
     size: 8 * 4, usage: ['uniform', 'copy_dst'], label: 'tornado-cg-u',
+  });
+  /** 立体网格的场景 uniform：主相机 + 太阳矩阵 + 光照/雾参数 */
+  const sceneBuf: Buffer = gpu.device.createBuffer({
+    size: SCENE_UNIFORM_FLOATS * 4, usage: ['uniform', 'copy_dst'], label: 'tornado-scene-u',
   });
 
   const floorU = new Float32Array(FLOOR_UNIFORM_FLOATS);
   const spriteU = new Float32Array(4);
-  const tornadoU = new Float32Array(8);
-  const compU = new Float32Array(16);
+
+  const compU = new Float32Array(20);
   const cgU = new Float32Array(8);
+  const sceneU = new Float32Array(SCENE_UNIFORM_FLOATS);
   fillPalette(floorU, TIERS, GROUND);
+
+  /* ── 立体网格层（物体底座 / 地形障碍 / 龙卷风锥体） ──── */
+
+  const meshes: MeshLayer = createMeshLayer(gpu, {
+    sceneBuf,
+    shadowBuf,
+    shadowDepth: shadowTarget.depth,
+    atlasTex,
+  });
+  const decals: DecalLayer = createDecalLayer(gpu, {
+    sceneBuf,
+    shadowBuf,
+    shadowDepth: shadowTarget.depth,
+    atlasTex,
+  });
+  /** 碎屑：compute 推进 + 顶点阶段读 storage，CPU 每帧只写 48 字节 uniform */
+  const debris: DebrisLayer = createDebrisLayer(gpu, sceneBuf, shadowTarget.depth);
+
+  /* ── 泛光目标：半分辨率 ping-pong（提取 → 横糊 → 纵糊） ── */
+
+  const bloomSize: [number, number] = [
+    Math.max(1, Math.floor(size[0] / 2)),
+    Math.max(1, Math.floor(size[1] / 2)),
+  ];
+  const bloomA: Target = vgpuTarget(gpu, { size: bloomSize, format: 'rgba8unorm', label: 'tornado-bloom-a' });
+  const bloomB: Target = vgpuTarget(gpu, { size: bloomSize, format: 'rgba8unorm', label: 'tornado-bloom-b' });
 
   /* ── 实例缓冲 ────────────────────────────────────────── */
 
@@ -263,24 +402,50 @@ export async function createGpuRenderer(
 
   /* ── 管线 ────────────────────────────────────────────── */
 
-  const floorFx: Effect = vgpuEffect(gpu, FLOOR_WGSL, {
+  // 全屏地表与合成现在是**显式 draw**（带顶点阶段）并关掉深度：
+  // effect 自带的顶点阶段输出 z=0（最近），会挡住带深度的立体网格。
+  // 无顶点缓冲的 draw：顶点阶段完全靠 @builtin(vertex_index) 定位。
+  const fullscreenGeo: Geometry = vgpuGeometry(gpu, {
+    buffers: [],
+    vertexCount: 3,
+    topology: 'triangle-list',
+    instanceCount: 1,
+    label: 'tornado-fullscreen',
+  });
+
+  const floorFx: Draw = vgpuDraw(gpu, {
+    shader: FLOOR_WGSL, geometry: fullscreenGeo, depth: false,
     label: 'tornado-floor',
-    set: { u: floorBuf, decor: decorFor(0), decorSamp: repeatSampler },
+    set: {
+      u: floorBuf, decor: decorFor(0), decorSamp: repeatSampler,
+      shadowMap: shadowTarget.depth, shadowSamp,
+    },
   });
 
   const spriteFx: Draw = vgpuDraw(gpu, {
-    shader: SPRITE_WGSL, geometry: spriteGeo, blend: 'alpha', label: 'tornado-sprite',
+    shader: SPRITE_WGSL, geometry: spriteGeo, blend: 'alpha', depth: false, label: 'tornado-sprite',
     set: { u: spriteBuf, atlas: atlasTex, samp: nearestSampler },
   });
 
-  // 龙卷风是全屏 effect：绘制范围由 pass 的 scissor 限定在包围盒内
-  const tornadoFx: Effect = vgpuEffect(gpu, TORNADO_WGSL, {
-    label: 'tornado-cone', blend: 'alpha', set: { u: tornadoBuf },
+  const compositeFx: Effect = vgpuEffect(gpu, COMPOSITE_MAIN_WGSL, {
+    label: 'tornado-composite',
+    set: { u: compBuf, src: scene, samp: linearSampler, bloomTex: bloomA, bloomSamp: linearSampler },
   });
 
-  const compositeFx: Effect = vgpuEffect(gpu, COMPOSITE_WGSL, {
-    label: 'tornado-composite',
-    set: { u: compBuf, src: scene, samp: linearSampler },
+  /* ── 泛光：半分辨率的提取 + 两趟可分离模糊 ────────────── */
+
+  // 三趟各用一支 Effect 实例（绑定各自的 uniform 缓冲），避免共享状态被覆盖
+  const bloomExtractFx: Effect = vgpuEffect(gpu, BLOOM_WGSL, {
+    label: 'tornado-bloom-extract',
+    set: { b: bloomBufs[0], bsrc: scene, bsamp: linearSampler },
+  });
+  const bloomBlurXFx: Effect = vgpuEffect(gpu, BLOOM_WGSL, {
+    label: 'tornado-bloom-blur-x',
+    set: { b: bloomBufs[1], bsrc: bloomA, bsamp: linearSampler },
+  });
+  const bloomBlurYFx: Effect = vgpuEffect(gpu, BLOOM_WGSL, {
+    label: 'tornado-bloom-blur-y',
+    set: { b: bloomBufs[2], bsrc: bloomB, bsamp: linearSampler },
   });
 
   /* ── CG：开场 / 结局（程序化全屏画面，不引入图片资源） ── */
@@ -346,6 +511,17 @@ export async function createGpuRenderer(
     surface.resize(size);
     scene.resize(size);
     compositeFx.set({ src: scene });
+    // 泛光目标是半分辨率，跟着场景一起改尺寸
+    const half: [number, number] = [Math.max(1, Math.floor(size[0] / 2)), Math.max(1, Math.floor(size[1] / 2))];
+    bloomSize[0] = half[0]; bloomSize[1] = half[1];
+    bloomA.resize(half);
+    bloomB.resize(half);
+    // Target.resize 会重建纹理对象，所有绑定过它们的 Effect 都要重新指认，
+    // 否则会继续采样已被销毁的旧视图（画面直接变黑）。
+    compositeFx.set({ src: scene, bloomTex: bloomA });
+    bloomExtractFx.set({ bsrc: scene });
+    bloomBlurXFx.set({ bsrc: bloomA });
+    bloomBlurYFx.set({ bsrc: bloomB });
     overlay.width = size[0];
     overlay.height = size[1];
     // Texture 不支持 resize：重建后重新绑定
@@ -361,6 +537,12 @@ export async function createGpuRenderer(
 
   /** 逻辑坐标 → 设备像素的比例（高分屏 >1） */
   let pxRatio = Math.max(1e-4, size[0] / TORNADO_VIEW);
+  /**
+   * 上一帧的世界时间，用来推导碎屑模拟的 dt。
+   * 渲染器不持有帧时钟（vgpu 的 clock 只给 GPU 侧），而 world.time 由模拟层
+   * 按真实 dt 累加，所以它的差分就是最准确的帧间隔，不必改接口传参。
+   */
+  let lastDebrisTime = -1;
 
   /**
    * 写入一个实例。`cx/cy/hw/hh` 与 `p0/p1` 都是屏幕长度，
@@ -390,24 +572,34 @@ export async function createGpuRenderer(
 
   function collect(rs: TornadoRenderState, w: GpuWorld): void {
     instCount = 0;
+    meshes.begin();
+    decals.begin();
     const s = rs.floorScale;
+    // 倾斜正交：横向比例尺 s，纵向 s·sinθ。与 Canvas 路径同一支变换。
+    const sy = s * rs.tiltSin;
     const cx0 = rs.floorCam.x;
     const cy0 = rs.floorCam.y;
     // 世界 → 逻辑屏幕坐标（与 Canvas 路径同一支变换）
     const toX = (wx: number): number => TORNADO_VIEW / 2 + (wx - cx0) * s;
-    const toY = (wy: number): number => TORNADO_VIEW / 2 + (wy - cy0) * s;
+    const toY = (wy: number): number => TORNADO_VIEW / 2 + (wy - cy0) * sy;
+    /** 立着的图元要抵消地面压扁，否则 emoji 会被拉扁 */
+    const upright = 1 / Math.max(rs.tiltSin, 1e-4);
 
-    // ① 地形障碍
+    // ① 地形障碍：立体网格（山 = 锥、巨石 = 盒、林 = 锥簇、湖 = 贴地水面）
+    const ts = rs.tiltSin;
     for (const t of w.terrain) {
       const sx = toX(t.x);
       const sy = toY(t.y);
       const sr = t.r * s;
       if (!visible(sx, sy, sr * 3)) continue;
-      push(sx, sy + sr * 0.72, sr * 0.92, sr * 0.28, 0, K_ELLIPSE, 0.16, rgb(28, 43, 51), 0, 0, 0, 0, 0, 0);
-      pushTerrain(t, sx, sy, sr);
+      // 接触阴影：贴地椭圆，让障碍"坐"在地面上
+      push(sx, sy + sr * 0.72 * ts, sr * 0.92, sr * 0.28 * ts, 0, K_ELLIPSE, 0.16, rgb(28, 43, 51), 0, 0, 0, 0, 0, 0);
+      pushTerrainMesh(t);
+      pushTerrain(t, sx, sy, sr, ts);
     }
 
-    // ② 物体：可食/不可食决定底座配色与锁标
+    // ② 物体：真实立体底座 + 顶面 emoji 贴花
+    //    （被卷起的仍走广告牌：它在飞向风眼，平面贴图反而更自然）
     for (const o of w.objects) {
       if (o.dead && !o.suck) continue;
       const slot = atlasInfo.slots.get(o.e);
@@ -425,7 +617,7 @@ export async function createGpuRenderer(
         const py = by + (rs.sy - by) * e + Math.sin(ang) * rad * 0.55 - e * rs.screenR * 0.9;
         const half = o.r * 1.15 * s * sc;
         if (slot && visible(px, py, half * 2)) {
-          push(px, py, half, half, ang * 0.8, K_TEXTURE, 1, rgb(255, 255, 255), 0, 0, slot.u, slot.v, slot.du, slot.dv);
+          push(px, py, half, half * upright, ang * 0.8, K_TEXTURE, 1, rgb(255, 255, 255), 0, 0, slot.u, slot.v, slot.du, slot.dv);
         }
         continue;
       }
@@ -434,30 +626,43 @@ export async function createGpuRenderer(
       const sy = toY(o.y);
       const half = o.r * 1.15 * s;
       if (!visible(sx, sy, half * 2.4)) continue;
-      const bob = Math.sin(w.time * 1.4 + o.seed) * 1.6;
 
-      // 地基：深色底板 + 浅色面（不可食时面色偏灰）
-      push(sx, sy, o.r * 1.02 * s, o.r * 0.81 * s, 0, K_ROUND_RECT, 0.20, rgb(38, 52, 60), o.r * 0.34 * s, 0, 0, 0, 0, 0);
-      const face = edible ? rgb(244, 246, 243) : rgb(230, 228, 224);
-      push(sx, sy - o.r * 0.05 * s, o.r * 0.94 * s, o.r * 0.75 * s, 0, K_ROUND_RECT, 0.88, face, o.r * 0.3 * s, 0, 0, 0, 0, 0);
+      // 底座：盒体，宽深按物体半径，高度按「层级」给——
+      // 低量级的小物件是矮墩、高量级的大建筑是高楼，体量自然拉开。
+      //
+      // 高度必须是屏幕像素的函数，不能只跟世界半径走：实测各量级的
+      // 屏幕尺寸其实**恒定**（camScale = 22/r 抵消了 r），所以
+      // bh = 0.95r 在每一关都只有约 10px 高的侧面——底座退化成一条白边，
+      // 看上去仍是一张白卡片。改成按屏幕半径反推世界高度，
+      // 让侧面稳定落在约 20px（物体自身高度的三分之一），才读得出是个「台子」。
+      const bw = o.r * 1.9;
+      const bd = o.r * 1.55;
+      const screenR = o.r * s;                       // 该物体在屏幕上的半径（逻辑像素）
+      const bh = Math.min(o.r * 1.9, (screenR * 0.62) / Math.max(TILT_COS, 1e-3) / s);
+      // 台身用偏灰的「石/木」色而不是近白：白台面配 emoji 就是一张卡片，
+      // 压暗一点才有材质感，也让顶面贴花更跳。
+      const cr = edible ? 0.80 : 0.66;
+      const cg = edible ? 0.79 : 0.64;
+      const cb = edible ? 0.74 : 0.60;
+      meshes.add(MESH_BOX, o.x, o.y, bh * 0.5, bw, bd, bh, cr, cg, cb);
 
-      // 不可食：灰描边 + 锁标，提示「现在还卷不动」
-      if (!edible) {
-        push(sx, sy - o.r * 0.05 * s, o.r * 0.94 * s, o.r * 0.75 * s, 0, K_ROUND_RECT_STROKE, 0.45, rgb(140, 120, 110), o.r * 0.3 * s, 2, 0, 0, 0, 0);
-        const lock = atlasInfo.slots.get('🔒');
-        if (lock) {
-          const ls = Math.max(12, o.r * 0.55) * s * 0.5;
-          push(sx + o.r * 0.62 * s, sy - o.r * 0.42 * s + bob, ls, ls, 0, K_TEXTURE, 0.45,
-            rgb(255, 255, 255), 0, 0, lock.u, lock.v, lock.du, lock.dv);
-        }
+      // 顶面贴花：emoji 躺在底座顶上，随视角一起透视压缩
+      if (slot) {
+        decals.add(
+          o.x, o.y, bh + 0.02,
+          o.r * 1.55,
+          slot.u, slot.v, slot.du, slot.dv,
+          1, 1, 1, 1,
+        );
       }
 
-      if (slot) {
-        push(sx, sy + bob, half, half, 0, K_TEXTURE, 1, rgb(255, 255, 255), 0, 0, slot.u, slot.v, slot.du, slot.dv);
+      // 不可食：底边加一圈灰描边（用贴地椭圆环表示），提示「现在还卷不动」
+      if (!edible) {
+        push(sx, sy, o.r * 1.02 * s, o.r * 0.82 * s * rs.tiltSin, 0, K_ELLIPSE_RING, 0.5, rgb(150, 130, 120), 0.06, 0, 0, 0, 0, 0);
       }
     }
 
-    // ③ 环与粒子
+    // ③ 环与粒子（都在地面平面上，纵向同样乘 tiltSin）
     for (const rg of w.rings) {
       const sx = toX(rg.x);
       const sy = toY(rg.y);
@@ -465,7 +670,7 @@ export async function createGpuRenderer(
       if (!visible(sx, sy, sr * 1.4)) continue;
       const a = Math.max(0, rg.life / 0.45) * rg.c.a;
       // 线宽 3px → 占半径的比例（着色器按归一化半径算环宽）
-      push(sx, sy, sr, sr, 0, K_ELLIPSE_RING, a, rg.c, Math.min(0.9, 1.5 / Math.max(sr, 1)), 0, 0, 0, 0, 0);
+      push(sx, sy, sr, sr * ts, 0, K_ELLIPSE_RING, a, rg.c, Math.min(0.9, 1.5 / Math.max(sr, 1)), 0, 0, 0, 0, 0);
     }
     for (const p of w.particles) {
       const sx = toX(p.x);
@@ -475,15 +680,100 @@ export async function createGpuRenderer(
       const a = Math.max(0, p.life / p.max) * p.c.a;
       push(sx, sy, sr, sr, 0, K_ELLIPSE, a, p.c, 0, 0, 0, 0, 0, 0);
     }
+
+    // ④ 龙卷风漏斗：真实立体网格，走深度与光照，会遮挡城市也被城市遮挡。
+    //
+    //    高宽比是算出来的：龙卷风的**屏幕**半径被设计成各量级恒定（约 22px），
+    //    所以 th ∝ tr 时屏幕高度也恒定。屏幕高 = th·camScale·cosθ，
+    //    屏幕宽 = 2·tr·0.95·camScale，代入 camScale = 22/tr：
+    //      th = 9r  → 高 ≈ 99px、宽 ≈ 42px ≈ 2.4:1（实拍龙卷风大致就是这个比例）
+    //      th = 13r → 3.4:1，屏幕上显得又细又长，像一缕烟
+    //    取 9r。早先用 5r/1.15r 只有 1.1:1，整个糊成竖椭圆。
+    const tr = Math.max(1, w.tornadoR);
+    const th = tr * 9 * (1 + w.dashFx * 0.18);
+    meshes.add(MESH_FUNNEL, w.tornadoX, w.tornadoY, 0, tr * 1.0, tr * 1.0, th, 1, 1, 1);
+
+    // ⑤ 碎屑：粒子数随半径增长（最多 DEBRIS_MAX），推进与定位都在 GPU 上。
+    //    这里只更新 uniform，不碰粒子数据。
+    const dt = Math.max(0, Math.min(0.05, w.time - lastDebrisTime));
+    lastDebrisTime = w.time;
+    debris.update({
+      x: w.tornadoX,
+      y: w.tornadoY,
+      radius: tr * 1.15,
+      height: th,
+      // 碎屑的屏幕尺寸跟随龙卷风在屏幕上的半径，而不是世界半径——
+      // 否则高量级（世界半径上百）时每块碎屑会盖住整个屏幕。
+      size: Math.max(2, rs.screenR * 0.22 * pxRatio),
+      viewW: size[0],
+      viewH: size[1],
+      time: w.time,
+      dt,
+      // 半径越大碎屑越多：小街道上是几粒尘，全地球时是漫天碎块
+      count: Math.min(DEBRIS_MAX, Math.round(28 + tr * 1.6)),
+    });
+  }
+
+  /**
+   * 地形障碍的立体部分。
+   *   山   → 三座锥体（保留原来「三峰 + 雪顶」的构图）
+   *   巨石 → 三块叠放的盒体
+   *   林   → 一簇锥体（树冠）
+   *   湖   → 只画贴地水面（见 pushTerrain），不产生立体
+   */
+  function pushTerrainMesh(t: Terrain): void {
+    const rnd = mulberry32((t.seed * 1000) | 0);
+    switch (t.kind) {
+      case 'mount': {
+        const peaks: Array<[number, number, number]> = [
+          [-0.42, 1.15, 0.75], [0.05, 1.5, 0.95], [0.55, 1.0, 0.65],
+        ];
+        for (const [dx, ph, pw] of peaks) {
+          const h = t.r * ph;
+          // 山体：锥体底面半径 t.r·pw，高 h
+          meshes.add(MESH_CONE, t.x + t.r * dx, t.y, h * 0.5, t.r * pw * 2, t.r * pw * 2, h, 0.50, 0.55, 0.59);
+          // 雪顶：同轴再叠一个小锥，位置抬高到接近山顶
+          meshes.add(MESH_CONE, t.x + t.r * dx, t.y, h * 0.62, t.r * pw * 0.5, t.r * pw * 0.5, h * 0.76, 0.93, 0.96, 0.97);
+        }
+        break;
+      }
+      case 'boulder': {
+        const rocks: Array<[number, number, number]> = [
+          [0, 0, 0.72], [-0.55, 0.18, 0.45], [0.5, 0.22, 0.38],
+        ];
+        for (const [dx, dy, rr] of rocks) {
+          const w = t.r * rr * 2;
+          meshes.add(MESH_BOX, t.x + t.r * dx, t.y + t.r * dy, w * 0.35, w, w * 0.9, w * 0.7, 0.55, 0.59, 0.62);
+        }
+        break;
+      }
+      case 'forest': {
+        for (let i = 0; i < 7; i++) {
+          const a = rnd() * Math.PI * 2;
+          const dd = rnd() * t.r * 0.62;
+          const rr = t.r * (0.3 + rnd() * 0.22);
+          const h = rr * 2.4;
+          meshes.add(
+            MESH_CONE,
+            t.x + Math.cos(a) * dd, t.y + Math.sin(a) * dd * 0.8, h * 0.5,
+            rr * 2, rr * 2, h,
+            i % 2 ? 0.36 : 0.30, i % 2 ? 0.55 : 0.48, i % 2 ? 0.38 : 0.32,
+          );
+        }
+        break;
+      }
+      default:
+        break;   // 湖不产生立体
+    }
   }
 
   /** 地形障碍形状：湖 / 巨石 / 山 / 森林（与 drawTerrain 的图元对应） */
-  function pushTerrain(t: Terrain, sx: number, sy: number, sr: number): void {
+  function pushTerrain(t: Terrain, sx: number, sy: number, sr: number, ts: number): void {
     switch (t.kind) {
       case 'lake': {
         // 湖面：扁椭圆 + 亮色岸线（Canvas 用 ellipse + stroke）
-        push(sx, sy, sr, sr * 0.72, 0.3, K_ELLIPSE, 1, rgb(125, 180, 214), 0, 0, 0, 0, 0, 0);
-        push(sx, sy, sr, sr * 0.72, 0.3, K_ELLIPSE_RING, 0.8, rgb(235, 246, 250), 0.055, 0, 0, 0, 0, 0);
+        push(sx, sy, sr, sr * 0.72 * ts, 0.3, K_ELLIPSE, 1, rgb(125, 180, 214), 0, 0, 0, 0, 0, 0);
+        push(sx, sy, sr, sr * 0.72 * ts, 0.3, K_ELLIPSE_RING, 0.8, rgb(235, 246, 250), 0.055, 0, 0, 0, 0, 0);
         break;
       }
       case 'boulder': {
@@ -492,8 +782,8 @@ export async function createGpuRenderer(
           [0, 0, 0.72], [-0.55, 0.18, 0.45], [0.5, 0.22, 0.38],
         ];
         for (const [dx, dy, rr] of rocks) {
-          push(sx + sr * dx, sy + sr * dy, sr * rr, sr * rr * 0.86, 0, K_ELLIPSE, 1, rgb(141, 151, 158), 0, 0, 0, 0, 0, 0);
-          push(sx + sr * (dx - rr * 0.25), sy + sr * (dy - rr * 0.35), sr * rr * 0.45, sr * rr * 0.28, -0.5, K_ELLIPSE, 0.28, rgb(255, 255, 255), 0, 0, 0, 0, 0, 0);
+          push(sx + sr * dx, sy + sr * dy * ts, sr * rr, sr * rr * 0.86 * ts, 0, K_ELLIPSE, 1, rgb(141, 151, 158), 0, 0, 0, 0, 0, 0);
+          push(sx + sr * (dx - rr * 0.25), sy + sr * (dy - rr * 0.35) * ts, sr * rr * 0.45, sr * rr * 0.28 * ts, -0.5, K_ELLIPSE, 0.28, rgb(255, 255, 255), 0, 0, 0, 0, 0, 0);
         }
         break;
       }
@@ -504,11 +794,11 @@ export async function createGpuRenderer(
         ];
         for (const [dx, ph, pw] of peaks) {
           const halfH = sr * ph * 0.5;
-          const cyA = sy + sr * 0.5 - halfH;
-          // 山体：顶点高度按 ph 换算成包围盒比例
-          push(sx + sr * dx, cyA, sr * pw, halfH, 0, K_TRIANGLE, 1, rgb(127, 140, 150), 1, 0, 0, 0, 0, 0);
+          const cyA = sy + sr * 0.5 * ts - halfH * ts;
+          // 山体：顶点高度按 ph 换算成包围盒比例（高度同样随视角压缩）
+          push(sx + sr * dx, cyA, sr * pw, halfH * ts, 0, K_TRIANGLE, 1, rgb(127, 140, 150), 1, 0, 0, 0, 0, 0);
           // 雪顶：叠一个较小的三角形，顶点同高
-          push(sx + sr * dx, cyA + halfH * 0.24, sr * pw * 0.26, halfH * 0.76, 0, K_TRIANGLE, 1, rgb(238, 244, 247), 1, 0, 0, 0, 0, 0);
+          push(sx + sr * dx, cyA + halfH * ts * 0.24, sr * pw * 0.26, halfH * ts * 0.76, 0, K_TRIANGLE, 1, rgb(238, 244, 247), 1, 0, 0, 0, 0, 0);
         }
         break;
       }
@@ -518,7 +808,7 @@ export async function createGpuRenderer(
           const a = rnd() * Math.PI * 2;
           const dd = rnd() * sr * 0.62;
           const rr = sr * (0.3 + rnd() * 0.22);
-          push(sx + Math.cos(a) * dd, sy + Math.sin(a) * dd * 0.8, rr, rr, 0, K_ELLIPSE, 1,
+          push(sx + Math.cos(a) * dd, sy + Math.sin(a) * dd * 0.8 * ts, rr, rr * ts, 0, K_ELLIPSE, 1,
             i % 2 ? rgb(93, 139, 96) : rgb(77, 122, 82), 0, 0, 0, 0, 0, 0);
         }
         break;
@@ -658,6 +948,9 @@ export async function createGpuRenderer(
     // 装饰贴图平铺的世界尺寸与混入强度（Canvas 里装饰整层画在拼块之上）
     floorU[FLOOR_DECOR_OFFSET] = DECOR_WORLD;
     floorU[FLOOR_DECOR_OFFSET + 1] = 1;
+    // 纵向压缩：地表着色器用它把屏幕 y 还原成世界 y（倾斜正交的逆）
+    floorU[FLOOR_DECOR_OFFSET + 2] = rs.tiltSin;
+    floorU[FLOOR_DECOR_OFFSET + 3] = 1;   // 阴影强度
     floorBuf.write(floorU, 0);
     // 量级切换时换绑装饰贴图（贴图按量级缓存，只在真正换关那帧改绑定）
     if (boundDecor !== rs.idx) {
@@ -675,25 +968,61 @@ export async function createGpuRenderer(
     if (instCount > 0) {
       spriteInstBuf.write(instData.subarray(0, instCount * FLOATS_PER_INSTANCE), 0);
     }
+    meshes.upload();
+    decals.upload();
 
-    // 龙卷风：以风眼为中心，向上覆盖锥体高度（全部设备像素）
-    const r = Math.max(3, rs.screenR) * pxRatio;
-    const h = r * 2.1;
-    const tcx = rs.sx * pxRatio;
-    const tcy = rs.sy * pxRatio;
-    tornadoU[0] = tcx; tornadoU[1] = tcy;
-    tornadoU[2] = size[0]; tornadoU[3] = size[1];
-    tornadoU[4] = r; tornadoU[5] = h;
-    tornadoU[6] = w.time; tornadoU[7] = 1;
-    tornadoBuf.write(tornadoU, 0);
+    /* ── 相机与光照 ──────────────────────────────────────── */
 
-    // 龙卷风的绘制区间：只覆盖它真正占用的矩形，其余片元不参与着色
-    const pad = r * 0.45;
-    const bx0 = Math.max(0, Math.floor(tcx - r * 1.05 - pad));
-    const by0 = Math.max(0, Math.floor(tcy - h - pad));
-    const bx1 = Math.min(size[0], Math.ceil(tcx + r * 1.05 + pad));
-    const by1 = Math.min(size[1], Math.ceil(tcy + r * 0.35 + pad));
-    const tornadoClip: [number, number, number, number] = [bx0, by0, Math.max(1, bx1 - bx0), Math.max(1, by1 - by0)];
+    // 主相机：与 game.ts 那条二维投影式严格等价（只是补上了 z 轴）。
+    // 深度范围取 ±一个世界跨度：相机在场景内部，视线深度有正有负，
+    // 范围不够会把相机附近的地面整片裁掉。
+    const depthSpan = TORNADO_VIEW / rs.floorScale * 2.5;
+    const vp = tornadoViewProj(
+      rs.floorCam, rs.floorScale * pxRatio, size[0],
+      rs.tiltSin, TILT_COS, -depthSpan, depthSpan,
+    );
+    sceneU.set(vp, SCENE_VIEWPROJ_OFFSET);
+
+    // 太阳正交投影：只罩住当前屏幕可见的地面范围 + 最大建筑高度，
+    // 范围取得越紧，同样的贴图分辨率下阴影越锐利。
+    const halfW = TORNADO_VIEW / (2 * rs.floorScale);
+    const halfH = TORNADO_VIEW / (2 * rs.floorScale * rs.tiltSin);
+    const sunVP = sunViewProj(rs.floorCam, halfW, halfH, MAX_BUILD_HEIGHT);
+    sceneU.set(sunVP, SCENE_SUNVP_OFFSET);
+    // 地面也要这份太阳矩阵才能接收阴影
+    floorU.set(sunVP, FLOOR_SUNVP_OFFSET);
+    // 地面起伏用同一支太阳方向，明暗才与立体物体一致
+    floorU[FLOOR_SUNDIR_OFFSET] = SUN_DIR[0];
+    floorU[FLOOR_SUNDIR_OFFSET + 1] = SUN_DIR[1];
+    floorU[FLOOR_SUNDIR_OFFSET + 2] = SUN_DIR[2];
+    floorU[FLOOR_SUNDIR_OFFSET + 3] = 0.62;
+    // 起伏强度 / 地貌过渡宽度 / 水面高光 / 时间（水波流动用）
+    floorU[FLOOR_RELIEF_OFFSET] = GROUND_RELIEF;
+    floorU[FLOOR_RELIEF_OFFSET + 1] = GROUND_BLEND;
+    floorU[FLOOR_RELIEF_OFFSET + 2] = WATER_SPECULAR;
+    floorU[FLOOR_RELIEF_OFFSET + 3] = w.time;
+    floorBuf.write(floorU, 0);
+
+    sceneU[SCENE_CAM_OFFSET] = rs.floorCam.x;
+    sceneU[SCENE_CAM_OFFSET + 1] = rs.floorCam.y;
+    sceneU[SCENE_CAM_OFFSET + 2] = 0;
+    sceneU[SCENE_CAM_OFFSET + 3] = 0;
+    sceneU[SCENE_SUN_OFFSET] = SUN_DIR[0];
+    sceneU[SCENE_SUN_OFFSET + 1] = SUN_DIR[1];
+    sceneU[SCENE_SUN_OFFSET + 2] = SUN_DIR[2];
+    sceneU[SCENE_SUN_OFFSET + 3] = 0.62;              // 环境光强度
+    sceneU[SCENE_PARAMS_OFFSET] = 1;                  // 阴影强度
+    sceneU[SCENE_PARAMS_OFFSET + 1] = 1 / SHADOW_SIZE; // 阴影贴图纹素（PCF 步长）
+    sceneU[SCENE_PARAMS_OFFSET + 2] = w.time;          // 时间（漏斗旋转螺纹用）
+    sceneU[SCENE_PARAMS_OFFSET + 3] = 0.16;           // 雾强度（只做轻微空气透视）
+    const fogCol = hexRgb(TIERS[Math.min(rs.idx, TIERS.length - 1)].ground[0]);
+    sceneU[SCENE_FOG_OFFSET] = fogCol[0] / 255 * 0.92;
+    sceneU[SCENE_FOG_OFFSET + 1] = fogCol[1] / 255 * 0.94;
+    sceneU[SCENE_FOG_OFFSET + 2] = fogCol[2] / 255 * 0.98;
+    sceneU[SCENE_FOG_OFFSET + 3] = TORNADO_VIEW / rs.floorScale * 1.1;  // 雾最远处（世界单位）
+    sceneBuf.write(sceneU, 0);
+    shadowMatrix.set(sunVP);
+    shadowBuf.write(shadowMatrix, 0);
 
     // 合成：风眼擦除遮罩 + 暗角
     const wipe = wipeStatesFor(rs);
@@ -714,6 +1043,12 @@ export async function createGpuRenderer(
     const g = TIERS[Math.min(rs.idx, TIERS.length - 1)].ground[1];
     const [br, bg, bb] = hexRgb(g);
     compU[12] = br / 255; compU[13] = bg / 255; compU[14] = bb / 255; compU[15] = 1;
+    compU[9] = BLOOM_STRENGTH;      // 泛光强度
+    compU[10] = DOF_AMOUNT;         // 移轴景深强度
+    compU[11] = 0;
+    compU[16] = DOF_BAND;           // 聚焦带半高（归一化屏幕高度）
+    compU[17] = DOF_FALLOFF;        // 过渡带宽度
+    compU[18] = 0; compU[19] = 0;
     compBuf.write(compU, 0);
 
     drawOverlay(rs, w, nar);
@@ -728,12 +1063,44 @@ export async function createGpuRenderer(
     }
 
     vgpuFrame(gpu, (f) => {
-      f.pass({ target: scene, clear: [0, 0, 0, 0] }, floorFx);
-      if (instCount > 0) {
-        f.pass({ target: scene, clear: false }, (p) => p.draw(spriteFx, { instances: instCount }));
+      // ① 阴影：只写深度，先把所有立体网格的投影烘进阴影贴图
+      f.pass({ target: shadowTarget, clear: [1, 1, 1, 1], clearDepth: 1 }, (p) => {
+        meshes.drawShadow(p);
+      });
+      // ② 场景：地表（关深度）→ 立体网格（含龙卷风漏斗）→ emoji 贴花 → 精灵
+      f.pass({ target: scene, clear: [0, 0, 0, 0] }, (p) => p.draw(floorFx));
+      f.pass({ target: scene, clear: false }, (p) => {
+        meshes.drawColor(p);
+        decals.drawColor(p);
+        if (instCount > 0) p.draw(spriteFx, { instances: instCount });
+        // 碎屑最后画：它是半透明薄片，且不写深度，压在场景之上最自然
+        debris.drawColor(p);
+      });
+      // ③ 泛光：从场景提取亮部 → 横向模糊 → 纵向模糊（全在半分辨率上）。
+      //    三趟各有独立的 uniform 缓冲，内容在提交前一次性写好。
+      if (BLOOM_STRENGTH > 0.001) {
+        const bw = bloomSize[0];
+        const bh = bloomSize[1];
+        // 提取：源 = 场景（全分辨率），目标 = bloomA
+        bloomBufs[0].write(new Float32Array([
+          1 / size[0], 1 / size[1], BLOOM_THRESHOLD, BLOOM_KNEE,
+          1 / bw, 1 / bh, BLOOM_RADIUS, 0,
+        ]), 0);
+        // 横向：源 = bloomA，目标 = bloomB
+        bloomBufs[1].write(new Float32Array([
+          1 / bw, 1 / bh, BLOOM_THRESHOLD, BLOOM_KNEE,
+          1 / bw, 0, BLOOM_RADIUS, 1,
+        ]), 0);
+        // 纵向：源 = bloomB，目标 = bloomA
+        bloomBufs[2].write(new Float32Array([
+          1 / bw, 1 / bh, BLOOM_THRESHOLD, BLOOM_KNEE,
+          0, 1 / bh, BLOOM_RADIUS, 2,
+        ]), 0);
+        f.pass({ target: bloomA, clear: [0, 0, 0, 1] }, (p) => p.draw(bloomExtractFx));
+        f.pass({ target: bloomB, clear: [0, 0, 0, 1] }, (p) => p.draw(bloomBlurXFx));
+        f.pass({ target: bloomA, clear: [0, 0, 0, 1] }, (p) => p.draw(bloomBlurYFx));
       }
-      f.pass({ target: scene, clear: false, scissor: tornadoClip }, (p) => p.draw(tornadoFx));
-      // 合成（含过场信箱边条与暗角）先落到画布，字卡再叠在最上层——
+      // ④ 合成（含过场信箱边条与暗角）先落到画布，字卡再叠在最上层——
       // 否则字幕会被信箱条压住，读者只看到半行字。
       f.pass({ target: surface, clear: [0, 0, 0, 0] }, compositeFx);
       const ov = overlayVisible ? overlayFx : null;
@@ -755,6 +1122,8 @@ export async function createGpuRenderer(
     if (disposed) return;
     disposed = true;
     try { overlayGeo?.destroy(); } catch { /* 释放顺序不影响退出 */ }
+    // 碎屑的 storage buffer 与几何由本层自己持有；其余资源随 gpu.dispose() 一并释放
+    try { debris.dispose(); } catch { /* 同上 */ }
     gpu.dispose();
   }
 

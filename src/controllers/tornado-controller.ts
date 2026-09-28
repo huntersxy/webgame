@@ -208,6 +208,12 @@ export class TornadoController {
             rings: this.game.rings,
             tier: this.game.tier,
             time: this.game.time,
+            // 立体漏斗要用世界坐标（屏幕位置由渲染器自己算），
+            // 半径用当前实际半径，转场时会连续变化
+            tornadoX: this.game.x,
+            tornadoY: this.game.y,
+            tornadoR: this.game.r,
+            dashFx: this.game.dashFx,
           }),
           () => this.narrative,
           // 设备丢失等致命错误：退回 Canvas 2D，游戏继续可玩

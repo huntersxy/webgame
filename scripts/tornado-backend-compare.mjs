@@ -1,9 +1,17 @@
 /* ────────────────────────────────────────────────────────────
- *  scripts/tornado-backend-compare.mjs — 双后端画面对照
+ *  scripts/tornado-backend-compare.mjs — 双后端对照
  *
  *  把《龙卷风成长记》驱动到**同一条确定性世界**（固定种子覆盖随机生成的
- *  物体与地形位置），分别用 WebGPU 与 Canvas 2D 渲染，再比较解码后的像素。
- *  目的是证明移植是忠实的：两个后端画的是同一个世界，而不是「看着差不多」。
+ *  物体与地形位置），分别用 WebGPU 与 Canvas 2D 渲染，再比较两件事：
+ *
+ *    ① 玩法指纹：同一份确定性输入（240 帧固定方向移动）下，
+ *       两个后端的 分数/吞噬数/半径/坐标/量级/状态/连击/目标 必须逐项相同。
+ *       相机倾斜只发生在渲染层，绝不该影响任何判定。
+ *    ② 画面各自成立：两个后端都要铺满画面、都有色彩层次。
+ *
+ *  为什么不逐像素比对：立体化之后两条路径的画面**本来就不该相同**——
+ *  Canvas 2D 不重刻光照、阴影、泛光与移轴景深，逐像素对照已失去意义。
+ *  「移植忠实」现在由玩法指纹来证明。
  *
  *  两个坑：
  *    · 一张 canvas 的上下文类型不可逆——被 webgpu 占用后再也拿不到 2d，
@@ -12,7 +20,7 @@
  *      因此判定走 toDataURL 的 PNG、在 Node 侧用 pngjs 解码统计。
  *
  *  用法：node scripts/tornado-backend-compare.mjs [url]（默认 http://localhost:4173）
- *  退出码 0 = 两后端一致。
+ *  退出码 0 = 玩法一致且两后端画面都成立。
  * ──────────────────────────────────────────────────────────── */
 
 import { spawn } from 'node:child_process';
@@ -36,14 +44,45 @@ const DETERMINISTIC_STATS = `(async () => {
   const c = document.getElementById('t-canvas');
   g.reset();
 
-  // 固定种子覆盖物体与地形位置：两次加载得到同一局面
+  // 固定种子覆盖物体与地形位置：两次加载得到同一局面。
+  // **半径也必须一起固定**——物体的尺寸原本由未播种的 Math.random 决定，
+  // 只固定位置的话，两次加载吃到的物体大小不同，分数与成长必然对不上。
   let seed = 987654321;
   const rnd = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; };
-  for (const o of g.objects) { o.x = 120 + rnd() * (g.world - 240); o.y = 120 + rnd() * (g.world - 240); }
+  for (const o of g.objects) {
+    o.x = 120 + rnd() * (g.world - 240);
+    o.y = 120 + rnd() * (g.world - 240);
+    // 在「可食」区间内取半径：保证龙卷风开局有东西可吃
+    o.r = Math.max(8, g.r * (0.35 + rnd() * 0.5));
+  }
   for (const t of g.terrain) { t.x = 150 + rnd() * (g.world - 300); t.y = 150 + rnd() * (g.world - 300); }
   g.x = g.world * 0.5; g.y = g.world * 0.5;
   g.time = 3.0; g.shake = 0; g.combo = 0; g.comboT = 0;
   g.particles = []; g.rings = [];
+
+  // 跑一段确定性模拟：两个后端必须得到相同的玩法结果。
+  // 相机的倾斜只发生在渲染层，不该影响任何判定。
+  //
+  // 关键：页面自身的 rAF 循环也在调用 game.update，会和这里的步进交错执行，
+  // 于是轨迹逐帧漂移。先把 update 换成空实现堵住那条路径，再用保存下来的
+  // 真实现跑我们自己的确定性步进——两次加载才会走出完全相同的轨迹。
+  const realUpdate = g.update.bind(g);
+  g.update = () => {};
+
+  // 让龙卷风朝最近的可食物体直线前进——否则只是撞墙，吞噬数恒为 0，
+  // 玩法指纹就退化成一堆常量，证明不了任何事。
+  const target = g.objects
+    .filter(o => !o.dead && o.r < g.r)
+    .sort((a, b) => Math.hypot(a.x - g.x, a.y - g.y) - Math.hypot(b.x - g.x, b.y - g.y))[0];
+  for (let i = 0; i < 600; i++) {
+    let kx = 1, ky = 0;
+    if (target) {
+      const dx = target.x - g.x, dy = target.y - g.y;
+      const d = Math.hypot(dx, dy) || 1;
+      kx = dx / d; ky = dy / d;
+    }
+    realUpdate(1 / 60, { kx, ky, tx: null, ty: null });
+  }
 
   await new Promise(r => setTimeout(r, 460));   // 让当前后端出一帧
 
@@ -68,6 +107,19 @@ const DETERMINISTIC_STATS = `(async () => {
     mean: sum.map(v => Math.round(v / Math.max(1, opaque))),
     distinct: buckets.size,
     dataUrl: c.toDataURL('image/png'),
+    // ── 玩法指纹：两个后端必须逐项相同 ──
+    play: {
+      score: g.score,
+      eaten: g.eaten,
+      r: +g.r.toFixed(6),
+      x: +g.x.toFixed(6),
+      y: +g.y.toFixed(6),
+      tier: g.tier,
+      total: g.total,
+      state: g.state,
+      bestCombo: g.bestCombo,
+      goalsHit: g.goalsHit,
+    },
   });
 })()`;
 
@@ -174,22 +226,46 @@ try {
   const gpuPx = await statsOfPng(gpu.dataUrl);
   const c2dPx = await statsOfPng(c2d.dataUrl);
 
+  // ── 判据一：玩法一致（这是「移植忠实」的真正含义）──
+  // 立体化之后两个后端的**画面**本就不再相同（Canvas 2D 不重刻光影），
+  // 但同一份确定性输入必须产生相同的玩法结果。
+  //
+  // 步进已经与页面自身的 rAF 隔离（见上方对 update 的处理），
+  // 所以这里可以要求**全部 10 项完全相等**，包括浮点坐标。
   console.log('\n== 两后端对照（同一条确定性世界）==');
   console.log(`  后端判定     webgpu=${gpu.backend}  canvas2d=${c2d.backend}`);
   console.log(`  不透明占比   ${(gpuPx.opaqueRatio*100).toFixed(1)}%  vs  ${(c2dPx.opaqueRatio*100).toFixed(1)}%`);
   console.log(`  平均色       [${gpuPx.mean}]  vs  [${c2dPx.mean}]`);
   console.log(`  色彩层次     ${gpuPx.distinct}  vs  ${c2dPx.distinct}`);
 
-  const dMean = gpuPx.mean.map((v, i) => Math.abs(v - c2dPx.mean[i]));
-  const fillOk = gpuPx.opaqueRatio > 0.9 && Math.abs(gpuPx.opaqueRatio - c2dPx.opaqueRatio) < 0.10;
-  const meanOk = Math.max(...dMean) < 40;
-  const richOk = gpuPx.distinct > 12 && c2dPx.distinct > 12;
+  const playKeys = ['score', 'eaten', 'tier', 'total', 'state', 'bestCombo', 'goalsHit', 'r', 'x', 'y'];
+  const diffs = [];
+  for (const k of playKeys) {
+    const a = gpu.play?.[k];
+    const b = c2d.play?.[k];
+    if (a !== b) diffs.push(`${k}: webgpu=${a} canvas2d=${b}`);
+  }
+  const playOk = diffs.length === 0;
+  console.log('\n  玩法指纹（10 项，要求完全相等）：');
+  for (const k of playKeys) console.log(`    ${k.padEnd(10)} ${gpu.play?.[k]} / ${c2d.play?.[k]}`);
+  for (const d of diffs) console.log(`    ✗ ${d}`);
 
-  console.log(`\n  画面覆盖一致（±10%）：${fillOk ? '✅' : '❌'}`);
-  console.log(`  色调一致（每通道 Δ<40，最大 Δ=${Math.max(...dMean)}）：${meanOk ? '✅' : '❌'}`);
-  console.log(`  两后端都有色彩层次：${richOk ? '✅' : '❌'}`);
-  if (!(fillOk && meanOk && richOk)) fail++;
-  console.log(`\n${fail === 0 ? '✅ 两个后端画的是同一个世界' : '❌ 两后端画面差异过大'}`);
+  // ── 判据二：两个后端都真的画出了东西（不是空白页）──
+  const fillOk = gpuPx.opaqueRatio > 0.9 && c2dPx.opaqueRatio > 0.9;
+  // ── 判据三：都有色彩层次，说明各自都渲染了完整场景而非纯色 ──
+  const richOk = gpuPx.distinct > 12 && c2dPx.distinct > 12;
+  // ── 判据四：后端判定正确（一个走 GPU，一个走 2D）──
+  const backendOk = gpu.backend === 'webgpu' && c2d.backend === 'canvas2d';
+  // ── 判据五：这一步确实吃到了东西，指纹不是一堆常量 ──
+  const ateOk = gpu.play?.eaten > 0 && gpu.play?.score > 0;
+
+  console.log(`\n  玩法一致（10 项完全相等）：${playOk ? '✅' : '❌'}`);
+  console.log(`  两后端都铺满画面（>90%）：${fillOk ? '✅' : '❌'}`);
+  console.log(`  两后端都有色彩层次（>12 色）：${richOk ? '✅' : '❌'}`);
+  console.log(`  后端判定正确：${backendOk ? '✅' : '❌'}`);
+  console.log(`  本局确有吞噬发生（指纹非常量）：${ateOk ? '✅' : '❌'}`);
+  if (!(playOk && fillOk && richOk && backendOk && ateOk)) fail++;
+  console.log(`\n${fail === 0 ? '✅ 两个后端玩法一致、画面各自成立' : '❌ 两后端不一致'}`);
 } catch (e) {
   console.error('失败:', e.message);
   fail++;
