@@ -19,10 +19,13 @@
 /** Ruffle 运行时的对外形态（只声明本模块用到的部分） */
 interface RuffleApi {
   load(url: string, options?: { base?: string }): Promise<void>;
+  exitFullscreen?(): Promise<void>;
 }
 
 interface RufflePlayerElement extends HTMLElement {
   ruffle(): RuffleApi;
+  /** Ruffle 自带的只读全屏状态（进入全屏走原生 API，见下方说明） */
+  isFullscreen?: boolean;
 }
 
 interface RuffleSource {
@@ -88,6 +91,24 @@ function webAssemblyUsable(): boolean {
   return typeof WebAssembly === 'object' && typeof WebAssembly.validate === 'function';
 }
 
+/**
+ * 可加锁的方向接口。
+ *
+ * 不写成 `extends ScreenOrientation`：标准类型里 `lock` 与 `orientation`
+ * 都是必有的，而这里要表达的是「可能不存在」——Safari 只有带前缀的实现，
+ * 桌面浏览器则完全没有锁定能力，必须按可选处理。
+ */
+interface LockableOrientation {
+  lock?: (orientation: string) => Promise<void>;
+  unlock?: () => void;
+}
+
+interface LockableScreen {
+  orientation?: LockableOrientation;
+  lockOrientation?: (orientation: string) => boolean;
+  mozLockOrientation?: (orientation: string) => boolean;
+}
+
 export class TornadoController {
   private readonly host: HTMLElement;
   private readonly status: HTMLElement;
@@ -120,6 +141,101 @@ export class TornadoController {
     } finally {
       this.busy = false;
     }
+  }
+
+  /** 是否处于全屏（游戏内的全屏也计入） */
+  isFullscreen(): boolean {
+    const doc = document as Document & { webkitFullscreenElement?: Element | null };
+    return Boolean(document.fullscreenElement ?? doc.webkitFullscreenElement ?? this.player?.isFullscreen);
+  }
+
+  /**
+   * 进入全屏并尽量转成横屏。
+   *
+   * 没有用 Ruffle 自带的全屏：它的入口在播放器右键菜单里，移动端没有右键；
+   * 且其公开 API 只有 exitFullscreen / isFullscreen，没有 enterFullscreen。
+   * 这里直接对舞台元素调用原生全屏，再把方向锁到横屏（不支持锁定的浏览器
+   * 会忽略，用户手动横过手机即可）。
+   */
+  async enterFullscreen(): Promise<void> {
+    const el = this.host.parentElement ?? this.host;
+    const target = el as HTMLElement & { webkitRequestFullscreen?: () => Promise<void> };
+    try {
+      if (target.requestFullscreen) await target.requestFullscreen({ navigationUI: 'hide' });
+      else if (target.webkitRequestFullscreen) await target.webkitRequestFullscreen();
+      else throw new Error('当前浏览器不支持全屏');
+      // 方向锁定必须在全屏之后调用，否则会被拒绝
+      await this.lockLandscape();
+    } catch (err) {
+      console.warn('[tornado] 进入全屏失败', err);
+      this.setStatus('无法进入全屏，可直接横过手机游玩');
+      window.setTimeout(() => this.setStatus(''), 2600);
+    }
+  }
+
+  /** 退出全屏（供全屏时的按钮与「返回键」路径使用） */
+  async exitFullscreen(): Promise<void> {
+    const doc = document as Document & { webkitExitFullscreen?: () => Promise<void> };
+    try {
+      if (document.fullscreenElement && document.exitFullscreen) await document.exitFullscreen();
+      else if (doc.webkitExitFullscreen) await doc.webkitExitFullscreen();
+    } catch (err) {
+      console.warn('[tornado] 退出全屏失败', err);
+    }
+    this.unlockOrientation();
+  }
+
+  private async lockLandscape(): Promise<void> {
+    const s = screen as LockableScreen;
+    try {
+      if (s.orientation?.lock) await s.orientation.lock('landscape');
+      else if (s.lockOrientation) s.lockOrientation('landscape');
+      else if (s.mozLockOrientation) s.mozLockOrientation('landscape');
+    } catch {
+      // 桌面浏览器与部分移动端会拒绝方向锁定，属正常情况
+    }
+  }
+
+  private unlockOrientation(): void {
+    try {
+      (screen as LockableScreen).orientation?.unlock?.();
+    } catch {
+      // 未加锁时 unlock 会抛错，忽略
+    }
+  }
+
+  /**
+   * 向游戏发送一次 ESC。
+   *
+   * 手机没有 ESC 键，而游戏用 ESC 暂停。Ruffle 会丢弃 isTrusted=false 的
+   * 事件，所以不能直接 dispatch 到播放器元素上；实测唯一有效的可编程路径是
+   * 派发到它 shadow root 内部的 #container。KeyboardEvent 构造器还会忽略
+   * keyCode/which（只读属性），而 Flash 读的正是键码，故用 defineProperty 补上。
+   */
+  sendEscape(): void {
+    const root = this.player?.shadowRoot;
+    if (!root) return;
+    const target = (root.querySelector('#container') as HTMLElement | null) ?? this.player;
+    if (!target) return;
+    target.focus({ preventScroll: true });
+    // 实测（headless Edge，同一状态各试 3 次）：focus 之后立刻发（setTimeout 0
+    // 或 rAF 两帧）只有 1~2 次生效，因为 Ruffle 的 has_focus 要等焦点变更走完
+    // 一轮任务循环才更新；延迟 50ms 以上 3/3 全中。这里取 60ms 留出余量。
+    window.setTimeout(() => {
+      for (const type of ['keydown', 'keyup'] as const) {
+        const e = new KeyboardEvent(type, {
+          key: 'Escape',
+          code: 'Escape',
+          bubbles: true,
+          cancelable: true,
+          composed: true,
+        });
+        // 构造器不接收这两个字段（只读），而 Flash 读的正是键码，只能事后定义
+        Object.defineProperty(e, 'keyCode', { get: () => 27 });
+        Object.defineProperty(e, 'which', { get: () => 27 });
+        target.dispatchEvent(e);
+      }
+    }, Number((window as unknown as { __escDelay?: number }).__escDelay ?? 60));
   }
 
   private async boot(): Promise<void> {

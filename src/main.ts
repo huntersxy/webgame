@@ -122,6 +122,23 @@ const ddzCtrl = new DoudizhuController(audio);
 // 龙卷风页跑的是原作 Flash 游戏本体，控制器只负责装配 Ruffle 运行时。
 const tornadoCtrl = new TornadoController(mustEl('t-stage'), mustEl('t-status'));
 mustEl('t-restart').addEventListener('click', () => void tornadoCtrl.restart());
+// 全屏按钮在「进入全屏」与「退出全屏」之间切换：手机没有 ESC 也没有 F11，
+// 必须给一个屏幕上的出口，否则用户会被困在全屏里。
+const fsBtn = mustEl<HTMLButtonElement>('t-fullscreen');
+const syncFullscreenBtn = (): void => {
+  const on = tornadoCtrl.isFullscreen();
+  fsBtn.textContent = on ? '⛶ 退出全屏' : '⛶ 全屏横屏';
+  fsBtn.setAttribute('aria-label', on ? '退出全屏' : '全屏横屏游玩');
+};
+fsBtn.addEventListener('click', () => {
+  void (tornadoCtrl.isFullscreen() ? tornadoCtrl.exitFullscreen() : tornadoCtrl.enterFullscreen());
+});
+// 全屏状态可能由用户按 Esc / 系统返回键改变，以事件为准同步按钮文案
+document.addEventListener('fullscreenchange', syncFullscreenBtn);
+document.addEventListener('webkitfullscreenchange', syncFullscreenBtn);
+syncFullscreenBtn();
+// 手机没有 ESC 键，而游戏用它暂停，单独给一个按钮
+mustEl('t-esc').addEventListener('click', () => tornadoCtrl.sendEscape());
 // 暴露给控制台/自动化冒烟使用（scripts/othello-smoke.mjs）
 (window as any).othelloCtrl = othelloCtrl;
 

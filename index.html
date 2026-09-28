@@ -250,8 +250,8 @@
         <div class="turn-pill">Flash 原版 · 免插件</div>
       </div>
     </div>
-    <div class="layout">
-      <div class="board-wrap">
+    <div class="layout ranch-layout">
+      <div class="board-wrap ranch-wrap">
         <div class="board-head">
           <h2>龙卷风牧场 <small>TORNADO RANCH · 原版 Flash</small></h2>
           <div class="hint-line">移动鼠标牵引龙卷风 · 卷起地面上的东西 · 点画面交互</div>
@@ -259,6 +259,10 @@
         <div class="canvas-holder ranch-holder">
           <div id="t-stage" class="ranch-stage"></div>
           <div id="t-status" class="ranch-status">正在加载…</div>
+          <div class="ranch-bar">
+            <button id="t-fullscreen" class="btn soft ranch-btn" type="button" aria-label="全屏横屏游玩">⛶ 全屏横屏</button>
+            <button id="t-esc" class="btn plain ranch-btn" type="button" aria-label="发送 ESC 键">⎋ ESC</button>
+          </div>
         </div>
       </div>
       <aside class="panel">
@@ -272,8 +276,12 @@
           </div>
           <p class="ranch-note small">重新载入游戏本体，回到标题画面。关卡进度与存档都保存在浏览器本地。</p>
         </div>
+        <div class="panel-block">
+          <h3>手机怎么玩</h3>
+          <p class="ranch-note"><b>⛶ 全屏横屏</b>把游戏铺满整个屏幕并转成横屏，画面最大；退出点屏幕上的<b>退出全屏</b>按钮（或按返回键）。<br><b>⎋ ESC</b> 是手机键盘没有的键——游戏里用它<b>暂停</b>（会弹出「返回到菜单?」），所以单独放一个按钮。</p>
+        </div>
         <details class="rules" open><summary>玩法说明</summary><p>你操控一株龙卷风在农场上移动，把地面上的东西卷进来壮大自己，再拿去换钱。雇主给你 <b>12 天</b> 时间，要交出他见过最强的龙卷风。画面左侧是<b>生命值</b>（爱心）与<b>能量</b>条：能量涨到红线以上，才能卷走地面上的任意东西。关卡逐关解锁，撑过一关才开下一关。</p></details>
-        <details class="rules" open><summary>操作</summary><p>移动鼠标（或手指）牵引龙卷风，它朝指针方向移动，靠近什么就卷什么。剧情与菜单用鼠标点击；过场提示可按 <b>ESC</b> 跳过。</p></details>
+        <details class="rules" open><summary>操作</summary><p>移动鼠标（或手指）牵引龙卷风，它朝指针方向移动，靠近什么就卷什么。剧情与菜单用鼠标点击；游戏进行中按 <b>ESC</b> 可以暂停，手机用画面下方的 <b>⎋ ESC</b> 按钮。</p></details>
         <details class="rules"><summary>技术说明</summary><p>这一页运行的是原始 SWF 文件，由 <b>Ruffle</b>（Rust 编写、编译为 WebAssembly 的 Flash 播放器）解释执行。首次进入需要下载约 3.8&nbsp;MB 的播放器内核，之后由浏览器缓存；游戏本体约 1.7&nbsp;MB。首次加载需要几秒，请稍候。</p></details>
       </aside>
     </div>

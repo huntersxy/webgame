@@ -629,9 +629,14 @@ canvas { max-width: 100%; height: auto; border-radius: 10px; cursor: pointer; }
 .ranch-note b { color: var(--ink); }
 .ranch-note.small { font-size: 11.5px; margin-top: 10px; color: var(--faint); }
 
-@media (max-width: 640px) {
-  .ranch-holder { padding: 8px; }
-}
+/* 全屏 / ESC 按钮条 */
+.ranch-bar { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+.ranch-btn { min-width: 130px; }
+
+/* 窄屏与全屏的覆盖规则放在文件末尾 —— 涂鸦主题层在后面还会重设
+   .canvas-holder / .board-wrap 的 padding，同优先级下靠顺序裁决，
+   写在这里的中间位置会被它翻掉（这也正是原先那条 .canvas-holder{padding:6px}
+   形同虚设的原因）。 */
 
 /* ── Campaign ── */
 .camp-progress { margin-bottom: 12px; }
@@ -1375,4 +1380,126 @@ footer::before {
   .ddz-btn-play { padding: 15px 34px; }
   .ddz-btn-pass, .ddz-btn-hint { padding: 13px 28px; }
   .ddz-hand { min-height: 84px; padding-top: 14px; }
+}
+
+/* ════════════════════════════════════════════════════════════
+   龙卷风牧场：窄屏与全屏
+   放在文件末尾，确保压过上面涂鸦主题层对 .canvas-holder / .board-wrap
+   的内边距重设（同优先级下靠顺序裁决）。
+   ════════════════════════════════════════════════════════════ */
+
+@media (max-width: 640px) {
+  /* 手机上横向空间最紧张：原先 main 10 + board-wrap 12 + canvas-holder 14
+     + 边框 4 共吃掉 80px，只剩 295px 给 4:3 舞台（本应接近 375）。 */
+  .ranch-wrap { padding: 8px; }
+  .ranch-holder { padding: 6px; gap: 8px; }
+  .ranch-layout { gap: 12px; }
+  .ranch-bar .ranch-btn { flex: 1; min-width: 0; }
+  /* 手机上没有鼠标，指针提示改为触摸措辞 */
+  #view-tornado .hint-line { font-size: 11.5px; padding: 5px 10px; }
+}
+
+@media (max-width: 640px) {
+  /* 手机上把「画框」整个去掉，只留舞台本身。
+     原先舞台外面套了三层壳：main(10) → board-wrap(边框2+内边距12) →
+     canvas-holder(边框2+内边距14)，横向一共吃掉 80px，375px 的屏幕
+     只剩 295px 给画面。触屏上这层装饰性边框并不增加可读性，
+     去掉后画面宽度直接翻上去。 */
+  #view-tornado .ranch-wrap {
+    padding: 0;
+    border: none;
+    background: none;
+    box-shadow: none;
+    border-radius: 0;
+  }
+  #view-tornado .ranch-holder {
+    padding: 0;
+    border: none;
+    background: none;
+    box-shadow: none;
+    border-radius: 0;
+  }
+  #view-tornado .ranch-stage { max-width: none; border-radius: 12px; }
+  /* 按钮条紧贴画面下方 */
+  #view-tornado .ranch-bar { margin-top: 10px; }
+  #view-tornado .board-head { margin-bottom: 10px; }
+}
+
+@media (max-width: 380px) {
+  #view-tornado .ranch-holder { padding: 0; }
+}
+
+/* ── 全屏：舞台铺满屏幕 ──
+   舞台是 4:3，用 aspect-ratio 居中；两侧留出的深色底不会干扰，
+   画面本身由 Ruffle 按 showAll 缩放，不裁切。 */
+.ranch-holder:fullscreen,
+.ranch-holder:-webkit-full-screen {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 0;
+  gap: 0;
+  background: #0b1622;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+}
+.ranch-holder:fullscreen .ranch-stage,
+.ranch-holder:-webkit-full-screen .ranch-stage {
+  width: auto;
+  max-width: none;
+  height: 100%;
+  max-height: 100%;
+  aspect-ratio: 4 / 3;
+  border-radius: 0;
+  box-shadow: none;
+  flex: none;
+}
+.ranch-holder:fullscreen .ranch-status,
+.ranch-holder:-webkit-full-screen .ranch-status { display: none; }
+/* 按钮条浮在右上角，不占布局高度 */
+.ranch-holder:fullscreen .ranch-bar,
+.ranch-holder:-webkit-full-screen .ranch-bar {
+  position: fixed;
+  top: max(10px, env(safe-area-inset-top));
+  right: max(10px, env(safe-area-inset-right));
+  z-index: 10;
+  gap: 8px;
+  flex-wrap: nowrap;
+}
+.ranch-holder:fullscreen .ranch-btn,
+.ranch-holder:-webkit-full-screen .ranch-btn {
+  flex: none;
+  min-width: 0;
+  padding: 9px 14px;
+  font-size: 13px;
+  /* 浮在游戏画面上，半透明深底保证任何背景下都看得清 */
+  background: rgba(12, 22, 34, .72);
+  color: #fff;
+  border-color: rgba(255, 255, 255, .45);
+  backdrop-filter: blur(6px);
+}
+.ranch-holder:fullscreen .ranch-btn:hover,
+.ranch-holder:-webkit-full-screen .ranch-btn:hover { background: rgba(12, 22, 34, .88); }
+
+/* ════════════════════════════════════════════════════════════
+   窄屏导航：8 个标签在 375px 下约 370px 宽，原先会把整个页面撑出
+   横向滚动条（body 跟着能左右拖）。改成标签栏自己横向滚动，
+   页面宽度不再被撑开，所有标签仍然可达。
+   ════════════════════════════════════════════════════════════ */
+@media (max-width: 640px) {
+  .topbar { gap: 8px; }
+  .tabs {
+    width: 100%;
+    margin-left: 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+    flex-wrap: nowrap;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    /* 给贴纸阴影留出空间，避免被 overflow 裁掉 */
+    padding: 2px 0 4px;
+  }
+  .tabs::-webkit-scrollbar { display: none; }
+  .tab { flex: none; }
 }
