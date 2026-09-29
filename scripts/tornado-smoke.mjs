@@ -178,6 +178,12 @@ try {
   await rpc(ws, 'Network.enable');
   await rpc(ws, 'Page.enable');
 
+  // 开完域再重载一次：页面的首个加载发生在 Network.enable 之前，
+  // 那次 ruffle.js 的响应我们收不到（实测偶发表现为「ruffle.js 已加载」拿到空数组）。
+  // 重载后所有请求都在监听之下，资源检查才稳定。
+  await rpc(ws, 'Page.reload', { ignoreCache: false });
+  await sleep(400);
+
   const ev = async (expr) => {
     const r = await rpc(ws, 'Runtime.evaluate', { expression: expr, returnByValue: true });
     if (r.exceptionDetails) throw new Error(r.exceptionDetails.exception?.description ?? r.exceptionDetails.text);
@@ -291,19 +297,35 @@ try {
   check('没有依赖第三方站点', foreign.length === 0, JSON.stringify(foreign.map((r) => r.url)));
 
   console.log('== 交互 ==');
-  // 点舞台中央偏下（原作标题页「开始游戏」的位置），确认输入真的进了游戏
+  // 点舞台中央偏下（原作标题页「开始游戏」的位置），确认输入真的进了游戏。
+  //
+  // 为什么点两次：游戏刚渲染出来的头一两帧里，Ruffle 可能还没进入可接受输入的
+  // 状态，第一次点击会被吞掉（实测偶发 changed=0.8%）。标题页上重复点同一个
+  // 位置是无害的——第二次点会落在菜单上换一屏，所以这里点击 → 等变化 →
+  // 未变化则补一次，而不是无脑连点。
   const x = Math.round(box.x + box.w * 0.5);
   const y = Math.round(box.y + box.h * 0.82);
-  await rpc(ws, 'Input.dispatchMouseEvent', { type: 'mouseMoved', x, y });
-  await rpc(ws, 'Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button: 'left', clickCount: 1, buttons: 1 });
-  await rpc(ws, 'Input.dispatchMouseEvent', { type: 'mouseReleased', x, y, button: 'left', clickCount: 1, buttons: 0 });
-  // 轮询到画面变化即算通过，不等固定 4.5s
-  let changed = 0;
-  await until(async () => {
-    const after = await stageShot(null, box);
-    changed = diffRatio(title, after, 12);
-    return changed > 0.02;
-  }, 6000);
+  const clickOnce = async () => {
+    await rpc(ws, 'Input.dispatchMouseEvent', { type: 'mouseMoved', x, y });
+    await rpc(ws, 'Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button: 'left', clickCount: 1, buttons: 1 });
+    await rpc(ws, 'Input.dispatchMouseEvent', { type: 'mouseReleased', x, y, button: 'left', clickCount: 1, buttons: 0 });
+  };
+  const waitForChange = async (ms) => {
+    let d = 0;
+    await until(async () => {
+      const after = await stageShot(null, box);
+      d = diffRatio(title, after, 12);
+      return d > 0.02;
+    }, ms);
+    return d;
+  };
+
+  await clickOnce();
+  let changed = await waitForChange(4000);
+  if (changed <= 0.02) {
+    await clickOnce();
+    changed = await waitForChange(4000);
+  }
   await stageShot('02-after-click', box);
   check('点击后画面发生变化（输入已进入游戏）', changed > 0.02, `changed=${(changed * 100).toFixed(1)}%`);
 

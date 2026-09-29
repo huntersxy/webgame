@@ -47,6 +47,60 @@ const BASE = import.meta.env.BASE_URL || '/';
 const RUFFLE_DIR = `${BASE}ruffle/`;
 const GAME_SWF = `${BASE}games/tornado-ranch/game.swf`;
 
+/**
+ * ── 让存档及时落盘 ──
+ *
+ * Ruffle 把 Flash 的 SharedObject 存进 localStorage（源码 web/src/storage.rs：
+ * 直接用 SharedObject 的名字当键，值 base64），而 localStorage 本来就跨刷新
+ * 保留——所以「刷新丢存档」的根子不在持久化，而在**落盘时机**：
+ *
+ *   Ruffle 只在两个时机 flush_shared_objects()：实例销毁与 window 的
+ *   `pagehide`。而 `pagehide` 经常来不及跑（后台标签页被丢弃、进程被回收、
+ *   页面被强制刷新），内存里的存档就跟着没了。
+ *
+ * 它没有暴露任何 flush 接口（公开 API 只有 load/reload/play/pause/全屏那几个），
+ * 但 `pagehide` 处理本身就是它注册的普通监听器，所以这里主动派发一次
+ * `pagehide`，借它自己的通路把存档刷下来。这是用它既有的机制，不是绕过它。
+ */
+const SOL_KEY = /\//;
+
+/** 派发一次 pagehide，促使 Ruffle 把内存里的 SharedObject 刷进 localStorage */
+function flushSaves(): void {
+  syntheticPagehide = true;
+  try {
+    window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: false }));
+  } catch {
+    /* 极老浏览器没有 PageTransitionEvent：退化为普通事件，Ruffle 照样会收到 */
+    window.dispatchEvent(new Event('pagehide'));
+  } finally {
+    syntheticPagehide = false;
+  }
+}
+
+/**
+ * 区分「真实的页面离开」与「我们自己派发的促刷事件」。
+ *
+ * 促刷就是靠派发 pagehide 实现的，而这里又要监听 pagehide 做收尾汇报——
+ * 不加标记的话，自己派发的事件会被自己的监听器收到，每 3 秒刷一条
+ * 「离开页面」，把控制台淹没（实测一次运行刷出几十条）。
+ */
+let syntheticPagehide = false;
+
+/** 列出 localStorage 里 Ruffle 的存档键（键名形如 `<host>/<path>/<名称>`） */
+function listSaveKeys(): string[] {
+  const keys: string[] = [];
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      // Ruffle 的键含斜杠；排除本站自己的键与杀软注入的键
+      if (k && SOL_KEY.test(k) && !/^(workbox|pwa-|__imt|tornado\.)/.test(k)) keys.push(k);
+    }
+  } catch {
+    /* 存储不可用 */
+  }
+  return keys;
+}
+
 /** 注入 ruffle.js 一次；重复调用共用同一个 Promise */
 let ruffleScriptPromise: Promise<void> | null = null;
 
@@ -115,6 +169,10 @@ export class TornadoController {
   private player: RufflePlayerElement | null = null;
   private booted = false;
   private busy = false;
+  /** 存档落盘定时器；null = 未启动 */
+  private flushTimer: number | null = null;
+  /** 上次见到的存档键签名，用于只在变化时打日志 */
+  private lastKeys = '';
 
   constructor(host: HTMLElement, status: HTMLElement) {
     this.host = host;
@@ -268,6 +326,11 @@ export class TornadoController {
       await loadRuffleScript();
       const source = await waitForRuffle();
 
+      // 存档本体就在 localStorage，跨刷新天然保留，这里无需回灌；
+      // 只报一下接手时已有的存档，便于对照刷新前后是否一致。
+      const existing = listSaveKeys();
+      if (existing.length > 0) console.info(`[tornado] 已载入既有存档：${existing.join(', ')}`);
+
       this.setStatus('正在载入游戏…');
       const player = source.createPlayer();
       player.classList.add('ranch-player');
@@ -277,9 +340,48 @@ export class TornadoController {
       await player.ruffle().load(GAME_SWF);
       this.host.classList.add('ranch-ready');
       this.setStatus('');
+      this.startSaveFlusher();
     } catch (err) {
       this.fail(err);
     }
+  }
+
+  /**
+   * 定期促使 Ruffle 把存档落盘，并在离开页面时再补一次。
+   *
+   * 为什么需要：Ruffle 只在实例销毁与 `pagehide` 两个时机
+   * flush_shared_objects()，而这两者都可能来不及跑（标签页被丢弃、
+   * 进程回收、刷新抢在前面）。它没有公开 flush 接口，所以这里按固定间隔
+   * 派发一次 pagehide，借它自己的通路刷下来。间隔取 3s：一次 flush 只是
+   * 把内存里的几 KB base64 写进 localStorage，开销可忽略，而间隔越短，
+   * 意外丢失的进度越少。
+   *
+   * flush 之后打印键名，便于确认存档真的写下去了（只报「写了几项」
+   * 不足以判断存的是什么）。
+   */
+  private startSaveFlusher(): void {
+    if (this.flushTimer !== null) return;
+
+    /** 刷一次并汇报；只打变化，避免控制台被刷屏 */
+    const flushAndReport = (): void => {
+      flushSaves();
+      const keys = listSaveKeys();
+      const sig = keys.join('|');
+      if (sig !== this.lastKeys) {
+        this.lastKeys = sig;
+        console.info(`[tornado] 存档已落盘：${keys.join(', ') || '(尚未产生)'}`);
+      }
+    };
+
+    this.flushTimer = window.setInterval(flushAndReport, 3000);
+
+    // 真实离开页面时才汇报。必须忽略 syntheticPagehide——那是上面促刷派发的，
+    // 否则每 3 秒就会打一条「离开页面」（实测一次运行刷出几十条）。
+    window.addEventListener('pagehide', () => {
+      if (syntheticPagehide) return;
+      const keys = listSaveKeys();
+      console.info(`[tornado] 离开页面，当前存档：${keys.join(', ') || '(无)'}`);
+    });
   }
 
   private setStatus(text: string): void {

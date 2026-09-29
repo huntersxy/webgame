@@ -15,7 +15,7 @@ import { GoController } from './controllers/go-controller';
 import { OthelloController } from './controllers/othello-controller';
 import { DoudizhuController } from './controllers/ddz-controller';
 import { setupDemonAssets } from './ui/demon';
-import { setupPWA } from './pwa';
+import { setupPWA, beginSession } from './pwa';
 import { mustEl } from './ui/dom';
 
 // ── Global status helper ──
@@ -85,6 +85,9 @@ function applyView(name: ViewName): void {
     ddzCtrl.redraw();
     ddzCtrl.warmUp();
   }
+  // 龙卷风页占用一次「会话」：占用期间 PWA 的自动刷新会推迟，避免把
+  // Ruffle 实例连同存档一起刷掉。离开该页即释放。
+  syncTornadoSession(name === 'tornado');
 }
 
 function routeFromHash(): ViewName {
@@ -139,6 +142,19 @@ document.addEventListener('webkitfullscreenchange', syncFullscreenBtn);
 syncFullscreenBtn();
 // 手机没有 ESC 键，而游戏用它暂停，单独给一个按钮
 mustEl('t-esc').addEventListener('click', () => tornadoCtrl.sendEscape());
+
+// ── 龙卷风页：进入即声明「有会话在进行」 ──
+// Flash 游戏的存档在 Ruffle 实例里，实例随页面刷新一起销毁。PWA 的自动更新
+// 会整页刷新，跑着的存档就被抹掉——表现成「怎么玩都不存档」。所以进游戏页就
+// 占用会话、离开就释放；占用期间 PWA 的自动接管会推迟到释放之后再做。
+let releaseTornadoSession: (() => void) | null = null;
+const syncTornadoSession = (active: boolean): void => {
+  if (active && !releaseTornadoSession) releaseTornadoSession = beginSession();
+  else if (!active && releaseTornadoSession) {
+    releaseTornadoSession();
+    releaseTornadoSession = null;
+  }
+};
 // 暴露给控制台/自动化冒烟使用（scripts/othello-smoke.mjs）
 (window as any).othelloCtrl = othelloCtrl;
 

@@ -51,6 +51,46 @@ function showOfflineToast(): void {
 }
 
 /**
+ * 「有进行中的游戏」标记。
+ *
+ * 需要它的原因：Flash 游戏（龙卷风牧场）的存档在 Ruffle 实例里，实例随页面
+ * 刷新一起销毁。原先无条件自动刷新，页面每隔一两秒就被刷一次，存档根本来不及
+ * 落盘——表现成「怎么玩都不存档」。
+ *
+ * 现在的约定：游戏进行中不刷新，等玩家离开该页或主动重新开始时再补上。
+ * 用计数器而不是布尔值，是因为可能同时有多个占用方（例如两个模式都在跑）。
+ */
+let busyCount = 0;
+
+/** 标记「开始一段不能被打断的会话」，返回释放函数 */
+export function beginSession(): () => void {
+  busyCount += 1;
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    busyCount -= 1;
+    if (busyCount <= 0) {
+      busyCount = 0;
+      // 之前被推迟的更新，现在可以接管了
+      if (pendingActivation) {
+        const r = pendingActivation;
+        pendingActivation = null;
+        activateWaiting(r);
+      }
+    }
+  };
+}
+
+/** 被推迟的接管动作（有会话在进行时挂起） */
+let pendingActivation: ServiceWorkerRegistration | null = null;
+
+/** 是否有游戏会话正在进行 */
+export function inSession(): boolean {
+  return busyCount > 0;
+}
+
+/**
  * 让等待中的新 SW 立刻接管，接管后自动刷新到新版本。
  *
  * 必须先挂 controllerchange 再发消息：新 SW 接管的那一刻才触发
@@ -62,10 +102,15 @@ function showOfflineToast(): void {
  * 注册、永远发现不了新 SW，新版本装好也只会停在 waiting —— 自锁。
  * 用户看到的是「怎么刷都是旧版」，只能靠手动清缓存。自动接管打破这个循环。
  *
- * 代价是刷新会打断正在进行的一局。这里的取舍是：**宁可能刷新到新版**。
- * 各游戏的状态都在内存里，刷新即丢；但相比「永远拿不到更新」，这是更小的损失。
+ * 但刷新会打断正在进行的一局，而 Ruffle 的存档随实例销毁。所以有会话在跑时
+ * 不刷新，改为挂起；等会话结束（离开游戏页 / 重新开始）再补上。
  */
 function activateWaiting(registration: ServiceWorkerRegistration): void {
+  if (busyCount > 0) {
+    // 有游戏在进行：记下来，等它结束再接管，不打断也不丢存档
+    pendingActivation = registration;
+    return;
+  }
   navigator.serviceWorker.addEventListener('controllerchange', () => location.reload(), { once: true });
   // 生成的 sw.js 里有对应的 SKIP_WAITING 监听（skipWaiting: false 时 Workbox 会带上）
   registration.waiting?.postMessage({ type: 'SKIP_WAITING' });
