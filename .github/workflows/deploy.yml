@@ -42,6 +42,13 @@ jobs:
       - name: Typecheck & Build
         run: npm run build
 
+      # ── sourcemap 不上线 ──
+      # vite 用 hidden 模式：本地仍产出 .map 供排查，但 JS 里不写
+      # sourceMappingURL；上传前把 .map 删掉，生产站不提供源码下载
+      # （约 14.5MB）。此前部署若残留 .map，首次部署后视情况手动清理。
+      - name: Strip sourcemaps
+        run: find dist -name '*.map' -delete
+
       # ── FTP 上传（纯静态站点，dist/ 即全部产物） ──
 
       - name: Deploy to FTP

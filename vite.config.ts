@@ -1,6 +1,8 @@
 import { execFileSync } from 'node:child_process';
+import { readdir, rm } from 'node:fs/promises';
+import path from 'node:path';
 import { constants as zlibConstants } from 'node:zlib';
-import { defineConfig } from 'vite';
+import { defineConfig, type Plugin } from 'vite';
 import { compression } from 'vite-plugin-compression2';
 import { VitePWA } from 'vite-plugin-pwa';
 
@@ -71,6 +73,41 @@ function resolveBuildId(): string {
 
 const BUILD_ID = resolveBuildId();
 
+/**
+ * 剔除 onnxruntime 打包时自动产出的 ort-wasm 兜底拷贝（约 20MB 部署体积）。
+ *
+ * ddz-worker 在 configureEnv() 里已把 wasmPaths 固定指向 /ort/（public/ 下由
+ * copy-ort-wasm.mjs 维护的拷贝），任何会话创建都先走它；Vite 按
+ * `new URL(..., import.meta.url)` 照常 emit 的这份 assets/ort-wasm-* 只是
+ * 「wasmPaths 未设置」时的兜底分支，运行时永远取不到——连同预压缩副本纯属死重。
+ *
+ * ① generateBundle：从 bundle 里直接摘掉，压根不写出（预压缩插件若已追加
+ *    .br/.gz，一并按同一模式删除；先删后压、先压后删两种顺序都覆盖）。
+ * ② closeBundle：落盘后的兜底扫描，把 dist/assets 里残存的同类文件补删掉。
+ */
+function dropInertOrtWasm(): Plugin {
+  const INERT = /(^|\/)ort-wasm-simd-threaded[^/]*\.(?:wasm|mjs|js)(?:\.(?:br|gz))?$/;
+  let assetsDir = path.resolve('dist', 'assets');
+  return {
+    name: 'drop-inert-ort-wasm',
+    apply: 'build',
+    configResolved(cfg) {
+      assetsDir = path.resolve(cfg.root, cfg.build.outDir, 'assets');
+    },
+    generateBundle(_options, bundle) {
+      for (const key of Object.keys(bundle)) {
+        if (INERT.test(key)) delete bundle[key];
+      }
+    },
+    async closeBundle() {
+      const files = await readdir(assetsDir).catch(() => [] as string[]);
+      for (const f of files) {
+        if (INERT.test(f)) await rm(path.join(assetsDir, f), { force: true });
+      }
+    },
+  };
+}
+
 export default defineConfig({
   // 供 src/pwa.ts 拼 Service Worker 的版本化 URL
   define: {
@@ -79,7 +116,10 @@ export default defineConfig({
   build: {
     target: 'es2022',
     outDir: 'dist',
-    sourcemap: true,
+    // hidden：仍产出 .map 供本地与 DevTools 排查，但 JS 里不写
+    // sourceMappingURL——生产站不因此暴露可直接下载的源码，
+    // CI 上传前还会把 .map 整个删掉（见 .github/workflows/deploy.yml）。
+    sourcemap: 'hidden',
     // Oxc 压缩器（Rust 实现），比 esbuild 更快且压缩率略好
     minify: 'oxc',
   },
@@ -197,6 +237,9 @@ export default defineConfig({
       },
       devOptions: { enabled: false },
     }),
+
+    // ── 死资产剔除：ort-wasm 兜底拷贝（约 20MB），详见函数注释 ──
+    dropInertOrtWasm(),
   ],
   server: {
     port: 5173,
