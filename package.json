@@ -21,6 +21,7 @@
     "test": "node scripts/run-tests.mjs",
     "test:othello:smoke": "node scripts/othello-smoke.mjs",
     "test:tornado:smoke": "node scripts/tornado-smoke.mjs",
+    "test:userscript:smoke": "node scripts/ruffle-userscript-smoke.mjs",
     "test:site": "node scripts/site-regression.mjs",
     "patch:tornado:swf": "node scripts/patch-tornado-swf.mjs",
     "check:tornado:swf": "node scripts/patch-tornado-swf.mjs --check"

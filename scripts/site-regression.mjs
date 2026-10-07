@@ -79,13 +79,24 @@ try {
   // ── 九款游戏路由逐个进一遍，确认视图激活且画布有内容 ──
   console.log('== 九款游戏路由 ==');
   const routes = ['home', 'gomoku', 'go', 'xiangqi', 'othello', 'junqi', 'ddz', 'tornado', 'campaign'];
+  // 首访时 PWA 自动接管会触发 1-2 次整页 reload（pwa.ts activateWaiting →
+  // controllerchange → location.reload，reloadGuard 限 30s 内 ≤2 次），重载后
+  // 页面按 hash 自行恢复路由。固定 sleep 单点采样会撞上重载窗口——读状态改为
+  // 轮询重试：撞上「执行上下文销毁」就重读，未达标就带超时预算继续等。
+  const evSafe = async (expr) => {
+    try {
+      return await ev(expr);
+    } catch {
+      return null;
+    }
+  };
   for (const r of routes) {
-    await ev(`location.hash = '#/${r}'`);
+    await evSafe(`location.hash = '#/${r}'`);
     // 围棋/斗地主加载引擎；龙卷风页要下载并初始化 Flash 播放器内核，都要多等
     if (r === 'tornado') {
       // 播放器元素出现只说明运行时起来了，SWF 还在下载；等状态行清空才算就绪
       for (let i = 0; i < 90; i++) {
-        const ready = await ev(`(() => {
+        const ready = await evSafe(`(() => {
           const p = document.querySelector('#t-stage ruffle-player');
           const s = document.getElementById('t-status');
           return !!p && (!s || s.classList.contains('hidden'));
@@ -96,7 +107,7 @@ try {
     } else {
       await sleep(r === 'go' || r === 'ddz' ? 2200 : 900);
     }
-    const st = JSON.parse(await ev(`(() => {
+    const stateExpr = `(() => {
       const v = document.getElementById('view-${r}');
       const active = v ? v.classList.contains('active') : false;
       // 龙卷风页没有 canvas：Flash 播放器由 Ruffle 以自定义元素挂载，
@@ -125,9 +136,33 @@ try {
         painted = n;
       }
       return JSON.stringify({ active, kind: 'canvas', hasCanvas: !!cvs, painted });
-    })()`));
-    const ok = st.active && !st.statusText && (st.kind === 'flash' ? st.hasPlayer : st.painted === null || st.painted > 50);
-    check(`#/${r} 视图激活${st.kind === 'flash' ? '且 Flash 游戏已挂载' : st.painted !== null && st.hasCanvas ? '且画布有内容' : ''}`, ok, JSON.stringify(st));
+    })()`;
+    const readState = async () => {
+      const v = await evSafe(stateExpr);
+      try {
+        return v ? JSON.parse(v) : null;
+      } catch {
+        return null;
+      }
+    };
+    const cond = (s) => !!s && s.active && !s.statusText && (s.kind === 'flash' ? s.hasPlayer : s.painted === null || s.painted > 50);
+    let st = await readState();
+    if (r !== 'tornado') {
+      const deadline = Date.now() + (r === 'go' || r === 'ddz' ? 6000 : 4500);
+      while (!cond(st) && Date.now() < deadline) {
+        await sleep(400);
+        // 重载可能把「设 hash」那一步一起刷掉，重读前重申一次（hash 相同不会重复触发事件）
+        await evSafe(`location.hash = '#/${r}'`);
+        st = await readState();
+      }
+    }
+    const ok = cond(st);
+    const kind = st?.kind ?? 'canvas';
+    check(
+      `#/${r} 视图激活${kind === 'flash' ? '且 Flash 游戏已挂载' : st && st.painted !== null && st.hasCanvas ? '且画布有内容' : ''}`,
+      ok,
+      JSON.stringify(st ?? { timedOut: true }),
+    );
   }
 
   // ── PWA 离线能力：Service Worker 已注册且预缓存就绪 ──
